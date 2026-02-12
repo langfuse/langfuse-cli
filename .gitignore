@@ -1,0 +1,8 @@
+node_modules
+dist
+*.tgz
+bun.lock
+bun.lockb
+.env
+.env.local
+.DS_Store

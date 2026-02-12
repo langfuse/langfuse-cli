@@ -1,0 +1,97 @@
+# langfuse-cli
+
+Interact with the [Langfuse](https://langfuse.com) API from the command line.
+Built on [specli](https://github.com/vercel-labs/specli) — the CLI is auto-generated from Langfuse's OpenAPI spec at runtime.
+
+## Install
+
+```sh
+# Run directly
+npx langfuse-cli <resource> <action>
+bunx langfuse-cli <resource> <action>
+
+# Or install globally
+npm i -g langfuse-cli
+langfuse <resource> <action>
+```
+
+## Configuration
+
+Set environment variables (recommended):
+
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://cloud.langfuse.com  # optional default
+```
+
+Pass inline flags:
+
+```sh
+langfuse --public-key pk-lf-... --secret-key sk-lf-... --host http://localhost:3000 traces list
+```
+
+or specify an `.env` file which contains the variables:
+
+```sh
+langfuse --env-file .env traces list
+```
+
+
+## Usage
+
+```sh
+# Discover all resources
+langfuse __schema
+
+# List actions for a resource
+langfuse traces --help
+
+# List traces
+langfuse traces list --limit 10
+
+# Get a specific trace
+langfuse traces get <trace-id>
+
+# JSON output (for piping/scripting)
+langfuse traces list --limit 5 --json
+
+# Preview curl command
+langfuse traces list --limit 5 --curl
+
+# Prompts
+langfuse prompts list
+langfuse prompts get --name my-prompt
+
+# Datasets
+langfuse datasets list
+langfuse dataset-items list --dataset-name my-dataset
+
+# Scores
+langfuse scores list --limit 20
+```
+
+## Agent Usage
+
+A skill file is included at `skill/langfuse-cli.md` for teaching AI agents how to use the CLI. Point your agent framework at it or include it in your agent's system prompt.
+
+## API Reference
+
+See the full [Langfuse API Reference](https://api.reference.langfuse.com/).
+
+## OpenAPI Patch Script
+
+The bundled `openapi.yml` is post-processed by `scripts/patch-openapi.ts` to flatten discriminated unions (`oneOf` with `allOf` branches) into plain objects. This is needed because specli can only generate CLI flags from flat `type: object` schemas — it doesn't handle `oneOf`/`allOf`. Without the patch, endpoints like `prompts create` produce zero flags.
+
+The patch runs automatically as part of `bun run build`. To fetch a fresh spec and patch it:
+
+```sh
+# From cloud (default)
+bun run refetch-openapi
+
+# From a custom URL (e.g. local dev server)
+bun run patch-openapi -- --refetch --openapi_url http://localhost:3000/generated/api/openapi.yml
+
+# Patch only (no fetch)
+bun run patch-openapi
+```

@@ -1,0 +1,28 @@
+{
+  "name": "langfuse-cli",
+  "version": "0.0.1-beta.0",
+  "description": "Interact with Langfuse API from the command line",
+  "type": "module",
+  "bin": {
+    "langfuse": "./bin/langfuse.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "openapi.yml",
+    "skill",
+    "README.md"
+  ],
+  "scripts": {
+    "patch-openapi": "bun scripts/patch-openapi.ts",
+    "refetch-openapi": "bun scripts/patch-openapi.ts --refetch",
+    "build": "bun run refetch-openapi && bun build src/cli.ts --outdir dist --target node --format esm",
+    "prepublishOnly": "rm -rf dist && bun run build"
+  },
+  "dependencies": {
+    "specli": "^0.0.39"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
