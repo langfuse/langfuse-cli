@@ -1,18 +1,17 @@
 # langfuse-cli
 
 Interact with the [Langfuse](https://langfuse.com) API from the command line.
-Built on [specli](https://github.com/vercel-labs/specli) — the CLI is auto-generated from Langfuse's OpenAPI spec at runtime.
 
 ## Install
 
 ```sh
 # Run directly
-npx langfuse-cli <resource> <action>
-bunx langfuse-cli <resource> <action>
+npx langfuse-cli api <resource> <action>
+bunx langfuse-cli api <resource> <action>
 
 # Or install globally
 npm i -g langfuse-cli
-langfuse <resource> <action>
+langfuse api <resource> <action>
 ```
 
 ## Configuration
@@ -25,16 +24,16 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 export LANGFUSE_HOST=https://cloud.langfuse.com  # optional default
 ```
 
-Pass inline flags:
+or pass as inline flags:
 
 ```sh
-langfuse --public-key pk-lf-... --secret-key sk-lf-... --host http://localhost:3000 traces list
+langfuse --public-key pk-lf-... --secret-key sk-lf-... --host http://localhost:3000 api prompts list
 ```
 
 or specify an `.env` file which contains the variables:
 
 ```sh
-langfuse --env-file .env traces list
+langfuse --env-file .env api prompts list
 ```
 
 
@@ -42,33 +41,33 @@ langfuse --env-file .env traces list
 
 ```sh
 # Discover all resources
-langfuse __schema
+langfuse api __schema
 
 # List actions for a resource
-langfuse traces --help
+langfuse api traces --help
 
 # List traces
-langfuse traces list --limit 10
+langfuse api traces list --limit 10
 
 # Get a specific trace
-langfuse traces get <trace-id>
+langfuse api traces get <trace-id>
 
 # JSON output (for piping/scripting)
-langfuse traces list --limit 5 --json
+langfuse api traces list --limit 5 --json
 
 # Preview curl command
-langfuse traces list --limit 5 --curl
+langfuse api traces list --limit 5 --curl
 
 # Prompts
-langfuse prompts list
-langfuse prompts get --name my-prompt
+langfuse api prompts list
+langfuse api prompts get --name my-prompt
 
 # Datasets
-langfuse datasets list
-langfuse dataset-items list --dataset-name my-dataset
+langfuse api datasets list
+langfuse api dataset-items list --dataset-name my-dataset
 
 # Scores
-langfuse scores list --limit 20
+langfuse api scores list --limit 20
 ```
 
 ## Agent Usage

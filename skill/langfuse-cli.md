@@ -13,56 +13,56 @@ export LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default
 
 Or pass inline:
 ```bash
-langfuse --public-key pk-lf-... --secret-key sk-lf-... --host https://cloud.langfuse.com <resource> <action>
+langfuse --public-key pk-lf-... --secret-key sk-lf-... --host https://cloud.langfuse.com api <resource> <action>
 ```
 
 ## Discovery
 
 ```bash
 # List all resources and auth info
-langfuse __schema
+langfuse api __schema
 
 # List actions for a resource
-langfuse <resource> --help
+langfuse api <resource> --help
 
 # Show args/options for a specific action
-langfuse <resource> <action> --help
+langfuse api <resource> <action> --help
 
 # Preview the curl command without executing
-langfuse <resource> <action> --curl
+langfuse api <resource> <action> --curl
 ```
 
 ## Common Workflows
 
 ### Traces
 ```bash
-langfuse traces list --limit 10
-langfuse traces get <trace-id>
+langfuse api traces list --limit 10
+langfuse api traces get <trace-id>
 ```
 
 ### Prompts
 ```bash
-langfuse prompts list
-langfuse prompts get --name my-prompt
-langfuse prompts create --type text --name my-prompt --prompt "Hello {{name}}"
+langfuse api prompts list
+langfuse api prompts get --name my-prompt
+langfuse api prompts create --type text --name my-prompt --prompt "Hello {{name}}"
 ```
 
 ### Datasets
 ```bash
-langfuse datasets list
-langfuse dataset-items list --dataset-name my-dataset
+langfuse api datasets list
+langfuse api dataset-items list --dataset-name my-dataset
 ```
 
 ### Scores
 ```bash
-langfuse scores list --limit 20
-langfuse score-configs list
+langfuse api scores list --limit 20
+langfuse api score-configs list
 ```
 
 ### Sessions
 ```bash
-langfuse sessions list --limit 10
-langfuse sessions get <session-id>
+langfuse api sessions list --limit 10
+langfuse api sessions get <session-id>
 ```
 
 ## Tips
@@ -71,3 +71,5 @@ langfuse sessions get <session-id>
 - Use `--curl` to preview the HTTP request without executing it
 - Pagination: use `--limit` and `--page` on list endpoints
 - All list commands support filtering — check `<resource> <action> --help` for available options
+- Prefer `observations-v2s` over `observations` — the v2 endpoint returns richer data
+- Prefer `metrics-v2s` over `metrics` — the v2 endpoint returns richer data
