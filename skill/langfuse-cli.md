@@ -2,9 +2,22 @@
 
 Use the `langfuse` CLI to interact with the Langfuse API from the command line.
 
+## Install
+
+```sh
+# Run directly
+npx langfuse-cli api <resource> <action>
+bunx langfuse-cli api <resource> <action>
+
+# Or install globally
+npm i -g langfuse-cli
+langfuse api <resource> <action>
+```
+
 ## Setup
 
 Set environment variables:
+
 ```bash
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
@@ -12,6 +25,7 @@ export LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default
 ```
 
 Or pass inline:
+
 ```bash
 langfuse --public-key pk-lf-... --secret-key sk-lf-... --host https://cloud.langfuse.com api <resource> <action>
 ```
@@ -35,12 +49,14 @@ langfuse api <resource> <action> --curl
 ## Common Workflows
 
 ### Traces
+
 ```bash
 langfuse api traces list --limit 10
 langfuse api traces get <trace-id>
 ```
 
 ### Prompts
+
 ```bash
 langfuse api prompts list
 langfuse api prompts get --name my-prompt
@@ -48,18 +64,21 @@ langfuse api prompts create --type text --name my-prompt --prompt "Hello {{name}
 ```
 
 ### Datasets
+
 ```bash
 langfuse api datasets list
 langfuse api dataset-items list --dataset-name my-dataset
 ```
 
 ### Scores
+
 ```bash
 langfuse api scores list --limit 20
 langfuse api score-configs list
 ```
 
 ### Sessions
+
 ```bash
 langfuse api sessions list --limit 10
 langfuse api sessions get <session-id>
