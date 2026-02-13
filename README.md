@@ -16,24 +16,29 @@ langfuse api <resource> <action>
 
 ## Configuration
 
-Set environment variables (recommended):
-
-```bash
-export LANGFUSE_PUBLIC_KEY=pk-lf-...
-export LANGFUSE_SECRET_KEY=sk-lf-...
-export LANGFUSE_HOST=https://cloud.langfuse.com  # optional default
-```
-
-or pass as inline flags:
-
-```sh
-langfuse --public-key pk-lf-... --secret-key sk-lf-... --host http://localhost:3000 api prompts list
-```
-
-or specify an `.env` file which contains the variables:
+Use an `.env` file (recommended):
 
 ```sh
 langfuse --env .env api prompts list
+```
+
+You can get the values from your project settings. The `.env` file should contain:
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default
+```
+
+Alternatively, export env vars or pass inline flags:
+
+```sh
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://cloud.langfuse.com
+langfuse api prompts list
+
+# or inline
+langfuse --public-key pk-lf-... --secret-key sk-lf-... api prompts list
 ```
 
 
