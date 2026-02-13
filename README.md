@@ -33,7 +33,7 @@ langfuse --public-key pk-lf-... --secret-key sk-lf-... --host http://localhost:3
 or specify an `.env` file which contains the variables:
 
 ```sh
-langfuse --env-file .env api prompts list
+langfuse --env .env api prompts list
 ```
 
 

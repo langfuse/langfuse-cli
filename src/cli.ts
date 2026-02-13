@@ -9,7 +9,7 @@ const LANGFUSE_FLAGS = new Set([
   "--public-key",
   "--secret-key",
   "--host",
-  "--env-file",
+  "--env",
 ]);
 const LANGFUSE_BOOL_FLAGS = new Set(["--refetch-api-spec"]);
 
@@ -87,8 +87,8 @@ export async function run(argv: string[]): Promise<void> {
     }
   }
 
-  if (extracted["env-file"]) {
-    loadEnvFile(extracted["env-file"]);
+  if (extracted["env"]) {
+    loadEnvFile(extracted["env"]);
   }
 
   const publicKey =
@@ -125,7 +125,7 @@ Options:
   --public-key <key>      Langfuse public key (or LANGFUSE_PUBLIC_KEY)
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
   --host <url>            Langfuse host (or LANGFUSE_HOST, default: ${DEFAULT_HOST})
-  --env-file <path>       Load env vars from file
+  --env <path>       Load env vars from file
   --refetch-api-spec      Fetch latest API spec instead of bundled
 
 Examples:
