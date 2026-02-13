@@ -73,3 +73,16 @@ langfuse api sessions get <session-id>
 - All list commands support filtering — check `<resource> <action> --help` for available options
 - Prefer `observations-v2s` over `observations` — the v2 endpoint returns richer data
 - Prefer `metrics-v2s` over `metrics` — the v2 endpoint returns richer data
+
+## Langfuse Documentation
+
+To learn more about Langfuse concepts, fetch docs as markdown:
+
+```bash
+# Index of all doc pages
+curl -s https://langfuse.com/llms.txt
+
+# for example:
+curl -s https://langfuse.com/docs/observability/overview.md        # Tracing & observability
+curl -s https://langfuse.com/docs/api-and-data-platform/overview.md  # API overview
+```

@@ -16,7 +16,7 @@ langfuse api <resource> <action>
 
 ## Configuration
 
-Use an `.env` file (recommended):
+Use an `.env` file (recommended, takes precedence):
 
 ```sh
 langfuse --env .env api prompts list

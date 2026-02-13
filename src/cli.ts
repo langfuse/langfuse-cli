@@ -28,9 +28,7 @@ function loadEnvFile(filePath: string): void {
     ) {
       val = val.slice(1, -1);
     }
-    if (!(key in process.env)) {
-      process.env[key] = val;
-    }
+    process.env[key] = val;
   }
 }
 
