@@ -23,6 +23,7 @@ langfuse --env .env api prompts list
 ```
 
 You can get the values from your project settings. The `.env` file should contain:
+
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
@@ -40,7 +41,6 @@ langfuse api prompts list
 # or inline
 langfuse --public-key pk-lf-... --secret-key sk-lf-... api prompts list
 ```
-
 
 ## Usage
 
