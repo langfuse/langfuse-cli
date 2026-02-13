@@ -109,6 +109,12 @@ export async function run(argv: string[]): Promise<void> {
     return runApi({ passthrough, boolFlags, publicKey, secretKey, host });
   }
 
+  if (subcommand === "get-skill") {
+    const skillPath = join(__dirname, "..", "skill", "langfuse-cli.md");
+    process.stdout.write(readFileSync(skillPath, "utf-8"));
+    return;
+  }
+
   // Show help for anything else (no args, --help, -h, unknown command)
   printHelp();
 }
@@ -120,6 +126,7 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
+  get-skill               Print the agent skill file for use in AI prompts
 
 Options:
   --public-key <key>      Langfuse public key (or LANGFUSE_PUBLIC_KEY)

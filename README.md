@@ -72,7 +72,13 @@ langfuse api scores list --limit 20
 
 ## Agent Usage
 
-A skill file is included at `skill/langfuse-cli.md` for teaching AI agents how to use the CLI. Point your agent framework at it or include it in your agent's system prompt.
+A skill file is included for teaching AI agents how to use the CLI. Print it with:
+
+```sh
+langfuse get-skill
+```
+
+Pipe it into an agent's context or include it in a system prompt.
 
 ## API Reference
 
