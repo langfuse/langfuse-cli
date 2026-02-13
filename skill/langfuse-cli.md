@@ -76,13 +76,16 @@ langfuse api sessions get <session-id>
 
 ## Langfuse Documentation
 
-To learn more about Langfuse concepts, fetch docs as markdown:
+To learn more about Langfuse concepts, search or fetch docs as markdown:
 
 ```bash
 # Index of all doc pages
 curl -s https://langfuse.com/llms.txt
 
-# for example:
+# Search docs (only if llms.txt doesn't have what you need — responses are large)
+curl -s "https://langfuse.com/api/search-docs?query=How+do+I+trace+LangGraph+agents"
+
+# Fetch a specific doc page as markdown (use full paths from llms.txt)
 curl -s https://langfuse.com/docs/observability/overview.md        # Tracing & observability
 curl -s https://langfuse.com/docs/api-and-data-platform/overview.md  # API overview
 ```
