@@ -61,6 +61,8 @@ langfuse api traces get <trace-id>
 langfuse api prompts list
 langfuse api prompts get --name my-prompt
 langfuse api prompts create --type text --name my-prompt --prompt "Hello {{name}}"
+# Update a prompt = create a new version with the same name
+langfuse api prompts create --type text --name my-prompt --prompt "Hello {{name}}, welcome!"
 ```
 
 ### Datasets
