@@ -72,7 +72,7 @@ langfuse api datasets list
 langfuse api dataset-items list --dataset-name my-dataset
 
 # Scores
-langfuse api scores list --limit 20
+langfuse api score-v2s get-scores --limit 20
 ```
 
 ## Agent Usage

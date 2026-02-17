@@ -75,8 +75,9 @@ langfuse api dataset-items list --dataset-name my-dataset
 ### Scores
 
 ```bash
-langfuse api scores list --limit 20
-langfuse api score-configs list
+langfuse api score-v2s get-scores --limit 20
+langfuse api score-v2s get-get-by-id <score-id>
+langfuse api score-configs get-public
 ```
 
 ### Sessions
@@ -94,6 +95,7 @@ langfuse api sessions get <session-id>
 - All list commands support filtering — check `<resource> <action> --help` for available options
 - Prefer `observations-v2s` over `observations` — the v2 endpoint returns richer data
 - Prefer `metrics-v2s` over `metrics` — the v2 endpoint returns richer data
+- Prefer `score-v2s` over `scores` — the v1 `scores` resource only supports create/delete; use `score-v2s` for list and get operations
 
 ## Langfuse Documentation
 
