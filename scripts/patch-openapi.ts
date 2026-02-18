@@ -214,9 +214,64 @@ if (paths?.items) {
   }
 }
 
-if (patchCount > 0) {
+// Rename query parameters that collide with specli's global flags.
+// specli (via commander.js) reserves "--version" for CLI version display,
+// so any OpenAPI query parameter named "version" becomes unusable.
+const paramRenames: Record<string, Record<string, string>> = {
+  prompts_get: { version: "prompt-version" },
+};
+
+let renameCount = 0;
+if (paths?.items) {
+  for (const pathPair of paths.items) {
+    const methods = pathPair.value;
+    if (!methods?.items) continue;
+    for (const methodPair of methods.items) {
+      const op = methodPair.value;
+      if (!op?.items) continue;
+
+      let operationId = "";
+      for (const field of op.items) {
+        if (field.key?.value === "operationId") {
+          operationId = field.value?.value ?? "";
+          break;
+        }
+      }
+
+      const renames = paramRenames[operationId];
+      if (!renames) continue;
+
+      for (const field of op.items) {
+        if (field.key?.value !== "parameters") continue;
+        const params = field.value;
+        if (!params?.items) continue;
+
+        for (const param of params.items) {
+          if (!param?.items) continue;
+          let nameField: any = null;
+          let inValue = "";
+          for (const pf of param.items) {
+            if (pf.key?.value === "name") nameField = pf;
+            if (pf.key?.value === "in") inValue = pf.value?.value ?? "";
+          }
+          const oldName = nameField?.value?.value;
+          if (oldName && inValue === "query" && renames[oldName]) {
+            nameField.value = doc.createNode(renames[oldName]);
+            renameCount++;
+            console.log(
+              `Renamed ${operationId} query param '${oldName}' → '${renames[oldName]}'`,
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
+const dirty = patchCount > 0 || renameCount > 0;
+if (dirty) {
   writeFileSync(specPath, doc.toString({ singleQuote: true }));
-  console.log(`\nWrote ${patchCount} patched schema(s) to ${specPath}`);
+  console.log(`\nWrote patched spec to ${specPath} (${patchCount} schema(s), ${renameCount} param rename(s))`);
 } else {
-  console.log("No discriminated unions found to patch.");
+  console.log("No patches needed.");
 }
