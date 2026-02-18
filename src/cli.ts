@@ -95,6 +95,7 @@ export async function run(argv: string[]): Promise<void> {
     extracted["secret-key"] ?? process.env.LANGFUSE_SECRET_KEY;
   const host = (
     extracted["host"] ??
+    process.env.LANGFUSE_BASE_URL ??
     process.env.LANGFUSE_HOST ??
     DEFAULT_HOST
   ).replace(/\/$/, "");
@@ -129,7 +130,7 @@ Commands:
 Options:
   --public-key <key>      Langfuse public key (or LANGFUSE_PUBLIC_KEY)
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
-  --host <url>            Langfuse host (or LANGFUSE_HOST, default: ${DEFAULT_HOST})
+  --host <url>            Langfuse host (or LANGFUSE_HOST/LANGFUSE_BASE_URL, default: ${DEFAULT_HOST})
   --env <path>       Load env vars from file
   --refetch-api-spec      Fetch latest API spec instead of bundled
 
