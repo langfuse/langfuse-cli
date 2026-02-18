@@ -21,7 +21,7 @@ Set environment variables:
 ```bash
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
-export LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default EU region
+export LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default EU region (LANGFUSE_BASE_URL also supported)
 ```
 
 Or pass inline:
