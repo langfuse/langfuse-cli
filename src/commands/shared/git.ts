@@ -1,0 +1,125 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
+
+export interface RepoRootResult {
+  repoRoot: string;
+  isGitRepo: boolean;
+  warning: string | null;
+}
+
+export async function resolveRepoRoot(cwd: string): Promise<RepoRootResult> {
+  try {
+    const { stdout } = await execFile("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf-8",
+      maxBuffer: 1024 * 1024,
+    });
+
+    const repoRoot = stdout.trim();
+    if (!repoRoot) {
+      return {
+        repoRoot: cwd,
+        isGitRepo: false,
+        warning: "Could not determine git repo root. Using current working directory.",
+      };
+    }
+
+    return { repoRoot, isGitRepo: true, warning: null };
+  } catch {
+    return {
+      repoRoot: cwd,
+      isGitRepo: false,
+      warning: "Not inside a git repository. Using current working directory.",
+    };
+  }
+}
+
+export async function runGit(args: string[], cwd: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFile("git", args, {
+      cwd,
+      encoding: "utf-8",
+      maxBuffer: 1024 * 1024,
+    });
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+export interface CommitMetadata {
+  commitSha: string;
+  branch: string;
+  commitMessage: string;
+  remoteUrl: string | null;
+  commitUrl: string | null;
+}
+
+export async function readCommitMetadata(repoRoot: string): Promise<CommitMetadata | null> {
+  const commitSha = await runGit(["rev-parse", "HEAD"], repoRoot);
+  if (!commitSha) {
+    return null;
+  }
+
+  const branch = (await runGit(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot)) ?? "unknown";
+  const commitMessage = (await runGit(["log", "-1", "--pretty=%s"], repoRoot)) ?? "";
+
+  let remoteUrl = await runGit(["remote", "get-url", "origin"], repoRoot);
+  if (!remoteUrl) {
+    const remotes = await runGit(["remote"], repoRoot);
+    const fallbackRemote = remotes?.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+    if (fallbackRemote) {
+      remoteUrl = await runGit(["remote", "get-url", fallbackRemote], repoRoot);
+    }
+  }
+
+  return {
+    commitSha,
+    branch,
+    commitMessage,
+    remoteUrl,
+    commitUrl: remoteUrl ? buildGithubCommitUrl(remoteUrl, commitSha) : null,
+  };
+}
+
+export function buildGithubCommitUrl(remoteUrl: string, commitSha: string): string | null {
+  const trimmed = remoteUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const httpsMatch = trimmed.match(/^https?:\/\/github\.com\/(.+?)(?:\.git)?\/?$/i);
+  if (httpsMatch?.[1]) {
+    return `https://github.com/${httpsMatch[1]}/commit/${commitSha}`;
+  }
+
+  const sshMatch = trimmed.match(/^git@github\.com:(.+?)(?:\.git)?$/i);
+  if (sshMatch?.[1]) {
+    return `https://github.com/${sshMatch[1]}/commit/${commitSha}`;
+  }
+
+  const sshUrlMatch = trimmed.match(/^ssh:\/\/git@github\.com\/(.+?)(?:\.git)?\/?$/i);
+  if (sshUrlMatch?.[1]) {
+    return `https://github.com/${sshUrlMatch[1]}/commit/${commitSha}`;
+  }
+
+  return null;
+}
+
+export async function canImportLangfusePython(): Promise<{ ok: boolean; message: string | null }> {
+  try {
+    await execFile("python3", ["-c", "import langfuse"], {
+      encoding: "utf-8",
+      maxBuffer: 1024 * 1024,
+    });
+    return { ok: true, message: null };
+  } catch (error) {
+    const stderr = (error as { stderr?: string }).stderr?.trim();
+    return {
+      ok: false,
+      message: stderr || "python3 could not import langfuse",
+    };
+  }
+}

@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runDisable } from "./commands/disable";
+import { runEnable } from "./commands/enable";
+import { runStatus } from "./commands/status";
+import { runTraces } from "./commands/traces";
+import { DEFAULT_HOST } from "./commands/shared/constants";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const DEFAULT_HOST = "https://cloud.langfuse.com";
 const LANGFUSE_FLAGS = new Set([
   "--public-key",
   "--secret-key",
@@ -108,6 +111,24 @@ export async function run(argv: string[]): Promise<void> {
     return runApi({ passthrough, boolFlags, publicKey, secretKey, host });
   }
 
+  const commandArgs = passthrough.slice(3);
+
+  if (subcommand === "enable") {
+    return runEnable(commandArgs, { publicKey, secretKey, host });
+  }
+
+  if (subcommand === "disable") {
+    return runDisable(commandArgs);
+  }
+
+  if (subcommand === "status") {
+    return runStatus(commandArgs);
+  }
+
+  if (subcommand === "traces") {
+    return runTraces(commandArgs);
+  }
+
   if (subcommand === "get-skill") {
     const skillPath = join(__dirname, "..", "skill", "langfuse-cli.md");
     process.stdout.write(readFileSync(skillPath, "utf-8"));
@@ -125,6 +146,10 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
+  enable                  Enable Claude Code tracing + git-linked manifests
+  disable                 Disable Claude Code tracing for this repo
+  status                  Show Claude Code tracing setup status
+  traces                  List trace links from .langfuse/traces manifests
   get-skill               Print the agent skill file for use in AI prompts
 
 Options:
@@ -135,6 +160,9 @@ Options:
   --refetch-api-spec      Fetch latest API spec instead of bundled
 
 Examples:
+  langfuse enable                                   Enable tracing in this repo
+  langfuse status                                   Show integration health
+  langfuse traces --limit 10                        List recent trace links
   langfuse api __schema                              List all available resources
   langfuse api <resource> --help                     Show actions for a resource
   langfuse api traces list --limit 10                List traces
