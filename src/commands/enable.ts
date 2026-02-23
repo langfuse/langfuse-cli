@@ -29,7 +29,7 @@ interface EnableOptions {
 }
 
 function printEnableHelp(): void {
-  console.log(`Usage: langfuse enable [options]
+  console.log(`Usage: langfuse integration claudecode enable [options]
 
 Enable Claude Code tracing for the current repository.
 

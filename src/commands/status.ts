@@ -18,7 +18,7 @@ interface StatusOptions {
 }
 
 function printStatusHelp(): void {
-  console.log(`Usage: langfuse status [options]
+  console.log(`Usage: langfuse integration claudecode status [options]
 
 Show Claude Code tracing setup status for the current repository.
 

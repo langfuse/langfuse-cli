@@ -111,22 +111,35 @@ export async function run(argv: string[]): Promise<void> {
     return runApi({ passthrough, boolFlags, publicKey, secretKey, host });
   }
 
-  const commandArgs = passthrough.slice(3);
+  if (subcommand === "integration") {
+    const integration = passthrough[3];
 
-  if (subcommand === "enable") {
-    return runEnable(commandArgs, { publicKey, secretKey, host });
-  }
+    if (integration === "claudecode") {
+      const claudeCodeCommand = passthrough[4];
+      const commandArgs = passthrough.slice(5);
 
-  if (subcommand === "disable") {
-    return runDisable(commandArgs);
-  }
+      if (claudeCodeCommand === "enable") {
+        return runEnable(commandArgs, { publicKey, secretKey, host });
+      }
 
-  if (subcommand === "status") {
-    return runStatus(commandArgs);
-  }
+      if (claudeCodeCommand === "disable") {
+        return runDisable(commandArgs);
+      }
 
-  if (subcommand === "traces") {
-    return runTraces(commandArgs);
+      if (claudeCodeCommand === "status") {
+        return runStatus(commandArgs);
+      }
+
+      if (claudeCodeCommand === "traces") {
+        return runTraces(commandArgs);
+      }
+
+      printClaudeCodeHelp();
+      return;
+    }
+
+    printIntegrationHelp();
+    return;
   }
 
   if (subcommand === "get-skill") {
@@ -146,23 +159,20 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
-  enable                  Enable Claude Code tracing + git-linked manifests
-  disable                 Disable Claude Code tracing for this repo
-  status                  Show Claude Code tracing setup status
-  traces                  List trace links from .langfuse/traces manifests
+  integration             Manage Langfuse integrations
   get-skill               Print the agent skill file for use in AI prompts
 
 Options:
   --public-key <key>      Langfuse public key (or LANGFUSE_PUBLIC_KEY)
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
   --host <url>            Langfuse host (or LANGFUSE_HOST/LANGFUSE_BASE_URL, default: ${DEFAULT_HOST})
-  --env <path>       Load env vars from file
+  --env <path>            Load env vars from file
   --refetch-api-spec      Fetch latest API spec instead of bundled
 
 Examples:
-  langfuse enable                                   Enable tracing in this repo
-  langfuse status                                   Show integration health
-  langfuse traces --limit 10                        List recent trace links
+  langfuse integration claudecode enable             Enable Claude Code tracing
+  langfuse integration claudecode status             Show integration health
+  langfuse integration claudecode traces --limit 10  List recent trace links
   langfuse api __schema                              List all available resources
   langfuse api <resource> --help                     Show actions for a resource
   langfuse api traces list --limit 10                List traces
@@ -170,6 +180,34 @@ Examples:
   langfuse api scores create --name quality \\
     --traceId <id> --value 0.9                       Create a score
   langfuse api datasets create --name my-dataset     Create a dataset`);
+}
+
+function printIntegrationHelp(): void {
+  console.log(`Usage: langfuse integration <integration>
+
+Available integrations:
+  claudecode              Claude Code tracing + git-linked manifests
+
+Examples:
+  langfuse integration claudecode enable             Enable Claude Code tracing
+  langfuse integration claudecode status             Show integration health
+  langfuse integration claudecode --help             Show Claude Code commands`);
+}
+
+function printClaudeCodeHelp(): void {
+  console.log(`Usage: langfuse integration claudecode <command>
+
+Commands:
+  enable                  Enable Claude Code tracing + git-linked manifests
+  disable                 Disable Claude Code tracing for this repo
+  status                  Show Claude Code tracing setup status
+  traces                  List trace links from .langfuse/traces manifests
+
+Examples:
+  langfuse integration claudecode enable             Enable tracing in this repo
+  langfuse integration claudecode disable            Disable tracing
+  langfuse integration claudecode status             Show integration health
+  langfuse integration claudecode traces --limit 10  List recent trace links`);
 }
 
 function printApiHelp(resources: string[]): void {

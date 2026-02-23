@@ -11,7 +11,7 @@ interface TracesOptions {
 }
 
 function printTracesHelp(): void {
-  console.log(`Usage: langfuse traces [options]
+  console.log(`Usage: langfuse integration claudecode traces [options]
 
 List trace manifests for the current repository.
 
@@ -82,7 +82,7 @@ export async function runTraces(args: string[]): Promise<void> {
       console.log("[]");
       return;
     }
-    console.log("No trace manifests found. Run `langfuse enable` and make a commit via Claude Code.");
+    console.log("No trace manifests found. Run `langfuse integration claudecode enable` and make a commit via Claude Code.");
     return;
   }
 
@@ -92,7 +92,7 @@ export async function runTraces(args: string[]): Promise<void> {
       console.log("[]");
       return;
     }
-    console.log("No trace manifests found. Run `langfuse enable` and make a commit via Claude Code.");
+    console.log("No trace manifests found. Run `langfuse integration claudecode enable` and make a commit via Claude Code.");
     return;
   }
 

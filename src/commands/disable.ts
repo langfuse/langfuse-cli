@@ -20,7 +20,7 @@ interface DisableOptions {
 }
 
 function printDisableHelp(): void {
-  console.log(`Usage: langfuse disable [options]
+  console.log(`Usage: langfuse integration claudecode disable [options]
 
 Disable Claude Code tracing for the current repository.
 
