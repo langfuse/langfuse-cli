@@ -108,17 +108,11 @@ bun run patch-openapi
 
 ## Claude Code Integration
 
-The CLI can set up automatic [Langfuse](https://langfuse.com) tracing for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) sessions. It installs Claude Code hooks that send conversation turns, tool calls, and git commit metadata to Langfuse, and writes per-session trace manifests to `.langfuse/traces/` so you can link commits back to the agent conversations that produced them.
+The CLI can set up automatic [Langfuse](https://langfuse.com) tracing for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) sessions. It installs Claude Code hooks that send conversation turns, tool calls, and git commit metadata to Langfuse.
 
 ```sh
 # Enable tracing in the current repo (interactive setup)
 langfuse integration claudecode enable
-
-# Check setup health
-langfuse integration claudecode status
-
-# List recent trace links
-langfuse integration claudecode traces --limit 10
 
 # Disable tracing
 langfuse integration claudecode disable

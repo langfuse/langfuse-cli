@@ -37,9 +37,6 @@ export const PREPARE_COMMIT_MSG_SCRIPT_PATH = join(
 export const PREPARE_COMMIT_MSG_SENTINEL = "langfuse-trace-trailer";
 export const PREPARE_COMMIT_MSG_BACKUP_SUFFIX = ".pre-langfuse";
 
-export const TRACE_SESSION_FILE_RELATIVE = ".langfuse/current-session.json";
-export const TRACE_MANIFEST_DIR_RELATIVE = ".langfuse/traces";
-
 export const LOCAL_ENV_KEYS = [
   "TRACE_TO_LANGFUSE",
   "LANGFUSE_PUBLIC_KEY",

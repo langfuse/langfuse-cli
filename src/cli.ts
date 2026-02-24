@@ -3,8 +3,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDisable } from "./commands/disable";
 import { runEnable } from "./commands/enable";
-import { runStatus } from "./commands/status";
-import { runTraces } from "./commands/traces";
 import { DEFAULT_HOST } from "./commands/shared/constants";
 import { parseEnvContent } from "./commands/shared/env";
 
@@ -116,14 +114,6 @@ export async function run(argv: string[]): Promise<void> {
         if (claudeCodeCommand === "disable") {
           return await runDisable(commandArgs);
         }
-
-        if (claudeCodeCommand === "status") {
-          return await runStatus(commandArgs);
-        }
-
-        if (claudeCodeCommand === "traces") {
-          return await runTraces(commandArgs);
-        }
       } catch (error) {
         console.error(`Error: ${(error as Error).message}`);
         process.exitCode = 1;
@@ -167,7 +157,6 @@ Options:
 
 Examples:
   langfuse integration claudecode enable             Enable Claude Code tracing
-  langfuse integration claudecode traces --limit 10  List recent trace links
   langfuse api __schema                              List all available resources
   langfuse api <resource> --help                     Show actions for a resource
   langfuse api traces list --limit 10                List traces
@@ -181,11 +170,11 @@ function printIntegrationHelp(): void {
   console.log(`Usage: langfuse integration <integration>
 
 Available integrations:
-  claudecode              Claude Code tracing + git-linked manifests
+  claudecode              Claude Code tracing
 
 Examples:
   langfuse integration claudecode enable             Enable Claude Code tracing
-  langfuse integration claudecode status             Show integration health
+  langfuse integration claudecode disable            Disable Claude Code tracing
   langfuse integration claudecode --help             Show Claude Code commands`);
 }
 
@@ -193,16 +182,12 @@ function printClaudeCodeHelp(): void {
   console.log(`Usage: langfuse integration claudecode <command>
 
 Commands:
-  enable                  Enable Claude Code tracing + git-linked manifests
+  enable                  Enable Claude Code tracing
   disable                 Disable Claude Code tracing for this repo
-  status                  Show Claude Code tracing setup status
-  traces                  List trace links from .langfuse/traces manifests
 
 Examples:
   langfuse integration claudecode enable             Enable tracing in this repo
-  langfuse integration claudecode disable            Disable tracing
-  langfuse integration claudecode status             Show integration health
-  langfuse integration claudecode traces --limit 10  List recent trace links`);
+  langfuse integration claudecode disable            Disable tracing`);
 }
 
 function printApiHelp(resources: string[]): void {
