@@ -32,6 +32,7 @@ try:
         get_langfuse_credentials,
         info,
         read_hook_payload,
+        read_last_trace,
         resolve_repo_root_with_fallback,
         save_last_trace,
         tracing_enabled,
