@@ -6,15 +6,24 @@ import {
   CLAUDE_SETTINGS_PATH,
   GIT_COMMIT_HOOK_COMMAND,
   GIT_COMMIT_HOOK_SCRIPT_PATH,
+  PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
+  PREPARE_COMMIT_MSG_SCRIPT_PATH,
+  PREPARE_COMMIT_MSG_SENTINEL,
   STOP_HOOK_COMMAND,
   STOP_HOOK_SCRIPT_PATH,
 } from "./shared/constants";
 import { ensureHookCommand } from "./shared/claude-settings";
 import { asObject, readJsonFile, type JsonObject } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
-import { GIT_COMMIT_HOOK_SCRIPT, STOP_HOOK_SCRIPT } from "./shared/hook-scripts";
+import {
+  GIT_COMMIT_HOOK_SCRIPT,
+  PREPARE_COMMIT_MSG_HOOK_SCRIPT,
+  PREPARE_COMMIT_MSG_WRAPPER_SCRIPT,
+  STOP_HOOK_SCRIPT,
+} from "./shared/hook-scripts";
 import {
   addGitignoreEntries,
+  installGitHook,
   installScriptFile,
   writeJsonIfChanged,
 } from "./shared/operations";
@@ -206,6 +215,35 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   );
   changes.push(...commitInstallResult.messages);
   warnings.push(...commitInstallResult.warnings);
+
+  const prepareCommitMsgInstallResult = await installScriptFile(
+    PREPARE_COMMIT_MSG_SCRIPT_PATH,
+    PREPARE_COMMIT_MSG_HOOK_SCRIPT,
+    {
+      dryRun: options.dryRun,
+      force: options.force,
+    },
+  );
+  changes.push(...prepareCommitMsgInstallResult.messages);
+  warnings.push(...prepareCommitMsgInstallResult.warnings);
+
+  if (repo.isGitRepo) {
+    const gitHookResult = await installGitHook(
+      repoRoot,
+      "prepare-commit-msg",
+      PREPARE_COMMIT_MSG_WRAPPER_SCRIPT,
+      PREPARE_COMMIT_MSG_SENTINEL,
+      PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
+      {
+        dryRun: options.dryRun,
+        force: options.force,
+      },
+    );
+    changes.push(...gitHookResult.messages);
+    warnings.push(...gitHookResult.warnings);
+  } else {
+    warnings.push("Not a git repository, skipping prepare-commit-msg git hook installation");
+  }
 
   if (!options.noGitignore) {
     const gitignoreResult = await addGitignoreEntries(

@@ -20,6 +20,14 @@ export const STOP_HOOK_COMMAND = "python3 ~/.claude/hooks/langfuse_hook.py";
 export const GIT_COMMIT_HOOK_COMMAND =
   "python3 ~/.claude/hooks/langfuse_git_commit_hook.py";
 
+export const PREPARE_COMMIT_MSG_SCRIPT_NAME = "langfuse_prepare_commit_msg.py";
+export const PREPARE_COMMIT_MSG_SCRIPT_PATH = join(
+  CLAUDE_HOOKS_DIR,
+  PREPARE_COMMIT_MSG_SCRIPT_NAME,
+);
+export const PREPARE_COMMIT_MSG_SENTINEL = "langfuse-trace-trailer";
+export const PREPARE_COMMIT_MSG_BACKUP_SUFFIX = ".pre-langfuse";
+
 export const TRACE_SESSION_FILE_RELATIVE = ".langfuse/current-session.json";
 export const TRACE_MANIFEST_DIR_RELATIVE = ".langfuse/traces";
 

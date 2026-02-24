@@ -4,12 +4,14 @@ import {
   CLAUDE_SETTINGS_PATH,
   GIT_COMMIT_HOOK_COMMAND,
   GIT_COMMIT_HOOK_SCRIPT_PATH,
+  PREPARE_COMMIT_MSG_SCRIPT_PATH,
+  PREPARE_COMMIT_MSG_SENTINEL,
   STOP_HOOK_COMMAND,
   STOP_HOOK_SCRIPT_PATH,
   TRACE_MANIFEST_DIR_RELATIVE,
 } from "./shared/constants";
 import { hasHookCommand } from "./shared/claude-settings";
-import { asObject, fileExists, isExecutable, readJsonFile } from "./shared/fs";
+import { asObject, fileExists, isExecutable, readJsonFile, readTextFile } from "./shared/fs";
 import { canImportLangfusePython, resolveRepoRoot } from "./shared/git";
 import { readTraceManifests } from "./shared/manifests";
 
@@ -97,6 +99,19 @@ export async function runStatus(args: string[]): Promise<void> {
     ? await isExecutable(GIT_COMMIT_HOOK_SCRIPT_PATH)
     : false;
 
+  const prepareCommitMsgScriptExists = await fileExists(PREPARE_COMMIT_MSG_SCRIPT_PATH);
+  const prepareCommitMsgScriptExecutable = prepareCommitMsgScriptExists
+    ? await isExecutable(PREPARE_COMMIT_MSG_SCRIPT_PATH)
+    : false;
+
+  const gitHookPath = join(repoRoot, ".git", "hooks", "prepare-commit-msg");
+  const gitHookExists = await fileExists(gitHookPath);
+  let gitHookHasSentinel = false;
+  if (gitHookExists) {
+    const gitHookContent = await readTextFile(gitHookPath);
+    gitHookHasSentinel = gitHookContent?.includes(PREPARE_COMMIT_MSG_SENTINEL) ?? false;
+  }
+
   const python = await canImportLangfusePython();
 
   const tracesDir = join(repoRoot, TRACE_MANIFEST_DIR_RELATIVE);
@@ -136,6 +151,16 @@ export async function runStatus(args: string[]): Promise<void> {
         exists: commitScriptExists,
         executable: commitScriptExecutable,
       },
+      prepareCommitMsg: {
+        path: PREPARE_COMMIT_MSG_SCRIPT_PATH,
+        exists: prepareCommitMsgScriptExists,
+        executable: prepareCommitMsgScriptExecutable,
+      },
+    },
+    gitHook: {
+      path: gitHookPath,
+      exists: gitHookExists,
+      hasLangfuseSentinel: gitHookHasSentinel,
     },
     python: {
       langfuseImportable: python.ok,
@@ -183,6 +208,12 @@ export async function runStatus(args: string[]): Promise<void> {
   console.log(`- ${STOP_HOOK_SCRIPT_PATH} executable: ${yesNo(result.scripts.stop.executable)}`);
   console.log(`- ${GIT_COMMIT_HOOK_SCRIPT_PATH} exists: ${yesNo(result.scripts.postToolUse.exists)}`);
   console.log(`- ${GIT_COMMIT_HOOK_SCRIPT_PATH} executable: ${yesNo(result.scripts.postToolUse.executable)}`);
+  console.log(`- ${PREPARE_COMMIT_MSG_SCRIPT_PATH} exists: ${yesNo(result.scripts.prepareCommitMsg.exists)}`);
+  console.log(`- ${PREPARE_COMMIT_MSG_SCRIPT_PATH} executable: ${yesNo(result.scripts.prepareCommitMsg.executable)}`);
+
+  console.log("Git hook (prepare-commit-msg):");
+  console.log(`- ${result.gitHook.path} exists: ${yesNo(result.gitHook.exists)}`);
+  console.log(`- has langfuse sentinel: ${yesNo(result.gitHook.hasLangfuseSentinel)}`);
 
   console.log("Python:");
   console.log(`- python3 import langfuse: ${yesNo(result.python.langfuseImportable)}`);

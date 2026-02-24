@@ -93,6 +93,10 @@ export async function backupFile(path: string): Promise<string> {
   return backupPath;
 }
 
+export async function copyFileTo(src: string, dest: string): Promise<void> {
+  await copyFile(src, dest);
+}
+
 export async function removeFile(path: string): Promise<boolean> {
   try {
     await rm(path);

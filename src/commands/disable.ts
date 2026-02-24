@@ -5,13 +5,16 @@ import {
   GIT_COMMIT_HOOK_COMMAND,
   GIT_COMMIT_HOOK_SCRIPT_PATH,
   LOCAL_ENV_KEYS,
+  PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
+  PREPARE_COMMIT_MSG_SCRIPT_PATH,
+  PREPARE_COMMIT_MSG_SENTINEL,
   STOP_HOOK_COMMAND,
   STOP_HOOK_SCRIPT_PATH,
 } from "./shared/constants";
 import { removeHookCommand } from "./shared/claude-settings";
 import { asObject, readJsonFile, type JsonObject } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
-import { removeFileIfExists, writeJsonIfChanged } from "./shared/operations";
+import { removeFileIfExists, removeGitHook, writeJsonIfChanged } from "./shared/operations";
 
 interface DisableOptions {
   dryRun: boolean;
@@ -148,6 +151,16 @@ export async function runDisable(args: string[]): Promise<void> {
     changes.push(`No changes: ${CLAUDE_SETTINGS_PATH}`);
   }
 
+  // Always remove the per-repo git hook
+  const gitHookResult = await removeGitHook(
+    repoRoot,
+    "prepare-commit-msg",
+    PREPARE_COMMIT_MSG_SENTINEL,
+    PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
+    { dryRun: options.dryRun },
+  );
+  changes.push(...gitHookResult.messages);
+
   if (options.removeScripts) {
     const removedStopScript = await removeFileIfExists(STOP_HOOK_SCRIPT_PATH, {
       dryRun: options.dryRun,
@@ -158,6 +171,11 @@ export async function runDisable(args: string[]): Promise<void> {
       dryRun: options.dryRun,
     });
     changes.push(removedCommitScript.message);
+
+    const removedPrepareCommitScript = await removeFileIfExists(PREPARE_COMMIT_MSG_SCRIPT_PATH, {
+      dryRun: options.dryRun,
+    });
+    changes.push(removedPrepareCommitScript.message);
   }
 
   console.log(`${options.dryRun ? "Planned" : "Applied"} disable for ${repoRoot}`);

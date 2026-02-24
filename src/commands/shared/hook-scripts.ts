@@ -25,6 +25,7 @@ STATE_DIR = Path.home() / ".claude" / "state"
 LOG_FILE = STATE_DIR / "langfuse_hook.log"
 STATE_FILE = STATE_DIR / "langfuse_state.json"
 LOCK_FILE = STATE_DIR / "langfuse_state.lock"
+LAST_TRACE_FILE = STATE_DIR / "langfuse_last_trace.json"
 
 DEBUG = os.environ.get("CC_LANGFUSE_DEBUG", "").lower() == "true"
 MAX_CHARS = int(os.environ.get("CC_LANGFUSE_MAX_CHARS", "20000"))
@@ -106,6 +107,23 @@ def save_state(state: Dict[str, Any]) -> None:
         os.replace(tmp, STATE_FILE)
     except Exception as e:
         debug(f"save_state failed: {e}")
+
+def save_last_trace(session_id: str, trace_id: str, host: str) -> None:
+    """Persist the latest trace info so prepare-commit-msg can pick it up."""
+    try:
+        data = {
+            "session_id": session_id,
+            "trace_id": trace_id,
+            "trace_url": f"{host}/trace/{trace_id}",
+            "host": host,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = LAST_TRACE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(tmp, LAST_TRACE_FILE)
+    except Exception as e:
+        debug(f"save_last_trace failed: {e}")
 
 def state_key(session_id: str, transcript_path: str) -> str:
     # stable key even if session_id collides
@@ -385,7 +403,7 @@ def _tool_calls_from_assistants(assistant_msgs: List[Dict[str, Any]]) -> List[Di
             })
     return calls
 
-def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, transcript_path: Path) -> None:
+def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, transcript_path: Path) -> Optional[str]:
     user_text_raw = extract_text(get_content(turn.user_msg))
     user_text, user_text_meta = truncate_text(user_text_raw)
 
@@ -461,6 +479,7 @@ def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, tr
                     tool_obs.update(output=tc.get("output"))
 
             trace_span.update(output={"role": "assistant", "content": assistant_text})
+            return getattr(trace_span, "trace_id", None)
 
 # ----------------- Main -----------------
 def main() -> int:
@@ -514,11 +533,14 @@ def main() -> int:
 
             # emit turns
             emitted = 0
+            last_trace_id = None
             for t in turns:
                 emitted += 1
                 turn_num = ss.turn_count + emitted
                 try:
-                    emit_turn(langfuse, session_id, turn_num, t, transcript_path)
+                    tid = emit_turn(langfuse, session_id, turn_num, t, transcript_path)
+                    if tid:
+                        last_trace_id = tid
                 except Exception as e:
                     debug(f"emit_turn failed: {e}")
                     # continue emitting other turns
@@ -531,6 +553,9 @@ def main() -> int:
             langfuse.flush()
         except Exception:
             pass
+
+        if last_trace_id:
+            save_last_trace(session_id, last_trace_id, host)
 
         dur = time.time() - start
         info(f"Processed {emitted} turns in {dur:.2f}s (session={session_id})")
@@ -814,17 +839,25 @@ def main() -> int:
         ).rstrip("/")
 
         repo_root = _find_repo_root(payload)
-        session_path = repo_root / ".langfuse" / "current-session.json"
 
-        if not session_path.exists():
-            return 0
+        # Primary: global last-trace state file (written by Stop hook)
+        last_trace_path = Path.home() / ".claude" / "state" / "langfuse_last_trace.json"
+        # Legacy fallback: per-repo session file
+        legacy_session_path = repo_root / ".langfuse" / "current-session.json"
 
-        try:
-            session_data = json.loads(session_path.read_text(encoding="utf-8"))
-        except Exception:
-            return 0
+        session_data = None
+        for candidate in (last_trace_path, legacy_session_path):
+            if not candidate.exists():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("trace_id"):
+                    session_data = data
+                    break
+            except Exception:
+                continue
 
-        if not isinstance(session_data, dict):
+        if not session_data:
             return 0
 
         session_id = session_data.get("session_id")
@@ -929,4 +962,123 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+`;
+
+export const PREPARE_COMMIT_MSG_HOOK_SCRIPT = String.raw`#!/usr/bin/env python3
+"""
+prepare-commit-msg hook: appends a Langfuse-Trace trailer to commit messages.
+Installed by langfuse-cli.
+"""
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+LAST_TRACE_FILE = Path.home() / ".claude" / "state" / "langfuse_last_trace.json"
+MAX_AGE_HOURS = 4
+TRAILER_KEY = "Langfuse-Trace"
+
+
+def main() -> int:
+    try:
+        # Gate: only run when tracing is enabled (Claude Code sessions set this)
+        if os.environ.get("TRACE_TO_LANGFUSE", "").lower() != "true":
+            return 0
+
+        # Arg parsing: prepare-commit-msg <msg_file> [<commit_source>] [<sha>]
+        if len(sys.argv) < 2:
+            return 0
+
+        msg_file = sys.argv[1]
+        commit_source = sys.argv[2] if len(sys.argv) > 2 else ""
+
+        # Skip merge/squash commits
+        if commit_source in ("merge", "squash"):
+            return 0
+
+        # Read last trace data
+        if not LAST_TRACE_FILE.exists():
+            return 0
+
+        try:
+            data = json.loads(LAST_TRACE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return 0
+
+        if not isinstance(data, dict):
+            return 0
+
+        trace_url = data.get("trace_url")
+        if not isinstance(trace_url, str) or not trace_url:
+            return 0
+
+        # Staleness check
+        updated_at = data.get("updated_at")
+        if isinstance(updated_at, str):
+            try:
+                ts = datetime.fromisoformat(updated_at)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+                if age_hours > MAX_AGE_HOURS:
+                    return 0
+            except Exception:
+                pass  # If we can't parse the timestamp, skip staleness check
+
+        # Read current commit message
+        try:
+            content = Path(msg_file).read_text(encoding="utf-8")
+        except Exception:
+            return 0
+
+        # Check if trailer already present (amend safety)
+        if f"{TRAILER_KEY}:" in content:
+            return 0
+
+        # Build trailer line
+        trailer = f"{TRAILER_KEY}: {trace_url}"
+
+        # Append trailer with proper formatting
+        lines = content.rstrip("\n").split("\n")
+
+        # Detect existing trailers at the end of the message
+        has_existing_trailers = False
+        for line in reversed(lines):
+            stripped = line.strip()
+            if not stripped:
+                break
+            if ": " in stripped and not stripped.startswith("#"):
+                has_existing_trailers = True
+                break
+            else:
+                break
+
+        if has_existing_trailers:
+            # Add trailer right after existing trailers (no extra blank line needed)
+            result = "\n".join(lines) + "\n" + trailer + "\n"
+        else:
+            # Add blank line separator before trailer block
+            result = "\n".join(lines) + "\n\n" + trailer + "\n"
+
+        Path(msg_file).write_text(result, encoding="utf-8")
+        return 0
+
+    except Exception:
+        # Never block commits
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+`;
+
+export const PREPARE_COMMIT_MSG_WRAPPER_SCRIPT = `#!/bin/sh
+# langfuse-trace-trailer — installed by langfuse-cli
+python3 ~/.claude/hooks/langfuse_prepare_commit_msg.py "$@" 2>/dev/null || true
+# Chain pre-existing hook if backed up
+if [ -x "$(dirname "$0")/prepare-commit-msg.pre-langfuse" ]; then
+    "$(dirname "$0")/prepare-commit-msg.pre-langfuse" "$@"
+fi
 `;
