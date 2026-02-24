@@ -1,3 +1,4 @@
+# Test: Langfuse tracing integration verification
 node_modules
 dist
 *.tgz
@@ -6,3 +7,5 @@ bun.lockb
 .env
 .env.local
 .DS_Store
+
+.langfuse/current-session.json
