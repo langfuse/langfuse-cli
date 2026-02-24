@@ -3,15 +3,20 @@ import { parseArgs } from "node:util";
 import {
   CLAUDE_SETTINGS_PATH,
   GIT_COMMIT_HOOK_COMMAND,
+  GIT_COMMIT_HOOK_SCRIPT_NAME,
   GIT_COMMIT_HOOK_SCRIPT_PATH,
   LOCAL_ENV_KEYS,
   PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
   PREPARE_COMMIT_MSG_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SENTINEL,
+  SESSION_INIT_HOOK_COMMAND,
+  SESSION_INIT_HOOK_SCRIPT_NAME,
+  SESSION_INIT_HOOK_SCRIPT_PATH,
   STOP_HOOK_COMMAND,
+  STOP_HOOK_SCRIPT_NAME,
   STOP_HOOK_SCRIPT_PATH,
 } from "./shared/constants";
-import { removeHookCommand } from "./shared/claude-settings";
+import { removeHookCommand, removeHookCommandsByPattern } from "./shared/claude-settings";
 import { asObject, readJsonFile, type JsonObject } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
 import { removeFileIfExists, removeGitHook, writeJsonIfChanged } from "./shared/operations";
@@ -128,21 +133,26 @@ export async function runDisable(args: string[]): Promise<void> {
   if (globalSettings.hooks !== undefined && !hooksObject) {
     throw new Error(`Expected \"hooks\" to be a JSON object in ${CLAUDE_SETTINGS_PATH}`);
   }
-  const removedStop = removeHookCommand(globalSettings, {
-    event: "Stop",
-    command: STOP_HOOK_COMMAND,
-  });
-  const removedPostToolUse = removeHookCommand(globalSettings, {
-    event: "PostToolUse",
-    command: GIT_COMMIT_HOOK_COMMAND,
-  });
+  // Remove exact command first, then also remove any variant paths (e.g.
+  // .venv/bin/python3 vs plain python3).  Both must always run — using `|`
+  // (non-short-circuiting) so the pattern pass cleans up variants even when
+  // the exact match already succeeded.
+  const removedStop =
+    removeHookCommand(globalSettings, { event: "Stop", command: STOP_HOOK_COMMAND }) |
+    removeHookCommandsByPattern(globalSettings, { event: "Stop", pattern: STOP_HOOK_SCRIPT_NAME });
+  const removedPostToolUse =
+    removeHookCommand(globalSettings, { event: "PostToolUse", command: GIT_COMMIT_HOOK_COMMAND }) |
+    removeHookCommandsByPattern(globalSettings, { event: "PostToolUse", pattern: GIT_COMMIT_HOOK_SCRIPT_NAME });
+  const removedPreToolUse =
+    removeHookCommand(globalSettings, { event: "PreToolUse", command: SESSION_INIT_HOOK_COMMAND }) |
+    removeHookCommandsByPattern(globalSettings, { event: "PreToolUse", pattern: SESSION_INIT_HOOK_SCRIPT_NAME });
 
   const hooks = asObject(globalSettings.hooks);
   if (hooks && Object.keys(hooks).length === 0) {
     delete globalSettings.hooks;
   }
 
-  if (removedStop || removedPostToolUse) {
+  if (removedStop || removedPostToolUse || removedPreToolUse) {
     const result = await writeJsonIfChanged(CLAUDE_SETTINGS_PATH, globalSettings, {
       dryRun: options.dryRun,
     });
@@ -176,6 +186,11 @@ export async function runDisable(args: string[]): Promise<void> {
       dryRun: options.dryRun,
     });
     changes.push(removedPrepareCommitScript.message);
+
+    const removedSessionInitScript = await removeFileIfExists(SESSION_INIT_HOOK_SCRIPT_PATH, {
+      dryRun: options.dryRun,
+    });
+    changes.push(removedSessionInitScript.message);
   }
 
   console.log(`${options.dryRun ? "Planned" : "Applied"} disable for ${repoRoot}`);

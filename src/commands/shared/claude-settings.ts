@@ -230,3 +230,80 @@ export function removeHookCommand(
   setGroups(settings, hooks, event, updatedGroups);
   return true;
 }
+
+/**
+ * Remove hook commands whose command string contains the given pattern.
+ * Useful when the python path may vary (e.g. `python3` vs `.venv/bin/python3`)
+ * but the script name is stable.
+ */
+export function removeHookCommandsByPattern(
+  settings: JsonObject,
+  params: { event: HookEvent; pattern: string },
+): boolean {
+  const { event, pattern } = params;
+  const hooks = asObject(settings.hooks);
+  if (!hooks) {
+    return false;
+  }
+
+  const groups = hooks[event];
+  if (!Array.isArray(groups)) {
+    return false;
+  }
+
+  let changed = false;
+  const updatedGroups: unknown[] = [];
+
+  for (const item of groups) {
+    const obj = asObject(item);
+    if (!obj) {
+      updatedGroups.push(item);
+      continue;
+    }
+
+    const topLevelCommand = readGroupCommand(obj);
+    if (topLevelCommand && topLevelCommand.includes(pattern)) {
+      changed = true;
+      continue;
+    }
+
+    if (!Array.isArray(obj.hooks)) {
+      updatedGroups.push(item);
+      continue;
+    }
+
+    let removedFromGroup = false;
+    const filteredHooks = (obj.hooks as unknown[]).filter((hook) => {
+      const hookObj = asObject(hook);
+      if (!hookObj) {
+        return true;
+      }
+
+      if (typeof hookObj.command === "string" && hookObj.command.includes(pattern)) {
+        changed = true;
+        removedFromGroup = true;
+        return false;
+      }
+
+      return true;
+    });
+
+    if (filteredHooks.length === 0) {
+      if (removedFromGroup) {
+        continue;
+      }
+      updatedGroups.push(obj);
+      continue;
+    }
+
+    obj.hooks = filteredHooks;
+    updatedGroups.push(obj);
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  setGroups(settings, hooks, event, updatedGroups);
+  return true;
+}
