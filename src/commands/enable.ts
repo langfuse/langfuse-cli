@@ -16,7 +16,7 @@ import {
   STOP_HOOK_SCRIPT_PATH,
 } from "./shared/constants";
 import { ensureHookCommand } from "./shared/claude-settings";
-import { asObject, readJsonFile, type JsonObject } from "./shared/fs";
+import { asObject, readJsonFile, readTextFile, type JsonObject } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
 import {
   GIT_COMMIT_HOOK_SCRIPT,
@@ -66,15 +66,109 @@ async function promptForValue(label: string): Promise<string> {
   }
 }
 
+async function promptForConfirmation(label: string): Promise<boolean> {
+  const rl = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = (await rl.question(`${label} [Y/n]: `)).trim().toLowerCase();
+    if (!answer) {
+      return true;
+    }
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+function parseEnvContent(content: string): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) {
+      continue;
+    }
+
+    let key = trimmed.slice(0, eqIdx).trim();
+    if (key.startsWith("export ")) {
+      key = key.slice("export ".length).trim();
+    }
+    if (!key) {
+      continue;
+    }
+
+    let value = trimmed.slice(eqIdx + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    values[key] = value;
+  }
+  return values;
+}
+
+async function readLangfuseEnvFromDotEnv(repoRoot: string): Promise<{
+  path: string;
+  publicKey: string;
+  secretKey: string;
+  host: string | null;
+} | null> {
+  const dotenvPath = join(repoRoot, ".env");
+  const content = await readTextFile(dotenvPath);
+  if (content == null) {
+    return null;
+  }
+
+  const values = parseEnvContent(content);
+  const publicKey = (values.LANGFUSE_PUBLIC_KEY ?? "").trim();
+  const secretKey = (values.LANGFUSE_SECRET_KEY ?? "").trim();
+  const hostRaw = (values.LANGFUSE_BASE_URL ?? values.LANGFUSE_HOST ?? "").trim();
+
+  if (!publicKey || !secretKey) {
+    return null;
+  }
+
+  return {
+    path: dotenvPath,
+    publicKey,
+    secretKey,
+    host: hostRaw ? hostRaw.replace(/\/+$/, "") : null,
+  };
+}
+
 async function resolveCredentials(
   auth: GlobalAuthOptions,
   options: EnableOptions,
+  repoRoot: string,
 ): Promise<{ publicKey: string; secretKey: string; host: string }> {
   let publicKey = auth.publicKey?.trim() ?? "";
   let secretKey = auth.secretKey?.trim() ?? "";
   let host = auth.host.trim();
 
   const nonInteractive = options.nonInteractive || options.yes;
+  const dotenvCredentials = await readLangfuseEnvFromDotEnv(repoRoot);
+  if (dotenvCredentials) {
+    const useDotEnv = nonInteractive
+      ? true
+      : await promptForConfirmation(
+          `Detected Langfuse credentials in ${dotenvCredentials.path}. Use them?`,
+        );
+
+    if (useDotEnv) {
+      publicKey = dotenvCredentials.publicKey;
+      secretKey = dotenvCredentials.secretKey;
+      if (dotenvCredentials.host) {
+        host = dotenvCredentials.host;
+      }
+    }
+  }
+
   const hostExplicit =
     host !== DEFAULT_HOST ||
     !!process.env.LANGFUSE_BASE_URL ||
@@ -147,10 +241,9 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     return;
   }
 
-  const credentials = await resolveCredentials(auth, options);
-
   const repo = await resolveRepoRoot(process.cwd());
   const repoRoot = repo.repoRoot;
+  const credentials = await resolveCredentials(auth, options, repoRoot);
 
   const changes: string[] = [];
   const warnings: string[] = [];
