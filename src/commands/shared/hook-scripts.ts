@@ -9,6 +9,8 @@ import os
 import sys
 import time
 import hashlib
+import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -170,6 +172,88 @@ def extract_session_and_transcript(payload: Dict[str, Any]) -> Tuple[Optional[st
         transcript_path = None
 
     return session_id, transcript_path
+
+# ----------------- Git metadata helpers -----------------
+def _run_git(cwd: Path, args: List[str]) -> Optional[str]:
+    try:
+        output = subprocess.check_output(
+            ["git", *args],
+            cwd=str(cwd),
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        value = output.strip()
+        return value or None
+    except Exception:
+        return None
+
+def _resolve_repo_root(transcript_path: Path) -> Optional[Path]:
+    search_cwd = transcript_path.parent if transcript_path.is_file() else transcript_path
+    root = _run_git(search_cwd, ["rev-parse", "--show-toplevel"])
+    if not root:
+        return None
+    try:
+        return Path(root).expanduser().resolve()
+    except Exception:
+        return None
+
+def _first_remote(repo_root: Path) -> Optional[str]:
+    remotes = _run_git(repo_root, ["remote"])
+    if not remotes:
+        return None
+
+    for line in remotes.splitlines():
+        remote = line.strip()
+        if remote:
+            return remote
+
+    return None
+
+def _build_github_commit_url(remote_url: Optional[str], commit_sha: str) -> Optional[str]:
+    if not remote_url:
+        return None
+
+    remote = remote_url.strip()
+    if not remote:
+        return None
+
+    patterns = [
+        r"^https?://github\.com/(.+?)(?:\.git)?/?$",
+        r"^git@github\.com:(.+?)(?:\.git)?$",
+        r"^ssh://git@github\.com/(.+?)(?:\.git)?/?$",
+    ]
+
+    for pattern in patterns:
+        match = re.match(pattern, remote, re.IGNORECASE)
+        if match and match.group(1):
+            return f"https://github.com/{match.group(1)}/commit/{commit_sha}"
+
+    return None
+
+def get_git_metadata(transcript_path: Path) -> Dict[str, Any]:
+    repo_root = _resolve_repo_root(transcript_path)
+    if not repo_root:
+        return {}
+
+    commit_sha = _run_git(repo_root, ["rev-parse", "HEAD"])
+    if not commit_sha:
+        return {}
+
+    remote_url = _run_git(repo_root, ["remote", "get-url", "origin"])
+    if not remote_url:
+        remote_name = _first_remote(repo_root)
+        if remote_name:
+            remote_url = _run_git(repo_root, ["remote", "get-url", remote_name])
+
+    commit_url = _build_github_commit_url(remote_url, commit_sha)
+
+    metadata: Dict[str, Any] = {
+        "git_commit_sha": commit_sha,
+        "git_remote_url": remote_url,
+    }
+    if commit_url:
+        metadata["git_commit_url"] = commit_url
+    return metadata
 
 # ----------------- Transcript parsing helpers -----------------
 def get_content(msg: Dict[str, Any]) -> Any:
@@ -403,7 +487,31 @@ def _tool_calls_from_assistants(assistant_msgs: List[Dict[str, Any]]) -> List[Di
             })
     return calls
 
-def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, transcript_path: Path, pre_trace_id: Optional[str] = None) -> Optional[str]:
+def _merge_metadata(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(base)
+    for key, value in extra.items():
+        if value is not None and value != "":
+            merged[key] = value
+    return merged
+
+def _build_propagated_metadata(git_metadata: Dict[str, Any]) -> Dict[str, str]:
+    # Propagated metadata keys should be alphanumeric and values short strings.
+    out: Dict[str, str] = {}
+    commit_url = git_metadata.get("git_commit_url")
+    if isinstance(commit_url, str) and commit_url and len(commit_url) <= 200:
+        out["githubCommitUrl"] = commit_url
+    return out
+
+def emit_turn(
+    langfuse: Langfuse,
+    session_id: str,
+    turn_num: int,
+    turn: Turn,
+    transcript_path: Path,
+    pre_trace_id: Optional[str] = None,
+    git_metadata: Optional[Dict[str, Any]] = None,
+    propagated_metadata: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
     user_text_raw = extract_text(get_content(turn.user_msg))
     user_text, user_text_meta = truncate_text(user_text_raw)
 
@@ -433,12 +541,18 @@ def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, tr
         "transcript_path": str(transcript_path),
         "user_text": user_text_meta,
     }
+    if git_metadata:
+        span_metadata = _merge_metadata(span_metadata, git_metadata)
 
-    with propagate_attributes(
-        session_id=session_id,
-        trace_name=f"Claude Code - Turn {turn_num}",
-        tags=["claude-code"],
-    ):
+    propagate_kwargs: Dict[str, Any] = {
+        "session_id": session_id,
+        "trace_name": f"Claude Code - Turn {turn_num}",
+        "tags": ["claude-code"],
+    }
+    if propagated_metadata:
+        propagate_kwargs["metadata"] = propagated_metadata
+
+    with propagate_attributes(**propagate_kwargs):
         # When a pre-generated trace_id is available (from the session-init hook),
         # use start_as_current_observation with trace_context so the turn is
         # recorded under that deterministic trace rather than an auto-generated one.
@@ -470,10 +584,10 @@ def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, tr
                 model=model,
                 input={"role": "user", "content": user_text},
                 output={"role": "assistant", "content": assistant_text},
-                metadata={
+                metadata=_merge_metadata({
                     "assistant_text": assistant_text_meta,
                     "tool_count": len(tool_calls),
-                },
+                }, git_metadata or {}),
             ):
                 pass
 
@@ -490,12 +604,12 @@ def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, tr
                     name=f"Tool: {tc['name']}",
                     as_type="tool",
                     input=in_obj,
-                    metadata={
+                    metadata=_merge_metadata({
                         "tool_name": tc["name"],
                         "tool_id": tc["id"],
                         "input_meta": in_meta,
                         "output_meta": tc.get("output_meta"),
-                    },
+                    }, git_metadata or {}),
                 ) as tool_obs:
                     tool_obs.update(output=tc.get("output"))
 
@@ -528,6 +642,11 @@ def main() -> int:
     if not transcript_path.exists():
         debug(f"Transcript path does not exist: {transcript_path}")
         return 0
+
+    git_metadata = get_git_metadata(transcript_path)
+    propagated_metadata = _build_propagated_metadata(git_metadata)
+    if git_metadata.get("git_commit_url"):
+        debug(f"Resolved git commit URL: {git_metadata.get('git_commit_url')}")
 
     try:
         langfuse = Langfuse(public_key=public_key, secret_key=secret_key, host=host)
@@ -570,7 +689,16 @@ def main() -> int:
                 emitted += 1
                 turn_num = ss.turn_count + emitted
                 try:
-                    tid = emit_turn(langfuse, session_id, turn_num, t, transcript_path, pre_trace_id=pre_trace_id)
+                    tid = emit_turn(
+                        langfuse,
+                        session_id,
+                        turn_num,
+                        t,
+                        transcript_path,
+                        pre_trace_id=pre_trace_id,
+                        git_metadata=git_metadata,
+                        propagated_metadata=propagated_metadata,
+                    )
                     if tid:
                         last_trace_id = tid
                 except Exception as e:
