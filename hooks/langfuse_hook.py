@@ -32,7 +32,7 @@ try:
         get_langfuse_credentials,
         info,
         read_hook_payload,
-        resolve_repo_root,
+        resolve_repo_root_with_fallback,
         save_last_trace,
         tracing_enabled,
         write_trace_manifest,
@@ -353,7 +353,10 @@ def _build_propagated_metadata(git_metadata: Dict[str, Any]) -> Dict[str, str]:
     out: Dict[str, str] = {}
     commit_url = git_metadata.get("git_commit_url")
     if isinstance(commit_url, str) and commit_url and len(commit_url) <= 200:
-        out["githubCommitUrl"] = commit_url
+        out["github_commit_url"] = commit_url
+    commit_sha = git_metadata.get("git_commit_sha")
+    if isinstance(commit_sha, str) and commit_sha:
+        out["commit_sha"] = commit_sha
     return out
 
 
@@ -491,7 +494,8 @@ def main() -> int:
         debug(f"Transcript path does not exist: {transcript_path}")
         return 0
 
-    git_metadata = get_git_metadata(transcript_path)
+    cwd = Path(os.getcwd())
+    git_metadata = get_git_metadata(transcript_path, cwd)
     propagated_metadata = _build_propagated_metadata(git_metadata)
 
     try:
@@ -552,16 +556,33 @@ def main() -> int:
             write_session_state(state, key, ss)
             save_state(state)
 
+        effective_trace_id = last_trace_id or pre_trace_id
+
+        # Explicitly stamp git metadata onto the trace so it appears
+        # in the Langfuse trace-level metadata (propagate_attributes
+        # only applies to NEW traces; the trace may already exist).
+        if effective_trace_id and git_metadata:
+            trace_meta: Dict[str, Any] = {"source": "claude-code"}
+            commit_url = git_metadata.get("git_commit_url")
+            if commit_url:
+                trace_meta["github_commit_url"] = commit_url
+            commit_sha = git_metadata.get("git_commit_sha")
+            if commit_sha:
+                trace_meta["commit_sha"] = commit_sha
+            try:
+                langfuse.trace(id=effective_trace_id, metadata=trace_meta)
+            except Exception as e:
+                debug(f"trace metadata update failed: {e}")
+
         try:
             langfuse.flush()
         except Exception:
             pass
 
-        effective_trace_id = last_trace_id or pre_trace_id
         if effective_trace_id:
             save_last_trace(session_id, effective_trace_id, creds["host"])
 
-        repo_root = resolve_repo_root(transcript_path)
+        repo_root = resolve_repo_root_with_fallback(transcript_path, cwd)
         if repo_root and effective_trace_id:
             write_trace_manifest(repo_root, session_id, effective_trace_id, creds["host"], git_metadata)
 

@@ -170,8 +170,22 @@ def get_remote_url(repo_root: Path) -> Optional[str]:
     return remote_url
 
 
-def get_git_metadata(search_path: Path) -> Dict[str, Any]:
-    repo_root = resolve_repo_root(search_path)
+def resolve_repo_root_with_fallback(*paths: Path) -> Optional[Path]:
+    """Try each path in order, returning the first that resolves to a git repo root."""
+    for p in paths:
+        root = resolve_repo_root(p)
+        if root:
+            return root
+    return None
+
+
+def get_git_metadata(*search_paths: Path) -> Dict[str, Any]:
+    """Build git metadata from the first search path that resolves to a repo.
+
+    Pass multiple candidates (e.g. transcript path, then cwd) so we find
+    the repo even when the transcript lives outside the working tree.
+    """
+    repo_root = resolve_repo_root_with_fallback(*search_paths)
     if not repo_root:
         return {}
     commit_sha = run_git(repo_root, ["rev-parse", "HEAD"])

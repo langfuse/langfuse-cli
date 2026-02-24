@@ -278,10 +278,6 @@ def main() -> int:
                 host=host,
             )
 
-            propagated_meta: dict[str, str] = {}
-            if isinstance(commit_url, str) and commit_url and len(commit_url) <= 200:
-                propagated_meta["githubCommitUrl"] = commit_url
-
             observation_kwargs: dict[str, Any] = {
                 "as_type": "span",
                 "name": "git-commit",
@@ -291,7 +287,6 @@ def main() -> int:
 
             with propagate_attributes(
                 session_id=session_id,
-                metadata=propagated_meta if propagated_meta else {},
                 tags=["claude-code"],
             ):
                 try:
@@ -304,6 +299,21 @@ def main() -> int:
                             pass
                     else:
                         raise
+
+            # Explicitly update the trace metadata with the commit URL
+            # so it's visible at the trace level in the Langfuse UI.
+            trace_meta: dict[str, Any] = {
+                "source": "claude-code",
+                "commit_sha": commit_sha,
+                "commit_message": commit_message,
+                "branch": branch,
+            }
+            if commit_url:
+                trace_meta["github_commit_url"] = commit_url
+            try:
+                langfuse.trace(id=trace_id, metadata=trace_meta)
+            except Exception:
+                pass
 
             langfuse.flush()
             langfuse.shutdown()
