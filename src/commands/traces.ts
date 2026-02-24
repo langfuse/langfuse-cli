@@ -105,12 +105,14 @@ export async function runTraces(args: string[]): Promise<void> {
 
   for (const item of selected) {
     const sessionId = item.manifest.langfuse.session_id;
-    const commitSha = item.manifest.git.commit_sha.slice(0, 8);
+    const commitSha = item.manifest.git.commit_sha
+      ? item.manifest.git.commit_sha.slice(0, 8)
+      : "(pending)";
     const branch = item.manifest.git.branch || "unknown";
     const message = trimMessage(item.manifest.git.commit_message || "");
     const traceUrl = item.manifest.langfuse.trace_url || "(missing trace URL)";
 
     console.log(`${sessionId}  ${commitSha}  ${branch}  ${message}`);
-    console.log(traceUrl);
+    console.log(`  ${traceUrl}`);
   }
 }

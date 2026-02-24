@@ -502,6 +502,75 @@ def _build_propagated_metadata(git_metadata: Dict[str, Any]) -> Dict[str, str]:
         out["githubCommitUrl"] = commit_url
     return out
 
+def _write_trace_manifest(
+    repo_root: Path,
+    session_id: str,
+    trace_id: str,
+    host: str,
+    git_metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Write/update a trace manifest in .langfuse/traces/ so the CLI can list them."""
+    try:
+        import tempfile as _tmpmod
+
+        safe_sid = re.sub(r"[^A-Za-z0-9._-]", "_", session_id)
+        manifest_dir = repo_root / ".langfuse" / "traces"
+        manifest_path = manifest_dir / f"{safe_sid}.json"
+
+        existing: Dict[str, Any] = {}
+        if manifest_path.exists():
+            try:
+                existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        trace_url = f"{host}/trace/{trace_id}"
+        commit_sha = (git_metadata or {}).get("git_commit_sha", "")
+        remote_url = (git_metadata or {}).get("git_remote_url")
+        commit_url = (git_metadata or {}).get("git_commit_url")
+
+        git_block = existing.get("git", {}) if isinstance(existing.get("git"), dict) else {}
+        if commit_sha:
+            git_block["commit_sha"] = commit_sha
+            if commit_url:
+                git_block["commit_url"] = commit_url
+            if remote_url:
+                git_block["remote_url"] = remote_url
+            branch = _run_git(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"])
+            if branch:
+                git_block["branch"] = branch
+            msg = _run_git(repo_root, ["log", "-1", "--pretty=%s"])
+            if msg:
+                git_block["commit_message"] = msg
+
+        manifest = {
+            "schema_version": 1,
+            "langfuse": {
+                "trace_id": trace_id,
+                "trace_url": trace_url,
+                "session_id": session_id,
+                "host": host.rstrip("/"),
+            },
+            "git": git_block,
+            "created_at": existing.get("created_at", datetime.now(timezone.utc).isoformat()),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        fd, tmp = _tmpmod.mkstemp(prefix=f"{manifest_path.name}.", dir=str(manifest_dir))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2)
+                f.write("\n")
+            os.replace(tmp, manifest_path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+        debug(f"Wrote trace manifest to {manifest_path}")
+    except Exception as exc:
+        debug(f"_write_trace_manifest failed: {exc}")
+
 def emit_turn(
     langfuse: Langfuse,
     session_id: str,
@@ -714,10 +783,13 @@ def main() -> int:
         except Exception:
             pass
 
-        if last_trace_id:
-            save_last_trace(session_id, last_trace_id, host)
-        elif pre_trace_id:
-            save_last_trace(session_id, pre_trace_id, host)
+        effective_trace_id = last_trace_id or pre_trace_id
+        if effective_trace_id:
+            save_last_trace(session_id, effective_trace_id, host)
+
+        repo_root = _resolve_repo_root(transcript_path)
+        if repo_root and effective_trace_id:
+            _write_trace_manifest(repo_root, session_id, effective_trace_id, host, git_metadata)
 
         dur = time.time() - start
         info(f"Processed {emitted} turns in {dur:.2f}s (session={session_id})")
@@ -744,6 +816,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1062,13 +1135,17 @@ def main() -> int:
         }
 
         try:
-            from langfuse import Langfuse
+            from langfuse import Langfuse, propagate_attributes
 
             langfuse = Langfuse(
                 public_key=public_key,
                 secret_key=secret_key,
                 host=host,
             )
+
+            propagated_meta: dict[str, str] = {}
+            if isinstance(commit_url, str) and commit_url and len(commit_url) <= 200:
+                propagated_meta["githubCommitUrl"] = commit_url
 
             observation_kwargs = {
                 "as_type": "span",
@@ -1077,13 +1154,18 @@ def main() -> int:
                 "metadata": metadata,
             }
 
-            try:
-                with langfuse.start_as_current_observation(**observation_kwargs):
-                    pass
-            except TypeError:
-                observation_kwargs.pop("trace_context", None)
-                with langfuse.start_as_current_observation(**observation_kwargs):
-                    pass
+            with propagate_attributes(
+                session_id=session_id,
+                metadata=propagated_meta if propagated_meta else {},
+                tags=["claude-code"],
+            ):
+                try:
+                    with langfuse.start_as_current_observation(**observation_kwargs):
+                        pass
+                except TypeError:
+                    observation_kwargs.pop("trace_context", None)
+                    with langfuse.start_as_current_observation(**observation_kwargs):
+                        pass
 
             langfuse.flush()
             langfuse.shutdown()
@@ -1116,10 +1198,76 @@ def main() -> int:
         manifest_path = manifests_dir / f"{safe_session_id}.json"
         _atomic_write_json(manifest_path, manifest)
 
+        _write_agent_trace_record(
+            repo_root, commit_sha, trace_url, session_id, remote_url,
+        )
+
         return 0
     except Exception as exc:
         _debug(str(exc))
         return 0
+
+
+def _write_agent_trace_record(
+    repo_root: Path,
+    commit_sha: str,
+    trace_url: str | None,
+    session_id: str,
+    remote_url: str | None,
+) -> None:
+    """Write an Agent Trace (https://agent-trace.dev/) record for this commit."""
+    try:
+        changed_files = _run_git(repo_root, ["diff-tree", "--no-commit-id", "--name-only", "-r", commit_sha])
+        if not changed_files:
+            return
+
+        files = []
+        conversation_entry: dict[str, Any] = {
+            "contributor": {"type": "ai"},
+            "ranges": [{"start_line": 1, "end_line": 1}],
+        }
+        if trace_url:
+            conversation_entry["url"] = trace_url
+        related: list[dict[str, str]] = []
+        if trace_url:
+            related.append({"type": "trace", "url": trace_url})
+        if related:
+            conversation_entry["related"] = related
+
+        for fname in changed_files.strip().splitlines():
+            fname = fname.strip()
+            if not fname:
+                continue
+            fpath = repo_root / fname
+            line_count = 1
+            if fpath.is_file():
+                try:
+                    line_count = max(1, sum(1 for _ in open(fpath, "rb")))
+                except Exception:
+                    pass
+            conv = dict(conversation_entry)
+            conv["ranges"] = [{"start_line": 1, "end_line": line_count}]
+            files.append({"path": fname, "conversations": [conv]})
+
+        if not files:
+            return
+
+        record: dict[str, Any] = {
+            "version": "0.1.0",
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "vcs": {"type": "git", "revision": commit_sha},
+            "tool": {"name": "claude-code"},
+            "files": files,
+            "metadata": {"sessionId": session_id},
+        }
+
+        traces_dir = repo_root / ".langfuse" / "traces"
+        record_path = traces_dir / f"agent-trace-{commit_sha[:12]}.json"
+        _atomic_write_json(record_path, record)
+        _debug(f"Wrote Agent Trace record to {record_path}")
+    except Exception as exc:
+        _debug(f"_write_agent_trace_record failed: {exc}")
 
 
 if __name__ == "__main__":

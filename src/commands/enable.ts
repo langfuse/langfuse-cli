@@ -56,6 +56,12 @@ Options:
 `);
 }
 
+const LANGFUSE_REGIONS = [
+  { label: "EU (Ireland)", url: "https://cloud.langfuse.com" },
+  { label: "US (Oregon)", url: "https://us.cloud.langfuse.com" },
+  { label: "HIPAA (Oregon)", url: "https://hipaa.cloud.langfuse.com" },
+] as const;
+
 async function promptForValue(label: string): Promise<string> {
   const rl = createInterface({ input: stdin, output: stdout });
   try {
@@ -74,6 +80,37 @@ async function promptForConfirmation(label: string): Promise<boolean> {
       return true;
     }
     return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+async function promptForRegion(): Promise<string> {
+  console.log("\nSelect your Langfuse data region:");
+  for (let i = 0; i < LANGFUSE_REGIONS.length; i++) {
+    const r = LANGFUSE_REGIONS[i];
+    console.log(`  ${i + 1}) ${r.label} — ${r.url}`);
+  }
+  console.log(`  ${LANGFUSE_REGIONS.length + 1}) Self-hosted (enter custom URL)`);
+
+  const rl = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = (await rl.question(`Choice [1]: `)).trim();
+    if (!answer || answer === "1") {
+      return LANGFUSE_REGIONS[0].url;
+    }
+    const idx = Number.parseInt(answer, 10);
+    if (idx >= 1 && idx <= LANGFUSE_REGIONS.length) {
+      return LANGFUSE_REGIONS[idx - 1].url;
+    }
+    if (idx === LANGFUSE_REGIONS.length + 1) {
+      const customUrl = await promptForValue("Langfuse base URL");
+      if (!customUrl) {
+        throw new Error("No base URL provided.");
+      }
+      return customUrl.replace(/\/+$/, "");
+    }
+    throw new Error(`Invalid selection: ${answer}`);
   } finally {
     rl.close();
   }
@@ -152,6 +189,11 @@ async function resolveCredentials(
   let host = auth.host.trim();
 
   const nonInteractive = options.nonInteractive || options.yes;
+
+  const hostExplicitFromEnv =
+    !!process.env.LANGFUSE_BASE_URL || !!process.env.LANGFUSE_HOST;
+  const hostExplicitFromFlag = host !== DEFAULT_HOST;
+
   const dotenvCredentials = await readLangfuseEnvFromDotEnv(repoRoot);
   if (dotenvCredentials) {
     const useDotEnv = nonInteractive
@@ -169,16 +211,13 @@ async function resolveCredentials(
     }
   }
 
-  const hostExplicit =
-    host !== DEFAULT_HOST ||
-    !!process.env.LANGFUSE_BASE_URL ||
-    !!process.env.LANGFUSE_HOST;
+  const hostResolved =
+    hostExplicitFromFlag ||
+    hostExplicitFromEnv ||
+    (dotenvCredentials?.host != null && host !== DEFAULT_HOST);
 
-  if (!hostExplicit && !nonInteractive) {
-    const answer = await promptForValue(`Langfuse base URL (${host})`);
-    if (answer) {
-      host = answer.replace(/\/+$/, "");
-    }
+  if (!hostResolved && !nonInteractive) {
+    host = await promptForRegion();
   }
 
   if (!publicKey) {

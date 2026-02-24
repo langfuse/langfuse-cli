@@ -1,8 +1,6 @@
 # langfuse-cli
 
-<!-- Test comment: Langfuse tracing integration verification (web search + commit test, 2026-02-24 #3) -->
-
-Interact with the [Langfuse](https://langfuse.com) API from the command line and automate Claude Code tracing setup.
+Interact with the [Langfuse](https://langfuse.com) API from the command line.
 
 ## Install
 
@@ -15,63 +13,6 @@ bunx langfuse-cli api <resource> <action>
 npm i -g langfuse-cli
 langfuse api <resource> <action>
 ```
-
-## Claude Code Tracing Automation
-
-Use these commands to automate the Claude Code hooks integration and git-linked trace manifests:
-
-```sh
-# Enable tracing in the current repo
-langfuse enable
-
-# Disable tracing in the current repo
-langfuse disable
-
-# Inspect setup health
-langfuse status
-
-# List trace links from local manifests
-langfuse traces --limit 20
-```
-
-What `langfuse enable` configures:
-
-- Global Claude settings in `~/.claude/settings.json`:
-  - `Stop` hook command: `python3 ~/.claude/hooks/langfuse_hook.py`
-  - `PostToolUse` hook command for `Bash`: `python3 ~/.claude/hooks/langfuse_git_commit_hook.py`
-- Hook scripts in `~/.claude/hooks/`
-- Per-repo config in `<repo>/.claude/settings.local.json` with:
-  - `TRACE_TO_LANGFUSE=true`
-  - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`
-- Git ignore entry for `.langfuse/current-session.json` (manifests remain commit-friendly)
-
-The integration is opt-in per repository via `.claude/settings.local.json`.
-
-### Git-Linked Manifest Format
-
-After Claude Code produces traces and a successful `git commit` runs through the Bash tool, a small manifest is written to `.langfuse/traces/<session-id>.json`:
-
-```json
-{
-  "schema_version": 1,
-  "langfuse": {
-    "trace_id": "trc_...",
-    "trace_url": "https://cloud.langfuse.com/trace/trc_...",
-    "session_id": "claude-session-id",
-    "host": "https://cloud.langfuse.com"
-  },
-  "git": {
-    "commit_sha": "abc123...",
-    "commit_url": "https://github.com/org/repo/commit/abc123...",
-    "commit_message": "Add feature",
-    "branch": "main",
-    "remote_url": "git@github.com:org/repo.git"
-  },
-  "created_at": "2026-02-20T12:34:56.000000+00:00"
-}
-```
-
-The manifest intentionally contains only trace and commit metadata (no prompts/transcript payloads), keeping repository history small and reducing sensitive-data exposure.
 
 ## Configuration
 
@@ -101,23 +42,9 @@ langfuse api prompts list
 langfuse --public-key pk-lf-... --secret-key sk-lf-... api prompts list
 ```
 
-`langfuse enable` reads credentials from:
-
-1. Global flags: `--public-key`, `--secret-key`, `--host`
-2. Environment variables: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`/`LANGFUSE_HOST`
-3. Interactive prompt fallback (unless `--yes` or `--non-interactive` is set)
-
 ## Usage
 
 ```sh
-# Setup automation
-langfuse enable --dry-run
-langfuse enable --non-interactive --public-key pk-lf-... --secret-key sk-lf-...
-langfuse disable --dry-run
-langfuse disable --remove-scripts
-langfuse status --json
-langfuse traces --limit 10
-
 # Discover all resources
 langfuse api __schema
 
@@ -177,4 +104,22 @@ bun run patch-openapi -- --refetch --openapi_url http://localhost:3000/generated
 
 # Patch only (no fetch)
 bun run patch-openapi
+```
+
+## Claude Code Integration
+
+The CLI can set up automatic [Langfuse](https://langfuse.com) tracing for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) sessions. It installs Claude Code hooks that send conversation turns, tool calls, and git commit metadata to Langfuse, and writes per-session trace manifests to `.langfuse/traces/` so you can link commits back to the agent conversations that produced them.
+
+```sh
+# Enable tracing in the current repo (interactive setup)
+langfuse integration claudecode enable
+
+# Check setup health
+langfuse integration claudecode status
+
+# List recent trace links
+langfuse integration claudecode traces --limit 10
+
+# Disable tracing
+langfuse integration claudecode disable
 ```

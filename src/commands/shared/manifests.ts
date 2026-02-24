@@ -53,7 +53,7 @@ export function parseManifest(obj: JsonObject): TraceManifest | null {
   const sessionId = asString(langfuse.session_id);
   const commitSha = asString(git.commit_sha);
 
-  if (!traceId || !sessionId || !commitSha) {
+  if (!traceId || !sessionId) {
     return null;
   }
 
@@ -87,7 +87,7 @@ export async function readTraceManifests(traceDir: string): Promise<ManifestWith
   const manifests: ManifestWithFile[] = [];
 
   for (const entry of entries) {
-    if (!entry.endsWith(".json")) {
+    if (!entry.endsWith(".json") || entry.startsWith("agent-trace-")) {
       continue;
     }
 
