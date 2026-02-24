@@ -248,6 +248,55 @@ def read_last_trace(expected_session_id: Optional[str] = None) -> Optional[Dict[
         return None
 
 
+def _parse_iso_utc(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(value)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def read_recent_trace(
+    path: Path,
+    max_age_hours: float,
+    expected_session_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Read a trace file if present and recent enough."""
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    trace_id = data.get("trace_id")
+    trace_url = data.get("trace_url")
+    if not isinstance(trace_id, str) or not trace_id:
+        return None
+    if not isinstance(trace_url, str) or not trace_url:
+        return None
+
+    if expected_session_id and data.get("session_id") != expected_session_id:
+        return None
+
+    updated_at = _parse_iso_utc(data.get("updated_at"))
+    if updated_at is None:
+        return None
+
+    age_hours = (datetime.now(timezone.utc) - updated_at).total_seconds() / 3600
+    if age_hours > max_age_hours:
+        return None
+
+    return data
+
+
 # --------------- Trace manifest ---------------
 def write_trace_manifest(
     repo_root: Path,
@@ -301,6 +350,17 @@ def write_trace_manifest(
         }
 
         atomic_write_json(manifest_path, manifest)
+
+        # Keep a per-repo pointer for hooks that need the latest trace URL
+        # without relying on the global ~/.claude/state file.
+        current_session_path = repo_root / ".langfuse" / "current-session.json"
+        atomic_write_json(current_session_path, {
+            "session_id": session_id,
+            "trace_id": trace_id,
+            "trace_url": trace_url,
+            "host": host.rstrip("/"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
         debug(f"Wrote trace manifest to {manifest_path}")
     except Exception as exc:
         debug(f"write_trace_manifest failed: {exc}")

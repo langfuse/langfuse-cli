@@ -235,6 +235,11 @@ def read_new_jsonl(transcript_path: Path, ss: SessionState) -> Tuple[List[Dict[s
         return [], ss
 
     try:
+        file_size = transcript_path.stat().st_size
+        if ss.offset > file_size:
+            # Transcript may have been rotated/truncated; restart incremental read.
+            ss.offset = 0
+            ss.buffer = ""
         with open(transcript_path, "rb") as f:
             f.seek(ss.offset)
             chunk = f.read()

@@ -17,7 +17,6 @@ from typing import Any
 
 try:
     from langfuse_utils import (
-        LAST_TRACE_FILE,
         atomic_write_json,
         build_github_commit_url,
         debug,
@@ -33,7 +32,13 @@ try:
 except ImportError:
     sys.exit(0)
 
-GIT_COMMIT_RE = re.compile(r"^git(?:\s+-C\s+\S+)?\s+commit(?:\s|$)")
+# Detect git commit in simple and chained shell commands:
+# - git commit -m "..."
+# - cd repo && git commit
+# - VAR=1 git -C repo commit
+GIT_COMMIT_RE = re.compile(
+    r"(?:^|&&|\|\||;)\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*git(?:\s+-C\s+\S+)?\s+commit(?:\s|$)"
+)
 
 
 def _to_int(value: Any) -> int | None:
@@ -96,6 +101,10 @@ def _extract_command(payload: dict) -> str:
     return ""
 
 
+def _looks_like_git_commit_command(command: str) -> bool:
+    return bool(GIT_COMMIT_RE.search(command))
+
+
 def _find_repo_root(payload: dict) -> Path:
     cwd = payload.get("cwd")
     if not isinstance(cwd, str) or not cwd.strip():
@@ -126,7 +135,6 @@ def _write_agent_trace_record(
     commit_sha: str,
     trace_url: str | None,
     session_id: str,
-    remote_url: str | None,
 ) -> None:
     try:
         changed_files = run_git(repo_root, ["diff-tree", "--no-commit-id", "--name-only", "-r", commit_sha])
@@ -193,7 +201,7 @@ def main() -> int:
             return 0
 
         command = _extract_command(payload).strip()
-        if not command or not GIT_COMMIT_RE.match(command):
+        if not command or not _looks_like_git_commit_command(command):
             return 0
 
         command_success = _command_succeeded(payload)
@@ -328,7 +336,7 @@ def main() -> int:
         write_trace_manifest(repo_root, session_id, trace_id, _extract_host(trace_url) or host, git_metadata)
 
         _write_agent_trace_record(
-            repo_root, commit_sha, trace_url, session_id, remote_url,
+            repo_root, commit_sha, trace_url, session_id,
         )
 
         return 0

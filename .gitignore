@@ -8,3 +8,4 @@ bun.lockb
 .DS_Store
 
 .langfuse/
+.claude/settings.local.json

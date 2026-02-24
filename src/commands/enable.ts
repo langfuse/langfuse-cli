@@ -361,52 +361,21 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   }
 
   // --- Hook scripts ---
-  const utilsInstallResult = await installScriptFile(UTILS_SCRIPT_PATH, getUtilsScript(), {
-    dryRun: options.dryRun,
-    force: options.force,
-  });
-  changes.push(...utilsInstallResult.messages);
-  warnings.push(...utilsInstallResult.warnings);
-
-  const stopInstallResult = await installScriptFile(STOP_HOOK_SCRIPT_PATH, getStopHookScript(), {
-    dryRun: options.dryRun,
-    force: options.force,
-  });
-  changes.push(...stopInstallResult.messages);
-  warnings.push(...stopInstallResult.warnings);
-
-  const commitInstallResult = await installScriptFile(
-    GIT_COMMIT_HOOK_SCRIPT_PATH,
-    getGitCommitHookScript(),
-    {
+  const scriptInstalls: Array<{ path: string; content: string }> = [
+    { path: UTILS_SCRIPT_PATH, content: getUtilsScript() },
+    { path: STOP_HOOK_SCRIPT_PATH, content: getStopHookScript() },
+    { path: GIT_COMMIT_HOOK_SCRIPT_PATH, content: getGitCommitHookScript() },
+    { path: SESSION_INIT_HOOK_SCRIPT_PATH, content: getSessionInitHookScript() },
+    { path: PREPARE_COMMIT_MSG_SCRIPT_PATH, content: getPrepareCommitMsgHookScript() },
+  ];
+  for (const script of scriptInstalls) {
+    const result = await installScriptFile(script.path, script.content, {
       dryRun: options.dryRun,
       force: options.force,
-    },
-  );
-  changes.push(...commitInstallResult.messages);
-  warnings.push(...commitInstallResult.warnings);
-
-  const sessionInitInstallResult = await installScriptFile(
-    SESSION_INIT_HOOK_SCRIPT_PATH,
-    getSessionInitHookScript(),
-    {
-      dryRun: options.dryRun,
-      force: options.force,
-    },
-  );
-  changes.push(...sessionInitInstallResult.messages);
-  warnings.push(...sessionInitInstallResult.warnings);
-
-  const prepareCommitMsgInstallResult = await installScriptFile(
-    PREPARE_COMMIT_MSG_SCRIPT_PATH,
-    getPrepareCommitMsgHookScript(),
-    {
-      dryRun: options.dryRun,
-      force: options.force,
-    },
-  );
-  changes.push(...prepareCommitMsgInstallResult.messages);
-  warnings.push(...prepareCommitMsgInstallResult.warnings);
+    });
+    changes.push(...result.messages);
+    warnings.push(...result.warnings);
+  }
 
   // --- Per-repo git hook ---
   if (repo.isGitRepo) {
@@ -431,7 +400,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   if (!options.noGitignore) {
     const gitignoreResult = await addGitignoreEntries(
       repoRoot,
-      [".langfuse/"],
+      [".langfuse/", ".claude/settings.local.json"],
       {
         dryRun: options.dryRun,
       },
