@@ -9,16 +9,23 @@ export const CLAUDE_HOOKS_DIR = join(CLAUDE_DIR, "hooks");
 
 export const STOP_HOOK_SCRIPT_NAME = "langfuse_hook.py";
 export const GIT_COMMIT_HOOK_SCRIPT_NAME = "langfuse_git_commit_hook.py";
+export const SESSION_INIT_HOOK_SCRIPT_NAME = "langfuse_session_init_hook.py";
 
 export const STOP_HOOK_SCRIPT_PATH = join(CLAUDE_HOOKS_DIR, STOP_HOOK_SCRIPT_NAME);
 export const GIT_COMMIT_HOOK_SCRIPT_PATH = join(
   CLAUDE_HOOKS_DIR,
   GIT_COMMIT_HOOK_SCRIPT_NAME,
 );
+export const SESSION_INIT_HOOK_SCRIPT_PATH = join(
+  CLAUDE_HOOKS_DIR,
+  SESSION_INIT_HOOK_SCRIPT_NAME,
+);
 
 export const STOP_HOOK_COMMAND = "python3 ~/.claude/hooks/langfuse_hook.py";
 export const GIT_COMMIT_HOOK_COMMAND =
   "python3 ~/.claude/hooks/langfuse_git_commit_hook.py";
+export const SESSION_INIT_HOOK_COMMAND =
+  "python3 ~/.claude/hooks/langfuse_session_init_hook.py";
 
 export const PREPARE_COMMIT_MSG_SCRIPT_NAME = "langfuse_prepare_commit_msg.py";
 export const PREPARE_COMMIT_MSG_SCRIPT_PATH = join(

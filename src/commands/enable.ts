@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
   CLAUDE_SETTINGS_PATH,
+  DEFAULT_HOST,
   GIT_COMMIT_HOOK_COMMAND,
   GIT_COMMIT_HOOK_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
   PREPARE_COMMIT_MSG_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SENTINEL,
+  SESSION_INIT_HOOK_COMMAND,
+  SESSION_INIT_HOOK_SCRIPT_PATH,
   STOP_HOOK_COMMAND,
   STOP_HOOK_SCRIPT_PATH,
 } from "./shared/constants";
@@ -19,6 +22,7 @@ import {
   GIT_COMMIT_HOOK_SCRIPT,
   PREPARE_COMMIT_MSG_HOOK_SCRIPT,
   PREPARE_COMMIT_MSG_WRAPPER_SCRIPT,
+  SESSION_INIT_HOOK_SCRIPT,
   STOP_HOOK_SCRIPT,
 } from "./shared/hook-scripts";
 import {
@@ -68,9 +72,20 @@ async function resolveCredentials(
 ): Promise<{ publicKey: string; secretKey: string; host: string }> {
   let publicKey = auth.publicKey?.trim() ?? "";
   let secretKey = auth.secretKey?.trim() ?? "";
-  const host = auth.host.trim();
+  let host = auth.host.trim();
 
   const nonInteractive = options.nonInteractive || options.yes;
+  const hostExplicit =
+    host !== DEFAULT_HOST ||
+    !!process.env.LANGFUSE_BASE_URL ||
+    !!process.env.LANGFUSE_HOST;
+
+  if (!hostExplicit && !nonInteractive) {
+    const answer = await promptForValue(`Langfuse base URL (${host})`);
+    if (answer) {
+      host = answer.replace(/\/+$/, "");
+    }
+  }
 
   if (!publicKey) {
     if (nonInteractive) {
@@ -188,8 +203,13 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     matcher: "Bash",
     command: GIT_COMMIT_HOOK_COMMAND,
   });
+  const preToolUseChanged = ensureHookCommand(globalSettings, {
+    event: "PreToolUse",
+    matcher: "",
+    command: SESSION_INIT_HOOK_COMMAND,
+  });
 
-  if (stopChanged || postToolUseChanged) {
+  if (stopChanged || postToolUseChanged || preToolUseChanged) {
     const globalWriteResult = await writeJsonIfChanged(CLAUDE_SETTINGS_PATH, globalSettings, {
       dryRun: options.dryRun,
     });
@@ -215,6 +235,17 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   );
   changes.push(...commitInstallResult.messages);
   warnings.push(...commitInstallResult.warnings);
+
+  const sessionInitInstallResult = await installScriptFile(
+    SESSION_INIT_HOOK_SCRIPT_PATH,
+    SESSION_INIT_HOOK_SCRIPT,
+    {
+      dryRun: options.dryRun,
+      force: options.force,
+    },
+  );
+  changes.push(...sessionInitInstallResult.messages);
+  warnings.push(...sessionInitInstallResult.warnings);
 
   const prepareCommitMsgInstallResult = await installScriptFile(
     PREPARE_COMMIT_MSG_SCRIPT_PATH,
@@ -264,6 +295,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   }
 
   console.log("- Hook commands:");
+  console.log(`  PreToolUse -> ${SESSION_INIT_HOOK_COMMAND}`);
   console.log(`  Stop -> ${STOP_HOOK_COMMAND}`);
   console.log(`  PostToolUse (Bash) -> ${GIT_COMMIT_HOOK_COMMAND}`);
 

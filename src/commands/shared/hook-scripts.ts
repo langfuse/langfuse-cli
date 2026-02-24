@@ -403,7 +403,7 @@ def _tool_calls_from_assistants(assistant_msgs: List[Dict[str, Any]]) -> List[Di
             })
     return calls
 
-def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, transcript_path: Path) -> Optional[str]:
+def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, transcript_path: Path, pre_trace_id: Optional[str] = None) -> Optional[str]:
     user_text_raw = extract_text(get_content(turn.user_msg))
     user_text, user_text_meta = truncate_text(user_text_raw)
 
@@ -426,22 +426,43 @@ def emit_turn(langfuse: Langfuse, session_id: str, turn_num: int, turn: Turn, tr
         else:
             c["output"] = None
 
+    span_metadata = {
+        "source": "claude-code",
+        "session_id": session_id,
+        "turn_number": turn_num,
+        "transcript_path": str(transcript_path),
+        "user_text": user_text_meta,
+    }
+
     with propagate_attributes(
         session_id=session_id,
         trace_name=f"Claude Code - Turn {turn_num}",
         tags=["claude-code"],
     ):
-        with langfuse.start_as_current_span(
-            name=f"Claude Code - Turn {turn_num}",
-            input={"role": "user", "content": user_text},
-            metadata={
-                "source": "claude-code",
-                "session_id": session_id,
-                "turn_number": turn_num,
-                "transcript_path": str(transcript_path),
-                "user_text": user_text_meta,
-            },
-        ) as trace_span:
+        # When a pre-generated trace_id is available (from the session-init hook),
+        # use start_as_current_observation with trace_context so the turn is
+        # recorded under that deterministic trace rather than an auto-generated one.
+        if pre_trace_id:
+            obs_kwargs = {
+                "as_type": "span",
+                "name": f"Claude Code - Turn {turn_num}",
+                "input": {"role": "user", "content": user_text},
+                "metadata": span_metadata,
+                "trace_context": {"trace_id": pre_trace_id},
+            }
+            try:
+                span_ctx = langfuse.start_as_current_observation(**obs_kwargs)
+            except TypeError:
+                obs_kwargs.pop("trace_context", None)
+                span_ctx = langfuse.start_as_current_observation(**obs_kwargs)
+        else:
+            span_ctx = langfuse.start_as_current_span(
+                name=f"Claude Code - Turn {turn_num}",
+                input={"role": "user", "content": user_text},
+                metadata=span_metadata,
+            )
+
+        with span_ctx as trace_span:
             # LLM generation
             with langfuse.start_as_current_observation(
                 name="Claude Response",
@@ -513,6 +534,17 @@ def main() -> int:
     except Exception:
         return 0
 
+    # Read pre-generated trace_id from session-init hook (if available)
+    pre_trace_id = None
+    if LAST_TRACE_FILE.exists():
+        try:
+            lt_data = json.loads(LAST_TRACE_FILE.read_text(encoding="utf-8"))
+            if isinstance(lt_data, dict) and lt_data.get("session_id") == session_id:
+                pre_trace_id = lt_data.get("trace_id")
+                debug(f"Using pre-generated trace_id: {pre_trace_id}")
+        except Exception:
+            pass
+
     try:
         with FileLock(LOCK_FILE):
             state = load_state()
@@ -538,7 +570,7 @@ def main() -> int:
                 emitted += 1
                 turn_num = ss.turn_count + emitted
                 try:
-                    tid = emit_turn(langfuse, session_id, turn_num, t, transcript_path)
+                    tid = emit_turn(langfuse, session_id, turn_num, t, transcript_path, pre_trace_id=pre_trace_id)
                     if tid:
                         last_trace_id = tid
                 except Exception as e:
@@ -556,6 +588,8 @@ def main() -> int:
 
         if last_trace_id:
             save_last_trace(session_id, last_trace_id, host)
+        elif pre_trace_id:
+            save_last_trace(session_id, pre_trace_id, host)
 
         dur = time.time() - start
         info(f"Processed {emitted} turns in {dur:.2f}s (session={session_id})")
@@ -1081,4 +1115,107 @@ python3 ~/.claude/hooks/langfuse_prepare_commit_msg.py "$@" 2>/dev/null || true
 if [ -x "$(dirname "$0")/prepare-commit-msg.pre-langfuse" ]; then
     "$(dirname "$0")/prepare-commit-msg.pre-langfuse" "$@"
 fi
+`;
+
+export const SESSION_INIT_HOOK_SCRIPT = String.raw`#!/usr/bin/env python3
+"""
+PreToolUse hook: eagerly initializes the Langfuse trace ID for the current
+Claude Code session so that prepare-commit-msg can reference it immediately.
+
+On the first tool use of a session, this hook:
+1. Generates a deterministic trace_id from the session_id
+2. Writes it to ~/.claude/state/langfuse_last_trace.json
+
+Subsequent invocations detect the matching session_id and exit immediately.
+"""
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+STATE_DIR = Path.home() / ".claude" / "state"
+LAST_TRACE_FILE = STATE_DIR / "langfuse_last_trace.json"
+
+
+def main() -> int:
+    try:
+        if os.environ.get("TRACE_TO_LANGFUSE", "").lower() != "true":
+            return 0
+
+        # Read hook payload from stdin
+        try:
+            raw = sys.stdin.read()
+            payload = json.loads(raw) if raw.strip() else {}
+        except Exception:
+            payload = {}
+
+        session_id = (
+            payload.get("sessionId")
+            or payload.get("session_id")
+            or (payload.get("session") or {}).get("id")
+        )
+        if not session_id:
+            return 0
+
+        # Fast path: if last_trace already belongs to this session, nothing to do
+        if LAST_TRACE_FILE.exists():
+            try:
+                existing = json.loads(LAST_TRACE_FILE.read_text(encoding="utf-8"))
+                if isinstance(existing, dict) and existing.get("session_id") == session_id:
+                    return 0
+            except Exception:
+                pass
+
+        # Resolve Langfuse credentials and host
+        host = (
+            os.environ.get("CC_LANGFUSE_BASE_URL")
+            or os.environ.get("LANGFUSE_BASE_URL")
+            or "https://cloud.langfuse.com"
+        ).rstrip("/")
+        public_key = os.environ.get("CC_LANGFUSE_PUBLIC_KEY") or os.environ.get("LANGFUSE_PUBLIC_KEY")
+        secret_key = os.environ.get("CC_LANGFUSE_SECRET_KEY") or os.environ.get("LANGFUSE_SECRET_KEY")
+        if not public_key or not secret_key:
+            return 0
+
+        # Generate a deterministic trace_id from the session_id.
+        # Prefer the Langfuse SDK's create_trace_id (W3C-compatible 32-char hex)
+        # with a fallback to MD5 for environments without the SDK or older versions.
+        trace_id = None
+        try:
+            from langfuse import Langfuse
+            lf = Langfuse(public_key=public_key, secret_key=secret_key, host=host)
+            trace_id = lf.create_trace_id(seed=session_id)
+            lf.shutdown()
+        except Exception:
+            pass
+
+        if not trace_id:
+            import hashlib
+            trace_id = hashlib.md5(session_id.encode("utf-8")).hexdigest()
+
+        # Persist the trace info so prepare-commit-msg and other hooks can use it
+        data = {
+            "session_id": session_id,
+            "trace_id": trace_id,
+            "trace_url": f"{host}/trace/{trace_id}",
+            "host": host,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = LAST_TRACE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(tmp, LAST_TRACE_FILE)
+
+        return 0
+
+    except Exception:
+        # Never block tool execution
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 `;

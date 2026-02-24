@@ -1,6 +1,6 @@
 import { asObject, type JsonObject } from "./fs";
 
-export type HookEvent = "Stop" | "PostToolUse";
+export type HookEvent = "Stop" | "PostToolUse" | "PreToolUse";
 
 interface HookGroup {
   matcher: string;
