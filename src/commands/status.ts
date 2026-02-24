@@ -6,9 +6,12 @@ import {
   GIT_COMMIT_HOOK_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SENTINEL,
+  SESSION_INIT_HOOK_COMMAND,
+  SESSION_INIT_HOOK_SCRIPT_PATH,
   STOP_HOOK_COMMAND,
   STOP_HOOK_SCRIPT_PATH,
   TRACE_MANIFEST_DIR_RELATIVE,
+  UTILS_SCRIPT_PATH,
 } from "./shared/constants";
 import { hasHookCommand } from "./shared/claude-settings";
 import { asObject, fileExists, isExecutable, readJsonFile, readTextFile } from "./shared/fs";
@@ -30,7 +33,7 @@ Options:
 `);
 }
 
-function parseStatusOptions(args: string[]): StatusOptions {
+function parseStatusOptions(args: string[]): StatusOptions | null {
   const { values } = parseArgs({
     args,
     options: {
@@ -43,7 +46,7 @@ function parseStatusOptions(args: string[]): StatusOptions {
 
   if (values.help) {
     printStatusHelp();
-    process.exitCode = 0;
+    return null;
   }
 
   return {
@@ -57,7 +60,7 @@ function yesNo(value: boolean): string {
 
 export async function runStatus(args: string[]): Promise<void> {
   const options = parseStatusOptions(args);
-  if (args.includes("--help") || args.includes("-h")) {
+  if (!options) {
     return;
   }
 
@@ -88,6 +91,17 @@ export async function runStatus(args: string[]): Promise<void> {
     GIT_COMMIT_HOOK_COMMAND,
     "Bash",
   );
+  const hasPreToolUseHook = hasHookCommand(
+    globalSettings,
+    "PreToolUse",
+    SESSION_INIT_HOOK_COMMAND,
+    "",
+  );
+
+  const utilsScriptExists = await fileExists(UTILS_SCRIPT_PATH);
+  const utilsScriptExecutable = utilsScriptExists
+    ? await isExecutable(UTILS_SCRIPT_PATH)
+    : false;
 
   const stopScriptExists = await fileExists(STOP_HOOK_SCRIPT_PATH);
   const stopScriptExecutable = stopScriptExists
@@ -97,6 +111,11 @@ export async function runStatus(args: string[]): Promise<void> {
   const commitScriptExists = await fileExists(GIT_COMMIT_HOOK_SCRIPT_PATH);
   const commitScriptExecutable = commitScriptExists
     ? await isExecutable(GIT_COMMIT_HOOK_SCRIPT_PATH)
+    : false;
+
+  const sessionInitScriptExists = await fileExists(SESSION_INIT_HOOK_SCRIPT_PATH);
+  const sessionInitScriptExecutable = sessionInitScriptExists
+    ? await isExecutable(SESSION_INIT_HOOK_SCRIPT_PATH)
     : false;
 
   const prepareCommitMsgScriptExists = await fileExists(PREPARE_COMMIT_MSG_SCRIPT_PATH);
@@ -139,8 +158,14 @@ export async function runStatus(args: string[]): Promise<void> {
       parseError: globalSettingsResult.parseError,
       hasStopHook,
       hasPostToolUseHook,
+      hasPreToolUseHook,
     },
     scripts: {
+      utils: {
+        path: UTILS_SCRIPT_PATH,
+        exists: utilsScriptExists,
+        executable: utilsScriptExecutable,
+      },
       stop: {
         path: STOP_HOOK_SCRIPT_PATH,
         exists: stopScriptExists,
@@ -150,6 +175,11 @@ export async function runStatus(args: string[]): Promise<void> {
         path: GIT_COMMIT_HOOK_SCRIPT_PATH,
         exists: commitScriptExists,
         executable: commitScriptExecutable,
+      },
+      sessionInit: {
+        path: SESSION_INIT_HOOK_SCRIPT_PATH,
+        exists: sessionInitScriptExists,
+        executable: sessionInitScriptExecutable,
       },
       prepareCommitMsg: {
         path: PREPARE_COMMIT_MSG_SCRIPT_PATH,
@@ -200,14 +230,18 @@ export async function runStatus(args: string[]): Promise<void> {
   if (result.globalSettings.parseError) {
     console.log(`- parse error: ${result.globalSettings.parseError}`);
   }
+  console.log(`- PreToolUse hook command present: ${yesNo(result.globalSettings.hasPreToolUseHook)}`);
   console.log(`- Stop hook command present: ${yesNo(result.globalSettings.hasStopHook)}`);
   console.log(`- PostToolUse Bash hook command present: ${yesNo(result.globalSettings.hasPostToolUseHook)}`);
 
   console.log("Hook scripts:");
+  console.log(`- ${UTILS_SCRIPT_PATH} exists: ${yesNo(result.scripts.utils.exists)}`);
   console.log(`- ${STOP_HOOK_SCRIPT_PATH} exists: ${yesNo(result.scripts.stop.exists)}`);
   console.log(`- ${STOP_HOOK_SCRIPT_PATH} executable: ${yesNo(result.scripts.stop.executable)}`);
   console.log(`- ${GIT_COMMIT_HOOK_SCRIPT_PATH} exists: ${yesNo(result.scripts.postToolUse.exists)}`);
   console.log(`- ${GIT_COMMIT_HOOK_SCRIPT_PATH} executable: ${yesNo(result.scripts.postToolUse.executable)}`);
+  console.log(`- ${SESSION_INIT_HOOK_SCRIPT_PATH} exists: ${yesNo(result.scripts.sessionInit.exists)}`);
+  console.log(`- ${SESSION_INIT_HOOK_SCRIPT_PATH} executable: ${yesNo(result.scripts.sessionInit.executable)}`);
   console.log(`- ${PREPARE_COMMIT_MSG_SCRIPT_PATH} exists: ${yesNo(result.scripts.prepareCommitMsg.exists)}`);
   console.log(`- ${PREPARE_COMMIT_MSG_SCRIPT_PATH} executable: ${yesNo(result.scripts.prepareCommitMsg.executable)}`);
 

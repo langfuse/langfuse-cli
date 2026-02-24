@@ -65,8 +65,22 @@ export async function readJsonFile(path: string): Promise<{ data: JsonObject | n
   }
 }
 
+function sortKeys(obj: unknown): unknown {
+  if (Array.isArray(obj)) {
+    return obj.map(sortKeys);
+  }
+  if (obj !== null && typeof obj === "object") {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
+      sorted[key] = sortKeys((obj as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return obj;
+}
+
 export function stableJson(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
+  return `${JSON.stringify(sortKeys(value), null, 2)}\n`;
 }
 
 export async function writeTextAtomic(path: string, content: string): Promise<void> {

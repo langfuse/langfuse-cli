@@ -5,25 +5,28 @@ import { parseArgs } from "node:util";
 import {
   CLAUDE_SETTINGS_PATH,
   DEFAULT_HOST,
-  GIT_COMMIT_HOOK_COMMAND,
   GIT_COMMIT_HOOK_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
   PREPARE_COMMIT_MSG_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SENTINEL,
-  SESSION_INIT_HOOK_COMMAND,
   SESSION_INIT_HOOK_SCRIPT_PATH,
-  STOP_HOOK_COMMAND,
   STOP_HOOK_SCRIPT_PATH,
+  STOP_HOOK_COMMAND,
+  GIT_COMMIT_HOOK_COMMAND,
+  SESSION_INIT_HOOK_COMMAND,
+  UTILS_SCRIPT_PATH,
 } from "./shared/constants";
 import { ensureHookCommand } from "./shared/claude-settings";
+import { parseEnvContent } from "./shared/env";
 import { asObject, readJsonFile, readTextFile, type JsonObject } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
 import {
-  GIT_COMMIT_HOOK_SCRIPT,
-  PREPARE_COMMIT_MSG_HOOK_SCRIPT,
+  getGitCommitHookScript,
+  getPrepareCommitMsgHookScript,
+  getSessionInitHookScript,
+  getStopHookScript,
+  getUtilsScript,
   PREPARE_COMMIT_MSG_WRAPPER_SCRIPT,
-  SESSION_INIT_HOOK_SCRIPT,
-  STOP_HOOK_SCRIPT,
 } from "./shared/hook-scripts";
 import {
   addGitignoreEntries,
@@ -39,6 +42,7 @@ interface EnableOptions {
   dryRun: boolean;
   noGitignore: boolean;
   force: boolean;
+  skipValidation: boolean;
 }
 
 function printEnableHelp(): void {
@@ -53,6 +57,7 @@ Options:
   --dry-run               Show planned changes without writing files
   --no-gitignore          Skip .gitignore updates
   --force                 Replace existing hook scripts (creates .bak backup)
+  --skip-validation       Skip credential validation
 `);
 }
 
@@ -116,40 +121,6 @@ async function promptForRegion(): Promise<string> {
   }
 }
 
-function parseEnvContent(content: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) {
-      continue;
-    }
-
-    let key = trimmed.slice(0, eqIdx).trim();
-    if (key.startsWith("export ")) {
-      key = key.slice("export ".length).trim();
-    }
-    if (!key) {
-      continue;
-    }
-
-    let value = trimmed.slice(eqIdx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    values[key] = value;
-  }
-  return values;
-}
-
 async function readLangfuseEnvFromDotEnv(repoRoot: string): Promise<{
   path: string;
   publicKey: string;
@@ -177,6 +148,29 @@ async function readLangfuseEnvFromDotEnv(repoRoot: string): Promise<{
     secretKey,
     host: hostRaw ? hostRaw.replace(/\/+$/, "") : null,
   };
+}
+
+async function validateCredentials(
+  host: string,
+  publicKey: string,
+  secretKey: string,
+): Promise<{ ok: boolean; message: string | null }> {
+  try {
+    const auth = Buffer.from(`${publicKey}:${secretKey}`).toString("base64");
+    const response = await fetch(`${host}/api/public/projects`, {
+      headers: { Authorization: `Basic ${auth}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.ok) {
+      return { ok: true, message: null };
+    }
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: `Authentication failed (HTTP ${response.status}). Check your public/secret keys.` };
+    }
+    return { ok: false, message: `Unexpected response from ${host} (HTTP ${response.status}).` };
+  } catch (error) {
+    return { ok: false, message: `Could not reach ${host}: ${(error as Error).message}` };
+  }
 }
 
 async function resolveCredentials(
@@ -245,7 +239,7 @@ async function resolveCredentials(
   return { publicKey, secretKey, host };
 }
 
-function parseEnableOptions(args: string[]): EnableOptions {
+function parseEnableOptions(args: string[]): EnableOptions | null {
   const { values } = parseArgs({
     args,
     options: {
@@ -255,6 +249,7 @@ function parseEnableOptions(args: string[]): EnableOptions {
       "dry-run": { type: "boolean" },
       "no-gitignore": { type: "boolean" },
       force: { type: "boolean" },
+      "skip-validation": { type: "boolean" },
     },
     strict: true,
     allowPositionals: false,
@@ -262,7 +257,7 @@ function parseEnableOptions(args: string[]): EnableOptions {
 
   if (values.help) {
     printEnableHelp();
-    process.exitCode = 0;
+    return null;
   }
 
   return {
@@ -271,18 +266,31 @@ function parseEnableOptions(args: string[]): EnableOptions {
     dryRun: values["dry-run"] ?? false,
     noGitignore: values["no-gitignore"] ?? false,
     force: values.force ?? false,
+    skipValidation: values["skip-validation"] ?? false,
   };
 }
 
 export async function runEnable(args: string[], auth: GlobalAuthOptions): Promise<void> {
   const options = parseEnableOptions(args);
-  if (args.includes("--help") || args.includes("-h")) {
+  if (!options) {
     return;
   }
 
   const repo = await resolveRepoRoot(process.cwd());
   const repoRoot = repo.repoRoot;
   const credentials = await resolveCredentials(auth, options, repoRoot);
+
+  if (!options.skipValidation && !options.dryRun) {
+    const validation = await validateCredentials(
+      credentials.host,
+      credentials.publicKey,
+      credentials.secretKey,
+    );
+    if (!validation.ok) {
+      console.warn(`Warning: Credential validation failed — ${validation.message}`);
+      console.warn("Continuing with setup. Hooks will fail silently until credentials are fixed.");
+    }
+  }
 
   const changes: string[] = [];
   const warnings: string[] = [];
@@ -291,6 +299,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     warnings.push(repo.warning);
   }
 
+  // --- Local settings (per-repo credentials) ---
   const localSettingsPath = join(repoRoot, ".claude", "settings.local.json");
   const localSettingsResult = await readJsonFile(localSettingsPath);
   if (localSettingsResult.parseError) {
@@ -300,7 +309,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   const localSettings: JsonObject = localSettingsResult.data ?? {};
   const localEnvObject = asObject(localSettings.env);
   if (localSettings.env !== undefined && !localEnvObject) {
-    throw new Error(`Expected \"env\" to be a JSON object in ${localSettingsPath}`);
+    throw new Error(`Expected "env" to be a JSON object in ${localSettingsPath}`);
   }
   const localEnv = localEnvObject ?? {};
 
@@ -315,6 +324,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   });
   changes.push(localWriteResult.message);
 
+  // --- Global settings (hook commands) ---
   const globalSettingsResult = await readJsonFile(CLAUDE_SETTINGS_PATH);
   if (globalSettingsResult.parseError) {
     throw new Error(globalSettingsResult.parseError);
@@ -323,7 +333,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   const globalSettings: JsonObject = globalSettingsResult.data ?? {};
   const existingHooks = asObject(globalSettings.hooks);
   if (globalSettings.hooks !== undefined && !existingHooks) {
-    throw new Error(`Expected \"hooks\" to be a JSON object in ${CLAUDE_SETTINGS_PATH}`);
+    throw new Error(`Expected "hooks" to be a JSON object in ${CLAUDE_SETTINGS_PATH}`);
   }
   const stopChanged = ensureHookCommand(globalSettings, {
     event: "Stop",
@@ -350,7 +360,15 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     changes.push(`No changes: ${CLAUDE_SETTINGS_PATH}`);
   }
 
-  const stopInstallResult = await installScriptFile(STOP_HOOK_SCRIPT_PATH, STOP_HOOK_SCRIPT, {
+  // --- Hook scripts ---
+  const utilsInstallResult = await installScriptFile(UTILS_SCRIPT_PATH, getUtilsScript(), {
+    dryRun: options.dryRun,
+    force: options.force,
+  });
+  changes.push(...utilsInstallResult.messages);
+  warnings.push(...utilsInstallResult.warnings);
+
+  const stopInstallResult = await installScriptFile(STOP_HOOK_SCRIPT_PATH, getStopHookScript(), {
     dryRun: options.dryRun,
     force: options.force,
   });
@@ -359,7 +377,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
 
   const commitInstallResult = await installScriptFile(
     GIT_COMMIT_HOOK_SCRIPT_PATH,
-    GIT_COMMIT_HOOK_SCRIPT,
+    getGitCommitHookScript(),
     {
       dryRun: options.dryRun,
       force: options.force,
@@ -370,7 +388,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
 
   const sessionInitInstallResult = await installScriptFile(
     SESSION_INIT_HOOK_SCRIPT_PATH,
-    SESSION_INIT_HOOK_SCRIPT,
+    getSessionInitHookScript(),
     {
       dryRun: options.dryRun,
       force: options.force,
@@ -381,7 +399,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
 
   const prepareCommitMsgInstallResult = await installScriptFile(
     PREPARE_COMMIT_MSG_SCRIPT_PATH,
-    PREPARE_COMMIT_MSG_HOOK_SCRIPT,
+    getPrepareCommitMsgHookScript(),
     {
       dryRun: options.dryRun,
       force: options.force,
@@ -390,6 +408,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   changes.push(...prepareCommitMsgInstallResult.messages);
   warnings.push(...prepareCommitMsgInstallResult.warnings);
 
+  // --- Per-repo git hook ---
   if (repo.isGitRepo) {
     const gitHookResult = await installGitHook(
       repoRoot,
@@ -408,10 +427,11 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     warnings.push("Not a git repository, skipping prepare-commit-msg git hook installation");
   }
 
+  // --- .gitignore ---
   if (!options.noGitignore) {
     const gitignoreResult = await addGitignoreEntries(
       repoRoot,
-      [".langfuse/current-session.json"],
+      [".langfuse/"],
       {
         dryRun: options.dryRun,
       },

@@ -23,6 +23,7 @@
   "files": [
     "bin",
     "dist",
+    "hooks",
     "openapi.yml",
     "skill",
     "README.md"
@@ -31,7 +32,9 @@
     "patch-openapi": "bun scripts/patch-openapi.ts",
     "refetch-openapi": "bun scripts/patch-openapi.ts --refetch",
     "build": "bun run refetch-openapi && bun build src/cli.ts --outdir dist --target node --format esm",
-    "prepublishOnly": "rm -rf dist && bun run build"
+    "prepublishOnly": "rm -rf dist && bun run build",
+    "test": "bun test",
+    "check-hooks": "python3 -c 'import ast, glob; files = glob.glob(\"hooks/*.py\"); [ast.parse(open(f).read(), f) for f in files]; print(f\"All {len(files)} hook files OK\")'"
   },
   "dependencies": {
     "specli": "^0.0.39"

@@ -6,6 +6,7 @@ import { runEnable } from "./commands/enable";
 import { runStatus } from "./commands/status";
 import { runTraces } from "./commands/traces";
 import { DEFAULT_HOST } from "./commands/shared/constants";
+import { parseEnvContent } from "./commands/shared/env";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LANGFUSE_FLAGS = new Set([
@@ -18,19 +19,8 @@ const LANGFUSE_BOOL_FLAGS = new Set(["--refetch-api-spec"]);
 
 function loadEnvFile(filePath: string): void {
   const content = readFileSync(filePath, "utf-8");
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = trimmed.slice(0, eqIdx).trim();
-    let val = trimmed.slice(eqIdx + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
+  const values = parseEnvContent(content);
+  for (const [key, val] of Object.entries(values)) {
     process.env[key] = val;
   }
 }
@@ -118,20 +108,26 @@ export async function run(argv: string[]): Promise<void> {
       const claudeCodeCommand = passthrough[4];
       const commandArgs = passthrough.slice(5);
 
-      if (claudeCodeCommand === "enable") {
-        return runEnable(commandArgs, { publicKey, secretKey, host });
-      }
+      try {
+        if (claudeCodeCommand === "enable") {
+          return await runEnable(commandArgs, { publicKey, secretKey, host });
+        }
 
-      if (claudeCodeCommand === "disable") {
-        return runDisable(commandArgs);
-      }
+        if (claudeCodeCommand === "disable") {
+          return await runDisable(commandArgs);
+        }
 
-      if (claudeCodeCommand === "status") {
-        return runStatus(commandArgs);
-      }
+        if (claudeCodeCommand === "status") {
+          return await runStatus(commandArgs);
+        }
 
-      if (claudeCodeCommand === "traces") {
-        return runTraces(commandArgs);
+        if (claudeCodeCommand === "traces") {
+          return await runTraces(commandArgs);
+        }
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        process.exitCode = 1;
+        return;
       }
 
       printClaudeCodeHelp();
@@ -171,7 +167,6 @@ Options:
 
 Examples:
   langfuse integration claudecode enable             Enable Claude Code tracing
-  langfuse integration claudecode status             Show integration health
   langfuse integration claudecode traces --limit 10  List recent trace links
   langfuse api __schema                              List all available resources
   langfuse api <resource> --help                     Show actions for a resource

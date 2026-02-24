@@ -5,6 +5,9 @@ import { fileExists } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
 import { readTraceManifests } from "./shared/manifests";
 
+const DEFAULT_LIMIT = 20;
+const COMMIT_MESSAGE_MAX_LENGTH = 90;
+
 interface TracesOptions {
   limit: number;
   json: boolean;
@@ -17,14 +20,14 @@ List trace manifests for the current repository.
 
 Options:
   -h, --help              Show this help
-  --limit <n>             Number of traces to print (default: 20)
+  --limit <n>             Number of traces to print (default: ${DEFAULT_LIMIT})
   --json                  Output manifests as JSON
 `);
 }
 
 function parseLimit(value: string | undefined): number {
   if (!value) {
-    return 20;
+    return DEFAULT_LIMIT;
   }
 
   const parsed = Number.parseInt(value, 10);
@@ -35,7 +38,7 @@ function parseLimit(value: string | undefined): number {
   return parsed;
 }
 
-function parseTracesOptions(args: string[]): TracesOptions {
+function parseTracesOptions(args: string[]): TracesOptions | null {
   const { values } = parseArgs({
     args,
     options: {
@@ -49,7 +52,7 @@ function parseTracesOptions(args: string[]): TracesOptions {
 
   if (values.help) {
     printTracesHelp();
-    process.exitCode = 0;
+    return null;
   }
 
   return {
@@ -59,17 +62,16 @@ function parseTracesOptions(args: string[]): TracesOptions {
 }
 
 function trimMessage(message: string): string {
-  const maxLength = 90;
-  if (message.length <= maxLength) {
+  if (message.length <= COMMIT_MESSAGE_MAX_LENGTH) {
     return message;
   }
 
-  return `${message.slice(0, maxLength - 3)}...`;
+  return `${message.slice(0, COMMIT_MESSAGE_MAX_LENGTH - 3)}...`;
 }
 
 export async function runTraces(args: string[]): Promise<void> {
   const options = parseTracesOptions(args);
-  if (args.includes("--help") || args.includes("-h")) {
+  if (!options) {
     return;
   }
 

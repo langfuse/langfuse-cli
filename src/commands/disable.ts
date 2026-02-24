@@ -1,30 +1,17 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
-  CLAUDE_SETTINGS_PATH,
-  GIT_COMMIT_HOOK_COMMAND,
-  GIT_COMMIT_HOOK_SCRIPT_NAME,
-  GIT_COMMIT_HOOK_SCRIPT_PATH,
   LOCAL_ENV_KEYS,
   PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
-  PREPARE_COMMIT_MSG_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SENTINEL,
-  SESSION_INIT_HOOK_COMMAND,
-  SESSION_INIT_HOOK_SCRIPT_NAME,
-  SESSION_INIT_HOOK_SCRIPT_PATH,
-  STOP_HOOK_COMMAND,
-  STOP_HOOK_SCRIPT_NAME,
-  STOP_HOOK_SCRIPT_PATH,
 } from "./shared/constants";
-import { removeHookCommand, removeHookCommandsByPattern } from "./shared/claude-settings";
 import { asObject, readJsonFile, type JsonObject } from "./shared/fs";
 import { resolveRepoRoot } from "./shared/git";
-import { removeFileIfExists, removeGitHook, writeJsonIfChanged } from "./shared/operations";
+import { removeGitHook, writeJsonIfChanged } from "./shared/operations";
 
 interface DisableOptions {
   dryRun: boolean;
   keepKeys: boolean;
-  removeScripts: boolean;
 }
 
 function printDisableHelp(): void {
@@ -32,22 +19,25 @@ function printDisableHelp(): void {
 
 Disable Claude Code tracing for the current repository.
 
+Removes environment variables from .claude/settings.local.json and uninstalls
+the per-repo prepare-commit-msg git hook. Global hook scripts in ~/.claude/hooks
+are left untouched (they are shared across repos and are inert without
+TRACE_TO_LANGFUSE=true).
+
 Options:
   -h, --help              Show this help
   --dry-run               Show planned changes without writing files
   --keep-keys             Keep LANGFUSE_PUBLIC_KEY/SECRET/HOST and set TRACE_TO_LANGFUSE=false
-  --remove-scripts        Remove hook scripts from ~/.claude/hooks
 `);
 }
 
-function parseDisableOptions(args: string[]): DisableOptions {
+function parseDisableOptions(args: string[]): DisableOptions | null {
   const { values } = parseArgs({
     args,
     options: {
       help: { type: "boolean", short: "h" },
       "dry-run": { type: "boolean" },
       "keep-keys": { type: "boolean" },
-      "remove-scripts": { type: "boolean" },
     },
     strict: true,
     allowPositionals: false,
@@ -55,19 +45,18 @@ function parseDisableOptions(args: string[]): DisableOptions {
 
   if (values.help) {
     printDisableHelp();
-    process.exitCode = 0;
+    return null;
   }
 
   return {
     dryRun: values["dry-run"] ?? false,
     keepKeys: values["keep-keys"] ?? false,
-    removeScripts: values["remove-scripts"] ?? false,
   };
 }
 
 export async function runDisable(args: string[]): Promise<void> {
   const options = parseDisableOptions(args);
-  if (args.includes("--help") || args.includes("-h")) {
+  if (!options) {
     return;
   }
 
@@ -81,6 +70,7 @@ export async function runDisable(args: string[]): Promise<void> {
     warnings.push(repo.warning);
   }
 
+  // --- Local settings (per-repo) ---
   const localSettingsPath = join(repoRoot, ".claude", "settings.local.json");
   const localSettingsResult = await readJsonFile(localSettingsPath);
   if (localSettingsResult.parseError) {
@@ -90,7 +80,7 @@ export async function runDisable(args: string[]): Promise<void> {
   const localSettings: JsonObject = localSettingsResult.data ?? {};
   const localEnv = asObject(localSettings.env);
   if (localSettings.env !== undefined && !localEnv) {
-    throw new Error(`Expected \"env\" to be a JSON object in ${localSettingsPath}`);
+    throw new Error(`Expected "env" to be a JSON object in ${localSettingsPath}`);
   }
 
   let localChanged = false;
@@ -123,45 +113,7 @@ export async function runDisable(args: string[]): Promise<void> {
     changes.push(`No changes: ${localSettingsPath}`);
   }
 
-  const globalSettingsResult = await readJsonFile(CLAUDE_SETTINGS_PATH);
-  if (globalSettingsResult.parseError) {
-    throw new Error(globalSettingsResult.parseError);
-  }
-
-  const globalSettings: JsonObject = globalSettingsResult.data ?? {};
-  const hooksObject = asObject(globalSettings.hooks);
-  if (globalSettings.hooks !== undefined && !hooksObject) {
-    throw new Error(`Expected \"hooks\" to be a JSON object in ${CLAUDE_SETTINGS_PATH}`);
-  }
-  // Remove exact command first, then also remove any variant paths (e.g.
-  // .venv/bin/python3 vs plain python3).  Both must always run — using `|`
-  // (non-short-circuiting) so the pattern pass cleans up variants even when
-  // the exact match already succeeded.
-  const removedStop =
-    removeHookCommand(globalSettings, { event: "Stop", command: STOP_HOOK_COMMAND }) |
-    removeHookCommandsByPattern(globalSettings, { event: "Stop", pattern: STOP_HOOK_SCRIPT_NAME });
-  const removedPostToolUse =
-    removeHookCommand(globalSettings, { event: "PostToolUse", command: GIT_COMMIT_HOOK_COMMAND }) |
-    removeHookCommandsByPattern(globalSettings, { event: "PostToolUse", pattern: GIT_COMMIT_HOOK_SCRIPT_NAME });
-  const removedPreToolUse =
-    removeHookCommand(globalSettings, { event: "PreToolUse", command: SESSION_INIT_HOOK_COMMAND }) |
-    removeHookCommandsByPattern(globalSettings, { event: "PreToolUse", pattern: SESSION_INIT_HOOK_SCRIPT_NAME });
-
-  const hooks = asObject(globalSettings.hooks);
-  if (hooks && Object.keys(hooks).length === 0) {
-    delete globalSettings.hooks;
-  }
-
-  if (removedStop || removedPostToolUse || removedPreToolUse) {
-    const result = await writeJsonIfChanged(CLAUDE_SETTINGS_PATH, globalSettings, {
-      dryRun: options.dryRun,
-    });
-    changes.push(result.message);
-  } else {
-    changes.push(`No changes: ${CLAUDE_SETTINGS_PATH}`);
-  }
-
-  // Always remove the per-repo git hook
+  // --- Per-repo git hook ---
   const gitHookResult = await removeGitHook(
     repoRoot,
     "prepare-commit-msg",
@@ -170,28 +122,6 @@ export async function runDisable(args: string[]): Promise<void> {
     { dryRun: options.dryRun },
   );
   changes.push(...gitHookResult.messages);
-
-  if (options.removeScripts) {
-    const removedStopScript = await removeFileIfExists(STOP_HOOK_SCRIPT_PATH, {
-      dryRun: options.dryRun,
-    });
-    changes.push(removedStopScript.message);
-
-    const removedCommitScript = await removeFileIfExists(GIT_COMMIT_HOOK_SCRIPT_PATH, {
-      dryRun: options.dryRun,
-    });
-    changes.push(removedCommitScript.message);
-
-    const removedPrepareCommitScript = await removeFileIfExists(PREPARE_COMMIT_MSG_SCRIPT_PATH, {
-      dryRun: options.dryRun,
-    });
-    changes.push(removedPrepareCommitScript.message);
-
-    const removedSessionInitScript = await removeFileIfExists(SESSION_INIT_HOOK_SCRIPT_PATH, {
-      dryRun: options.dryRun,
-    });
-    changes.push(removedSessionInitScript.message);
-  }
 
   console.log(`${options.dryRun ? "Planned" : "Applied"} disable for ${repoRoot}`);
   for (const change of changes) {

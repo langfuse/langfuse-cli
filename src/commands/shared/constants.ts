@@ -7,10 +7,12 @@ export const CLAUDE_DIR = join(homedir(), ".claude");
 export const CLAUDE_SETTINGS_PATH = join(CLAUDE_DIR, "settings.json");
 export const CLAUDE_HOOKS_DIR = join(CLAUDE_DIR, "hooks");
 
+export const UTILS_SCRIPT_NAME = "langfuse_utils.py";
 export const STOP_HOOK_SCRIPT_NAME = "langfuse_hook.py";
 export const GIT_COMMIT_HOOK_SCRIPT_NAME = "langfuse_git_commit_hook.py";
 export const SESSION_INIT_HOOK_SCRIPT_NAME = "langfuse_session_init_hook.py";
 
+export const UTILS_SCRIPT_PATH = join(CLAUDE_HOOKS_DIR, UTILS_SCRIPT_NAME);
 export const STOP_HOOK_SCRIPT_PATH = join(CLAUDE_HOOKS_DIR, STOP_HOOK_SCRIPT_NAME);
 export const GIT_COMMIT_HOOK_SCRIPT_PATH = join(
   CLAUDE_HOOKS_DIR,
