@@ -1,4 +1,4 @@
-# Test: Langfuse tracing integration verification
+# Test: Langfuse tracing integration verified
 node_modules
 dist
 *.tgz
