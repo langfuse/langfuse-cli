@@ -1,3 +1,4 @@
+<!-- Test: Langfuse tracing integration -->
 # langfuse-cli
 
 Interact with the [Langfuse](https://langfuse.com) API from the command line.
