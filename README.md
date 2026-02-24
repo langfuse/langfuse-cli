@@ -1,5 +1,7 @@
 # langfuse-cli
 
+<!-- Test comment: Langfuse tracing integration verification -->
+
 Interact with the [Langfuse](https://langfuse.com) API from the command line and automate Claude Code tracing setup.
 
 ## Install
