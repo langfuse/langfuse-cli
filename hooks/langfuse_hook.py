@@ -9,9 +9,10 @@ Installed by langfuse-cli.
 import hashlib
 import json
 import os
+import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,6 +29,7 @@ try:
         error,
         extract_session_id,
         extract_transcript_path,
+        get_claude_user_email,
         get_git_metadata,
         get_langfuse_credentials,
         info,
@@ -204,6 +206,36 @@ def get_message_id(msg: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def parse_timestamp(msg: Dict[str, Any]) -> Optional[datetime]:
+    ts = msg.get("timestamp")
+    if isinstance(ts, str):
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except Exception:
+            return None
+    return None
+
+
+def get_version(msg: Dict[str, Any]) -> Optional[str]:
+    v = msg.get("version")
+    return v if isinstance(v, str) and v else None
+
+
+def extract_bash_command_prefix(tool_input: Any) -> Optional[str]:
+    """Extract the first command word from a Bash tool input."""
+    if isinstance(tool_input, dict):
+        cmd = tool_input.get("command", "")
+    elif isinstance(tool_input, str):
+        cmd = tool_input
+    else:
+        return None
+    if not isinstance(cmd, str) or not cmd.strip():
+        return None
+    tokens = re.split(r"[\s|;&]", cmd.strip())
+    first_word = tokens[0] if tokens else None
+    return first_word if first_word else None
+
+
 # --------------- Incremental reader ---------------
 @dataclass
 class SessionState:
@@ -276,48 +308,86 @@ def read_new_jsonl(transcript_path: Path, ss: SessionState) -> Tuple[List[Dict[s
 
 # --------------- Turn assembly ---------------
 @dataclass
+class ToolResult:
+    content: Any
+    is_error: bool = False
+    timestamp: Optional[datetime] = None
+
+
+@dataclass
 class Turn:
     user_msg: Dict[str, Any]
     assistant_msgs: List[Dict[str, Any]]
-    tool_results_by_id: Dict[str, Any]
+    tool_results_by_id: Dict[str, ToolResult]
+    user_timestamp: Optional[datetime] = None
+    first_assistant_timestamp: Optional[datetime] = None
+    last_assistant_timestamp: Optional[datetime] = None
+    tool_use_timestamps: Dict[str, Optional[datetime]] = field(default_factory=dict)
+    claude_code_version: Optional[str] = None
 
 
 def build_turns(messages: List[Dict[str, Any]]) -> List[Turn]:
     turns: List[Turn] = []
     current_user: Optional[Dict[str, Any]] = None
+    user_ts: Optional[datetime] = None
     assistant_order: List[str] = []
     assistant_latest: Dict[str, Dict[str, Any]] = {}
-    tool_results_by_id: Dict[str, Any] = {}
+    assistant_timestamps: Dict[str, Optional[datetime]] = {}
+    tool_results_by_id: Dict[str, ToolResult] = {}
+    tool_use_timestamps: Dict[str, Optional[datetime]] = {}
+    version: Optional[str] = None
 
     def flush_turn():
-        nonlocal current_user, assistant_order, assistant_latest, tool_results_by_id, turns
+        nonlocal current_user, user_ts, assistant_order, assistant_latest
+        nonlocal assistant_timestamps, tool_results_by_id, tool_use_timestamps
+        nonlocal turns, version
         if current_user is None:
             return
         if not assistant_latest:
             return
-        assistants = [assistant_latest[mid] for mid in assistant_order if mid in assistant_latest]
+        ordered_mids = [mid for mid in assistant_order if mid in assistant_latest]
+        assistants = [assistant_latest[mid] for mid in ordered_mids]
+        first_ts = assistant_timestamps.get(ordered_mids[0]) if ordered_mids else None
+        last_ts = assistant_timestamps.get(ordered_mids[-1]) if ordered_mids else None
         turns.append(Turn(
             user_msg=current_user,
             assistant_msgs=assistants,
             tool_results_by_id=dict(tool_results_by_id),
+            user_timestamp=user_ts,
+            first_assistant_timestamp=first_ts,
+            last_assistant_timestamp=last_ts,
+            tool_use_timestamps=dict(tool_use_timestamps),
+            claude_code_version=version,
         ))
 
     for msg in messages:
+        msg_version = get_version(msg)
+        if msg_version:
+            version = msg_version
+
         role = get_role(msg)
 
         if is_tool_result(msg):
+            tr_ts = parse_timestamp(msg)
             for tr in iter_tool_results(get_content(msg)):
                 tid = tr.get("tool_use_id")
                 if tid:
-                    tool_results_by_id[str(tid)] = tr.get("content")
+                    tool_results_by_id[str(tid)] = ToolResult(
+                        content=tr.get("content"),
+                        is_error=bool(tr.get("is_error", False)),
+                        timestamp=tr_ts,
+                    )
             continue
 
         if role == "user":
             flush_turn()
             current_user = msg
+            user_ts = parse_timestamp(msg)
             assistant_order = []
             assistant_latest = {}
+            assistant_timestamps = {}
             tool_results_by_id = {}
+            tool_use_timestamps = {}
             continue
 
         if role == "assistant":
@@ -327,6 +397,11 @@ def build_turns(messages: List[Dict[str, Any]]) -> List[Turn]:
             if mid not in assistant_latest:
                 assistant_order.append(mid)
             assistant_latest[mid] = msg
+            assistant_timestamps[mid] = parse_timestamp(msg)
+            for tu in iter_tool_uses(get_content(msg)):
+                tid = tu.get("id")
+                if tid:
+                    tool_use_timestamps[str(tid)] = parse_timestamp(msg)
             continue
 
     flush_turn()
@@ -339,12 +414,30 @@ def _tool_calls_from_assistants(assistant_msgs: List[Dict[str, Any]]) -> List[Di
     for am in assistant_msgs:
         for tu in iter_tool_uses(get_content(am)):
             tid = tu.get("id") or ""
+            raw_input = tu.get("input") if isinstance(tu.get("input"), (dict, list, str, int, float, bool)) else {}
             calls.append({
                 "id": str(tid),
                 "name": tu.get("name") or "unknown",
-                "input": tu.get("input") if isinstance(tu.get("input"), (dict, list, str, int, float, bool)) else {},
+                "input": raw_input,
             })
     return calls
+
+
+def _tool_calls_to_chatml(tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert internal tool call list to OpenAI ChatML tool_calls format."""
+    out: List[Dict[str, Any]] = []
+    for tc in tool_calls:
+        args = tc["input"]
+        args_str = args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)
+        out.append({
+            "id": tc["id"],
+            "type": "function",
+            "function": {
+                "name": tc["name"],
+                "arguments": args_str,
+            },
+        })
+    return out
 
 
 def _merge_metadata(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
@@ -375,6 +468,7 @@ def emit_turn(
     pre_trace_id: Optional[str] = None,
     git_metadata: Optional[Dict[str, Any]] = None,
     propagated_metadata: Optional[Dict[str, str]] = None,
+    user_id: Optional[str] = None,
 ) -> Optional[str]:
     user_text_raw = extract_text(get_content(turn.user_msg))
     user_text, user_text_meta = truncate_text(user_text_raw)
@@ -387,22 +481,50 @@ def emit_turn(
     tool_calls = _tool_calls_from_assistants(turn.assistant_msgs)
 
     for c in tool_calls:
-        if c["id"] and c["id"] in turn.tool_results_by_id:
-            out_raw = turn.tool_results_by_id[c["id"]]
+        tid = c["id"]
+        if tid and tid in turn.tool_results_by_id:
+            tr = turn.tool_results_by_id[tid]
+            out_raw = tr.content
             out_str = out_raw if isinstance(out_raw, str) else json.dumps(out_raw, ensure_ascii=False)
             out_trunc, out_meta = truncate_text(out_str)
             c["output"] = out_trunc
             c["output_meta"] = out_meta
+            c["is_error"] = tr.is_error
         else:
             c["output"] = None
+            c["is_error"] = True
 
-    span_metadata = {
+    chatml_tool_calls = _tool_calls_to_chatml(tool_calls)
+
+    # ChatML-formatted input (OpenAI-style request body)
+    generation_input: Dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "user", "content": user_text}],
+    }
+
+    # ChatML-formatted output (assistant message with optional tool_calls)
+    generation_output: Dict[str, Any] = {
+        "role": "assistant",
+        "content": assistant_text,
+    }
+    if chatml_tool_calls:
+        generation_output["tool_calls"] = chatml_tool_calls
+
+    span_input: Dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "user", "content": user_text}],
+    }
+    span_output: Dict[str, Any] = dict(generation_output)
+
+    span_metadata: Dict[str, Any] = {
         "source": "claude-code",
         "session_id": session_id,
         "turn_number": turn_num,
         "transcript_path": str(transcript_path),
         "user_text": user_text_meta,
     }
+    if turn.claude_code_version:
+        span_metadata["claude_code_version"] = turn.claude_code_version
     if git_metadata:
         span_metadata = _merge_metadata(span_metadata, git_metadata)
 
@@ -411,17 +533,33 @@ def emit_turn(
         "trace_name": f"Claude Code - Turn {turn_num}",
         "tags": ["claude-code"],
     }
+    if user_id:
+        propagate_kwargs["user_id"] = user_id
     if propagated_metadata:
         propagate_kwargs["metadata"] = propagated_metadata
+
+    # Timing from transcript timestamps
+    span_time_kwargs: Dict[str, Any] = {}
+    if turn.user_timestamp:
+        span_time_kwargs["start_time"] = turn.user_timestamp
+    if turn.last_assistant_timestamp:
+        span_time_kwargs["end_time"] = turn.last_assistant_timestamp
+
+    gen_time_kwargs: Dict[str, Any] = {}
+    if turn.first_assistant_timestamp:
+        gen_time_kwargs["start_time"] = turn.first_assistant_timestamp
+    if turn.last_assistant_timestamp:
+        gen_time_kwargs["end_time"] = turn.last_assistant_timestamp
 
     with propagate_attributes(**propagate_kwargs):
         if pre_trace_id:
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "span",
                 "name": f"Claude Code - Turn {turn_num}",
-                "input": {"role": "user", "content": user_text},
+                "input": span_input,
                 "metadata": span_metadata,
                 "trace_context": {"trace_id": pre_trace_id},
+                **span_time_kwargs,
             }
             try:
                 span_ctx = langfuse.start_as_current_observation(**obs_kwargs)
@@ -434,45 +572,87 @@ def emit_turn(
         else:
             span_ctx = langfuse.start_as_current_span(
                 name=f"Claude Code - Turn {turn_num}",
-                input={"role": "user", "content": user_text},
+                input=span_input,
                 metadata=span_metadata,
+                **span_time_kwargs,
             )
 
         with span_ctx as trace_span:
+            gen_metadata = _merge_metadata({
+                "assistant_text": assistant_text_meta,
+                "tool_count": len(tool_calls),
+            }, git_metadata or {})
+            if turn.claude_code_version:
+                gen_metadata["claude_code_version"] = turn.claude_code_version
+
             with langfuse.start_as_current_observation(
                 name="Claude Response",
                 as_type="generation",
                 model=model,
-                input={"role": "user", "content": user_text},
-                output={"role": "assistant", "content": assistant_text},
-                metadata=_merge_metadata({
-                    "assistant_text": assistant_text_meta,
-                    "tool_count": len(tool_calls),
-                }, git_metadata or {}),
+                input=generation_input,
+                output=generation_output,
+                metadata=gen_metadata,
+                **gen_time_kwargs,
             ):
                 pass
 
             for tc in tool_calls:
-                in_obj = tc["input"]
-                if isinstance(in_obj, str):
-                    in_obj, in_meta = truncate_text(in_obj)
-                else:
-                    in_meta = None
+                # ChatML-formatted tool input (assistant's tool call)
+                tool_chatml_input: Dict[str, Any] = {
+                    "role": "assistant",
+                    "tool_calls": [_tool_calls_to_chatml([tc])[0]],
+                }
+
+                # ChatML-formatted tool output (tool result message)
+                tool_chatml_output: Optional[Dict[str, Any]] = None
+                if tc.get("output") is not None:
+                    tool_chatml_output = {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": tc["output"],
+                    }
+
+                # Observation name: include bash command prefix for Bash tools
+                obs_name = f"Tool: {tc['name']}"
+                if tc["name"] == "Bash":
+                    prefix = extract_bash_command_prefix(tc["input"])
+                    if prefix:
+                        obs_name = f"Tool: Bash ({prefix})"
+
+                tool_metadata = _merge_metadata({
+                    "tool_name": tc["name"],
+                    "tool_id": tc["id"],
+                    "output_meta": tc.get("output_meta"),
+                }, git_metadata or {})
+                if turn.claude_code_version:
+                    tool_metadata["claude_code_version"] = turn.claude_code_version
+
+                # Timing from transcript for tool observations
+                tool_time_kwargs: Dict[str, Any] = {}
+                tu_ts = turn.tool_use_timestamps.get(tc["id"])
+                if tu_ts:
+                    tool_time_kwargs["start_time"] = tu_ts
+                tr_obj = turn.tool_results_by_id.get(tc["id"])
+                if tr_obj and tr_obj.timestamp:
+                    tool_time_kwargs["end_time"] = tr_obj.timestamp
+
+                # Level for denied/failed tools
+                level_kwargs: Dict[str, Any] = {}
+                if tc.get("is_error") or tc.get("output") is None:
+                    level_kwargs["level"] = "ERROR"
+                    level_kwargs["status_message"] = "Tool execution denied or failed"
 
                 with langfuse.start_as_current_observation(
-                    name=f"Tool: {tc['name']}",
+                    name=obs_name,
                     as_type="tool",
-                    input=in_obj,
-                    metadata=_merge_metadata({
-                        "tool_name": tc["name"],
-                        "tool_id": tc["id"],
-                        "input_meta": in_meta,
-                        "output_meta": tc.get("output_meta"),
-                    }, git_metadata or {}),
+                    input=tool_chatml_input,
+                    metadata=tool_metadata,
+                    **tool_time_kwargs,
+                    **level_kwargs,
                 ) as tool_obs:
-                    tool_obs.update(output=tc.get("output"))
+                    tool_obs.update(output=tool_chatml_output)
 
-            trace_span.update(output={"role": "assistant", "content": assistant_text})
+            trace_span.update(output=span_output, **span_time_kwargs)
             return getattr(trace_span, "trace_id", None)
 
 
@@ -503,6 +683,10 @@ def main() -> int:
     cwd = Path(os.getcwd())
     git_metadata = get_git_metadata(transcript_path, cwd)
     propagated_metadata = _build_propagated_metadata(git_metadata)
+
+    user_email = get_claude_user_email()
+    if user_email:
+        debug(f"Resolved Claude Code user email: {user_email}")
 
     try:
         langfuse = Langfuse(
@@ -552,6 +736,7 @@ def main() -> int:
                         pre_trace_id=pre_trace_id,
                         git_metadata=git_metadata,
                         propagated_metadata=propagated_metadata,
+                        user_id=user_email,
                     )
                     if tid:
                         last_trace_id = tid

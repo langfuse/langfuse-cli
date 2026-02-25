@@ -9,6 +9,7 @@ import {
   PREPARE_COMMIT_MSG_BACKUP_SUFFIX,
   PREPARE_COMMIT_MSG_SCRIPT_PATH,
   PREPARE_COMMIT_MSG_SENTINEL,
+  SESSION_END_HOOK_COMMAND,
   SESSION_INIT_HOOK_SCRIPT_PATH,
   STOP_HOOK_SCRIPT_PATH,
   STOP_HOOK_COMMAND,
@@ -154,7 +155,7 @@ async function validateCredentials(
   host: string,
   publicKey: string,
   secretKey: string,
-): Promise<{ ok: boolean; message: string | null }> {
+): Promise<{ ok: boolean; message: string | null; projectId: string | null }> {
   try {
     const auth = Buffer.from(`${publicKey}:${secretKey}`).toString("base64");
     const response = await fetch(`${host}/api/public/projects`, {
@@ -162,14 +163,29 @@ async function validateCredentials(
       signal: AbortSignal.timeout(10_000),
     });
     if (response.ok) {
-      return { ok: true, message: null };
+      let projectId: string | null = null;
+      try {
+        const body = (await response.json()) as Record<string, unknown>;
+        // The API may return { id: "..." } or { data: [{ id: "..." }] }
+        if (typeof body.id === "string") {
+          projectId = body.id;
+        } else if (Array.isArray(body.data) && body.data.length > 0) {
+          const first = body.data[0] as Record<string, unknown>;
+          if (typeof first.id === "string") {
+            projectId = first.id;
+          }
+        }
+      } catch {
+        // JSON parsing failure is non-fatal; we still validated successfully
+      }
+      return { ok: true, message: null, projectId };
     }
     if (response.status === 401 || response.status === 403) {
-      return { ok: false, message: `Authentication failed (HTTP ${response.status}). Check your public/secret keys.` };
+      return { ok: false, message: `Authentication failed (HTTP ${response.status}). Check your public/secret keys.`, projectId: null };
     }
-    return { ok: false, message: `Unexpected response from ${host} (HTTP ${response.status}).` };
+    return { ok: false, message: `Unexpected response from ${host} (HTTP ${response.status}).`, projectId: null };
   } catch (error) {
-    return { ok: false, message: `Could not reach ${host}: ${(error as Error).message}` };
+    return { ok: false, message: `Could not reach ${host}: ${(error as Error).message}`, projectId: null };
   }
 }
 
@@ -280,6 +296,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   const repoRoot = repo.repoRoot;
   const credentials = await resolveCredentials(auth, options, repoRoot);
 
+  let projectId: string | null = null;
   if (!options.skipValidation && !options.dryRun) {
     const validation = await validateCredentials(
       credentials.host,
@@ -289,6 +306,9 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     if (!validation.ok) {
       console.warn(`Warning: Credential validation failed — ${validation.message}`);
       console.warn("Continuing with setup. Hooks will fail silently until credentials are fixed.");
+    }
+    if (validation.projectId) {
+      projectId = validation.projectId;
     }
   }
 
@@ -317,6 +337,9 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   localEnv.LANGFUSE_PUBLIC_KEY = credentials.publicKey;
   localEnv.LANGFUSE_SECRET_KEY = credentials.secretKey;
   localEnv.LANGFUSE_BASE_URL = credentials.host;
+  if (projectId) {
+    localEnv.LANGFUSE_PROJECT_ID = projectId;
+  }
   localSettings.env = localEnv;
 
   const localWriteResult = await writeJsonIfChanged(localSettingsPath, localSettings, {
@@ -340,6 +363,11 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     matcher: "",
     command: STOP_HOOK_COMMAND,
   });
+  const sessionEndChanged = ensureHookCommand(globalSettings, {
+    event: "SessionEnd",
+    matcher: "",
+    command: SESSION_END_HOOK_COMMAND,
+  });
   const postToolUseChanged = ensureHookCommand(globalSettings, {
     event: "PostToolUse",
     matcher: "Bash",
@@ -351,7 +379,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     command: SESSION_INIT_HOOK_COMMAND,
   });
 
-  if (stopChanged || postToolUseChanged || preToolUseChanged) {
+  if (stopChanged || sessionEndChanged || postToolUseChanged || preToolUseChanged) {
     const globalWriteResult = await writeJsonIfChanged(CLAUDE_SETTINGS_PATH, globalSettings, {
       dryRun: options.dryRun,
     });
@@ -418,6 +446,7 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
   console.log("- Hook commands:");
   console.log(`  PreToolUse -> ${SESSION_INIT_HOOK_COMMAND}`);
   console.log(`  Stop -> ${STOP_HOOK_COMMAND}`);
+  console.log(`  SessionEnd -> ${SESSION_END_HOOK_COMMAND}`);
   console.log(`  PostToolUse (Bash) -> ${GIT_COMMIT_HOOK_COMMAND}`);
 
   if (warnings.length > 0) {

@@ -24,6 +24,7 @@ export const SESSION_INIT_HOOK_SCRIPT_PATH = join(
 );
 
 export const STOP_HOOK_COMMAND = "python3 ~/.claude/hooks/langfuse_hook.py";
+export const SESSION_END_HOOK_COMMAND = "python3 ~/.claude/hooks/langfuse_hook.py";
 export const GIT_COMMIT_HOOK_COMMAND =
   "python3 ~/.claude/hooks/langfuse_git_commit_hook.py";
 export const SESSION_INIT_HOOK_COMMAND =
@@ -43,4 +44,5 @@ export const LOCAL_ENV_KEYS = [
   "LANGFUSE_SECRET_KEY",
   "LANGFUSE_BASE_URL",
   "LANGFUSE_HOST",
+  "LANGFUSE_PROJECT_ID",
 ] as const;

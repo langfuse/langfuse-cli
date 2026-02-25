@@ -202,6 +202,66 @@ def get_git_metadata(*search_paths: Path) -> Dict[str, Any]:
     return metadata
 
 
+# --------------- Claude Code identity ---------------
+_cached_user_email: Optional[str] = None
+
+
+def get_claude_user_email() -> Optional[str]:
+    """Resolve the Claude Code user's email address.
+
+    Checks ~/.claude.json for stored auth data, then falls back to
+    running ``claude auth status`` and parsing the JSON output.
+    """
+    global _cached_user_email
+    if _cached_user_email is not None:
+        return _cached_user_email or None
+
+    # 1) Try ~/.claude.json (OAuth / stored auth data)
+    try:
+        claude_json_path = Path.home() / ".claude.json"
+        if claude_json_path.exists():
+            data = json.loads(claude_json_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                # Check common auth key structures
+                for key in ("email", "userEmail", "user_email"):
+                    val = data.get(key)
+                    if isinstance(val, str) and "@" in val:
+                        _cached_user_email = val
+                        return val
+                # Check nested auth/oauth objects
+                for outer in ("auth", "oauth", "user", "account"):
+                    nested = data.get(outer)
+                    if isinstance(nested, dict):
+                        for key in ("email", "userEmail", "user_email"):
+                            val = nested.get(key)
+                            if isinstance(val, str) and "@" in val:
+                                _cached_user_email = val
+                                return val
+    except Exception:
+        pass
+
+    # 2) Fallback: ``claude auth status``
+    try:
+        out = subprocess.check_output(
+            ["claude", "auth", "status"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        )
+        status = json.loads(out.strip())
+        if isinstance(status, dict):
+            for key in ("email", "userEmail", "user_email"):
+                val = status.get(key)
+                if isinstance(val, str) and "@" in val:
+                    _cached_user_email = val
+                    return val
+    except Exception:
+        pass
+
+    _cached_user_email = ""
+    return None
+
+
 # --------------- File I/O ---------------
 def atomic_write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,13 +278,20 @@ def atomic_write_json(path: Path, data: dict) -> None:
 
 def save_last_trace(session_id: str, trace_id: str, host: str) -> None:
     try:
-        data = {
+        project_id = os.environ.get("LANGFUSE_PROJECT_ID", "")
+
+        data: Dict[str, Any] = {
             "session_id": session_id,
             "trace_id": trace_id,
             "trace_url": f"{host}/trace/{trace_id}",
             "host": host,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        if project_id:
+            data["project_id"] = project_id
+            data["session_url"] = f"{host}/project/{project_id}/sessions/{session_id}"
+
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         tmp = LAST_TRACE_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -318,6 +385,9 @@ def write_trace_manifest(
                 pass
 
         trace_url = f"{host}/trace/{trace_id}"
+        project_id = os.environ.get("LANGFUSE_PROJECT_ID", "")
+        session_url = f"{host}/project/{project_id}/sessions/{session_id}" if project_id else ""
+
         commit_sha = (git_metadata or {}).get("git_commit_sha", "")
         remote_url = (git_metadata or {}).get("git_remote_url")
         commit_url = (git_metadata or {}).get("git_commit_url")
@@ -336,14 +406,18 @@ def write_trace_manifest(
             if msg:
                 git_block["commit_message"] = msg
 
+        langfuse_block: Dict[str, Any] = {
+            "trace_id": trace_id,
+            "trace_url": trace_url,
+            "session_id": session_id,
+            "host": host.rstrip("/"),
+        }
+        if session_url:
+            langfuse_block["session_url"] = session_url
+
         manifest = {
             "schema_version": 1,
-            "langfuse": {
-                "trace_id": trace_id,
-                "trace_url": trace_url,
-                "session_id": session_id,
-                "host": host.rstrip("/"),
-            },
+            "langfuse": langfuse_block,
             "git": git_block,
             "created_at": existing.get("created_at", datetime.now(timezone.utc).isoformat()),
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -351,16 +425,18 @@ def write_trace_manifest(
 
         atomic_write_json(manifest_path, manifest)
 
-        # Keep a per-repo pointer for hooks that need the latest trace URL
-        # without relying on the global ~/.claude/state file.
-        current_session_path = repo_root / ".langfuse" / "current-session.json"
-        atomic_write_json(current_session_path, {
+        current_session_data: Dict[str, Any] = {
             "session_id": session_id,
             "trace_id": trace_id,
             "trace_url": trace_url,
             "host": host.rstrip("/"),
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        if session_url:
+            current_session_data["session_url"] = session_url
+
+        current_session_path = repo_root / ".langfuse" / "current-session.json"
+        atomic_write_json(current_session_path, current_session_data)
         debug(f"Wrote trace manifest to {manifest_path}")
     except Exception as exc:
         debug(f"write_trace_manifest failed: {exc}")

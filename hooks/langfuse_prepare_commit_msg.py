@@ -63,7 +63,29 @@ except ImportError:
 
 
 MAX_AGE_HOURS = 4
-TRAILER_KEY = "Langfuse-Trace"
+TRACE_TRAILER_KEY = "Langfuse-Trace"
+SESSION_TRAILER_KEY = "Langfuse-Session"
+
+
+def _append_trailers(content: str, trailers: list[str]) -> str:
+    """Append one or more trailers to a commit message, preserving existing trailer blocks."""
+    lines = content.rstrip("\n").split("\n")
+
+    has_existing_trailers = False
+    for line in reversed(lines):
+        stripped = line.strip()
+        if not stripped:
+            break
+        if ": " in stripped and not stripped.startswith("#"):
+            has_existing_trailers = True
+            break
+        else:
+            break
+
+    joined = "\n".join(trailers)
+    if has_existing_trailers:
+        return "\n".join(lines) + "\n" + joined + "\n"
+    return "\n".join(lines) + "\n\n" + joined + "\n"
 
 
 def main() -> int:
@@ -97,28 +119,16 @@ def main() -> int:
         except Exception:
             return 0
 
-        if f"{TRAILER_KEY}:" in content:
+        if f"{TRACE_TRAILER_KEY}:" in content:
             return 0
 
-        trailer = f"{TRAILER_KEY}: {trace_url}"
-        lines = content.rstrip("\n").split("\n")
+        trailers: list[str] = [f"{TRACE_TRAILER_KEY}: {trace_url}"]
 
-        has_existing_trailers = False
-        for line in reversed(lines):
-            stripped = line.strip()
-            if not stripped:
-                break
-            if ": " in stripped and not stripped.startswith("#"):
-                has_existing_trailers = True
-                break
-            else:
-                break
+        session_url = data.get("session_url")
+        if isinstance(session_url, str) and session_url:
+            trailers.append(f"{SESSION_TRAILER_KEY}: {session_url}")
 
-        if has_existing_trailers:
-            result = "\n".join(lines) + "\n" + trailer + "\n"
-        else:
-            result = "\n".join(lines) + "\n\n" + trailer + "\n"
-
+        result = _append_trailers(content, trailers)
         Path(msg_file).write_text(result, encoding="utf-8")
         return 0
 
