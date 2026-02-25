@@ -559,7 +559,6 @@ def emit_turn(
                 "input": span_input,
                 "metadata": span_metadata,
                 "trace_context": {"trace_id": pre_trace_id},
-                **span_time_kwargs,
             }
             try:
                 span_ctx = langfuse.start_as_current_observation(**obs_kwargs)
@@ -574,7 +573,6 @@ def emit_turn(
                 name=f"Claude Code - Turn {turn_num}",
                 input=span_input,
                 metadata=span_metadata,
-                **span_time_kwargs,
             )
 
         with span_ctx as trace_span:
@@ -592,9 +590,8 @@ def emit_turn(
                 input=generation_input,
                 output=generation_output,
                 metadata=gen_metadata,
-                **gen_time_kwargs,
-            ):
-                pass
+            ) as gen_obs:
+                gen_obs.update(**gen_time_kwargs)
 
             for tc in tool_calls:
                 # ChatML-formatted tool input (assistant's tool call)
@@ -647,10 +644,9 @@ def emit_turn(
                     as_type="tool",
                     input=tool_chatml_input,
                     metadata=tool_metadata,
-                    **tool_time_kwargs,
                     **level_kwargs,
                 ) as tool_obs:
-                    tool_obs.update(output=tool_chatml_output)
+                    tool_obs.update(output=tool_chatml_output, **tool_time_kwargs)
 
             trace_span.update(output=span_output, **span_time_kwargs)
             return getattr(trace_span, "trace_id", None)
