@@ -209,30 +209,32 @@ _cached_user_email: Optional[str] = None
 def get_claude_user_email() -> Optional[str]:
     """Resolve the Claude Code user's email address.
 
-    Checks ~/.claude.json for stored auth data, then falls back to
-    running ``claude auth status`` and parsing the JSON output.
+    Checks ~/.claude.json for stored auth data (oauthAccount.emailAddress),
+    then falls back to running ``claude auth status`` and parsing the output.
     """
     global _cached_user_email
     if _cached_user_email is not None:
         return _cached_user_email or None
 
-    # 1) Try ~/.claude.json (OAuth / stored auth data)
+    email_keys = ("emailAddress", "email", "userEmail", "user_email")
+
+    # 1) Try ~/.claude.json (Claude Code stores oauthAccount here)
     try:
         claude_json_path = Path.home() / ".claude.json"
         if claude_json_path.exists():
             data = json.loads(claude_json_path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                # Check common auth key structures
-                for key in ("email", "userEmail", "user_email"):
+                # Check top-level keys
+                for key in email_keys:
                     val = data.get(key)
                     if isinstance(val, str) and "@" in val:
                         _cached_user_email = val
                         return val
-                # Check nested auth/oauth objects
-                for outer in ("auth", "oauth", "user", "account"):
+                # Check nested objects (oauthAccount, auth, user, etc.)
+                for outer in ("oauthAccount", "auth", "oauth", "user", "account"):
                     nested = data.get(outer)
                     if isinstance(nested, dict):
-                        for key in ("email", "userEmail", "user_email"):
+                        for key in email_keys:
                             val = nested.get(key)
                             if isinstance(val, str) and "@" in val:
                                 _cached_user_email = val
@@ -248,13 +250,23 @@ def get_claude_user_email() -> Optional[str]:
             text=True,
             timeout=5,
         )
-        status = json.loads(out.strip())
-        if isinstance(status, dict):
-            for key in ("email", "userEmail", "user_email"):
-                val = status.get(key)
-                if isinstance(val, str) and "@" in val:
-                    _cached_user_email = val
-                    return val
+        # Try JSON output first
+        try:
+            status = json.loads(out.strip())
+            if isinstance(status, dict):
+                for key in email_keys:
+                    val = status.get(key)
+                    if isinstance(val, str) and "@" in val:
+                        _cached_user_email = val
+                        return val
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # Try plain text: "Logged in as user@example.com"
+        import re as _re
+        match = _re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", out)
+        if match:
+            _cached_user_email = match.group(0)
+            return _cached_user_email
     except Exception:
         pass
 

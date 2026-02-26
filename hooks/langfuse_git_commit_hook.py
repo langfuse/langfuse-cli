@@ -277,57 +277,6 @@ def main() -> int:
             "source": "claude-code",
         }
 
-        try:
-            from langfuse import Langfuse, propagate_attributes
-
-            langfuse = Langfuse(
-                public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-                secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-                host=host,
-            )
-
-            observation_kwargs: dict[str, Any] = {
-                "as_type": "span",
-                "name": "git-commit",
-                "trace_context": {"trace_id": trace_id},
-                "metadata": metadata,
-            }
-
-            with propagate_attributes(
-                session_id=session_id,
-                tags=["claude-code"],
-            ):
-                try:
-                    with langfuse.start_as_current_observation(**observation_kwargs):
-                        pass
-                except TypeError as exc:
-                    if "trace_context" in str(exc):
-                        observation_kwargs.pop("trace_context", None)
-                        with langfuse.start_as_current_observation(**observation_kwargs):
-                            pass
-                    else:
-                        raise
-
-            # Explicitly update the trace metadata with the commit URL
-            # so it's visible at the trace level in the Langfuse UI.
-            trace_meta: dict[str, Any] = {
-                "source": "claude-code",
-                "commit_sha": commit_sha,
-                "commit_message": commit_message,
-                "branch": branch,
-            }
-            if commit_url:
-                trace_meta["github_commit_url"] = commit_url
-            try:
-                langfuse.trace(id=trace_id, metadata=trace_meta)
-            except Exception:
-                pass
-
-            langfuse.flush()
-            langfuse.shutdown()
-        except Exception as exc:
-            debug(str(exc))
-
         git_metadata = {
             "git_commit_sha": commit_sha,
             "git_commit_url": commit_url,

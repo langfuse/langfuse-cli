@@ -63,7 +63,6 @@ except ImportError:
 
 
 MAX_AGE_HOURS = 4
-TRACE_TRAILER_KEY = "Langfuse-Trace"
 SESSION_TRAILER_KEY = "Langfuse-Session"
 
 
@@ -102,16 +101,20 @@ def main() -> int:
         if commit_source in ("merge", "squash"):
             return 0
 
-        repo_root = resolve_repo_root(Path.cwd()) or Path.cwd()
-        local_trace_path = repo_root / ".langfuse" / "current-session.json"
-        data = read_recent_trace(local_trace_path, MAX_AGE_HOURS)
+        # Prefer the global last-trace file (updated eagerly by the PreToolUse
+        # session-init hook for the *current* session) over the per-repo
+        # current-session file (only updated by the Stop hook, which runs
+        # *after* the commit finishes).
+        data = read_recent_trace(LAST_TRACE_FILE, MAX_AGE_HOURS)
         if not data:
-            data = read_recent_trace(LAST_TRACE_FILE, MAX_AGE_HOURS)
+            repo_root = resolve_repo_root(Path.cwd()) or Path.cwd()
+            local_trace_path = repo_root / ".langfuse" / "current-session.json"
+            data = read_recent_trace(local_trace_path, MAX_AGE_HOURS)
         if not data:
             return 0
 
-        trace_url = data.get("trace_url")
-        if not isinstance(trace_url, str) or not trace_url:
+        session_url = data.get("session_url")
+        if not isinstance(session_url, str) or not session_url:
             return 0
 
         try:
@@ -119,16 +122,10 @@ def main() -> int:
         except Exception:
             return 0
 
-        if f"{TRACE_TRAILER_KEY}:" in content:
+        if f"{SESSION_TRAILER_KEY}:" in content:
             return 0
 
-        trailers: list[str] = [f"{TRACE_TRAILER_KEY}: {trace_url}"]
-
-        session_url = data.get("session_url")
-        if isinstance(session_url, str) and session_url:
-            trailers.append(f"{SESSION_TRAILER_KEY}: {session_url}")
-
-        result = _append_trailers(content, trailers)
+        result = _append_trailers(content, [f"{SESSION_TRAILER_KEY}: {session_url}"])
         Path(msg_file).write_text(result, encoding="utf-8")
         return 0
 

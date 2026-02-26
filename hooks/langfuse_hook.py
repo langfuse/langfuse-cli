@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import time
+import time as _time_mod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -221,6 +222,16 @@ def get_version(msg: Dict[str, Any]) -> Optional[str]:
     return v if isinstance(v, str) and v else None
 
 
+def _duration_ns(start: Optional[datetime], end: Optional[datetime]) -> Optional[int]:
+    """Compute duration in nanoseconds between two transcript timestamps."""
+    if not start or not end:
+        return None
+    delta = (end - start).total_seconds()
+    if delta < 0:
+        return None
+    return int(delta * 1_000_000_000)
+
+
 def extract_bash_command_prefix(tool_input: Any) -> Optional[str]:
     """Extract the first command word from a Bash tool input."""
     if isinstance(tool_input, dict):
@@ -344,6 +355,9 @@ def build_turns(messages: List[Dict[str, Any]]) -> List[Turn]:
         if current_user is None:
             return
         if not assistant_latest:
+            # No assistant response yet. If there are tool_results (from
+            # a denial recorded as a user-side tool_result), still skip
+            # because we have no assistant content to show.
             return
         ordered_mids = [mid for mid in assistant_order if mid in assistant_latest]
         assistants = [assistant_latest[mid] for mid in ordered_mids]
@@ -360,12 +374,14 @@ def build_turns(messages: List[Dict[str, Any]]) -> List[Turn]:
             claude_code_version=version,
         ))
 
-    for msg in messages:
+    for msg_idx, msg in enumerate(messages):
         msg_version = get_version(msg)
         if msg_version:
             version = msg_version
 
         role = get_role(msg)
+        msg_type = msg.get("type", "?")
+        debug(f"build_turns[{msg_idx}]: type={msg_type} role={role} is_tool_result={is_tool_result(msg)}")
 
         if is_tool_result(msg):
             tr_ts = parse_timestamp(msg)
@@ -538,18 +554,9 @@ def emit_turn(
     if propagated_metadata:
         propagate_kwargs["metadata"] = propagated_metadata
 
-    # Timing from transcript timestamps
-    span_time_kwargs: Dict[str, Any] = {}
-    if turn.user_timestamp:
-        span_time_kwargs["start_time"] = turn.user_timestamp
-    if turn.last_assistant_timestamp:
-        span_time_kwargs["end_time"] = turn.last_assistant_timestamp
-
-    gen_time_kwargs: Dict[str, Any] = {}
-    if turn.first_assistant_timestamp:
-        gen_time_kwargs["start_time"] = turn.first_assistant_timestamp
-    if turn.last_assistant_timestamp:
-        gen_time_kwargs["end_time"] = turn.last_assistant_timestamp
+    # Compute durations in nanoseconds from transcript timestamps
+    span_dur_ns = _duration_ns(turn.user_timestamp, turn.last_assistant_timestamp)
+    gen_dur_ns = _duration_ns(turn.first_assistant_timestamp, turn.last_assistant_timestamp)
 
     with propagate_attributes(**propagate_kwargs):
         if pre_trace_id:
@@ -575,6 +582,8 @@ def emit_turn(
                 metadata=span_metadata,
             )
 
+        span_start_ns = _time_mod.time_ns()
+
         with span_ctx as trace_span:
             gen_metadata = _merge_metadata({
                 "assistant_text": assistant_text_meta,
@@ -583,21 +592,26 @@ def emit_turn(
             if turn.claude_code_version:
                 gen_metadata["claude_code_version"] = turn.claude_code_version
 
-            with langfuse.start_as_current_observation(
+            gen_start_ns = _time_mod.time_ns()
+            gen_obs = langfuse.start_observation(
                 name="Claude Response",
                 as_type="generation",
                 model=model,
                 input=generation_input,
                 output=generation_output,
                 metadata=gen_metadata,
-            ) as gen_obs:
-                gen_obs.update(**gen_time_kwargs)
+            )
+            if gen_dur_ns is not None:
+                gen_obs.end(end_time=gen_start_ns + gen_dur_ns)
+            else:
+                gen_obs.end()
 
             for tc in tool_calls:
                 # ChatML-formatted tool input (assistant's tool call)
+                chatml_tc = _tool_calls_to_chatml([tc])[0]
                 tool_chatml_input: Dict[str, Any] = {
                     "role": "assistant",
-                    "tool_calls": [_tool_calls_to_chatml([tc])[0]],
+                    "tool_calls": [chatml_tc],
                 }
 
                 # ChatML-formatted tool output (tool result message)
@@ -624,31 +638,39 @@ def emit_turn(
                 if turn.claude_code_version:
                     tool_metadata["claude_code_version"] = turn.claude_code_version
 
-                # Timing from transcript for tool observations
-                tool_time_kwargs: Dict[str, Any] = {}
-                tu_ts = turn.tool_use_timestamps.get(tc["id"])
-                if tu_ts:
-                    tool_time_kwargs["start_time"] = tu_ts
-                tr_obj = turn.tool_results_by_id.get(tc["id"])
-                if tr_obj and tr_obj.timestamp:
-                    tool_time_kwargs["end_time"] = tr_obj.timestamp
-
                 # Level for denied/failed tools
                 level_kwargs: Dict[str, Any] = {}
                 if tc.get("is_error") or tc.get("output") is None:
                     level_kwargs["level"] = "ERROR"
                     level_kwargs["status_message"] = "Tool execution denied or failed"
 
-                with langfuse.start_as_current_observation(
+                tool_start_ns = _time_mod.time_ns()
+                tool_obs = langfuse.start_observation(
                     name=obs_name,
                     as_type="tool",
                     input=tool_chatml_input,
+                    output=tool_chatml_output,
                     metadata=tool_metadata,
                     **level_kwargs,
-                ) as tool_obs:
-                    tool_obs.update(output=tool_chatml_output, **tool_time_kwargs)
+                )
 
-            trace_span.update(output=span_output, **span_time_kwargs)
+                tu_ts = turn.tool_use_timestamps.get(tc["id"])
+                tr_obj = turn.tool_results_by_id.get(tc["id"])
+                tool_dur_ns = _duration_ns(tu_ts, tr_obj.timestamp if tr_obj else None)
+                if tool_dur_ns is not None:
+                    tool_obs.end(end_time=tool_start_ns + tool_dur_ns)
+                else:
+                    tool_obs.end()
+
+            trace_span.update(output=span_output)
+
+            # Set span end_time based on transcript duration
+            if span_dur_ns is not None:
+                try:
+                    trace_span.end(end_time=span_start_ns + span_dur_ns)
+                except Exception:
+                    pass
+
             return getattr(trace_span, "trace_id", None)
 
 
@@ -707,21 +729,32 @@ def main() -> int:
 
             msgs, ss = read_new_jsonl(transcript_path, ss)
             if not msgs:
+                debug(f"No new messages in transcript (offset={ss.offset})")
                 write_session_state(state, key, ss)
                 save_state(state)
                 return 0
 
+            debug(f"Read {len(msgs)} new messages from transcript")
             turns = build_turns(msgs)
             if not turns:
+                # Log at INFO level to help diagnose missing traces
+                msg_types = [m.get("type", "?") for m in msgs]
+                info(f"No turns built from {len(msgs)} messages (types: {msg_types}, session={session_id})")
                 write_session_state(state, key, ss)
                 save_state(state)
                 return 0
+            debug(f"Built {len(turns)} turns from messages")
 
             emitted = 0
             last_trace_id = None
             for t in turns:
                 emitted += 1
                 turn_num = ss.turn_count + emitted
+                # Only bind to the pre-generated trace_id for the very
+                # first turn of a session (so the commit-message URL
+                # matches).  All subsequent turns get their own traces,
+                # grouped under the same session_id.
+                use_trace_id = pre_trace_id if (ss.turn_count == 0 and emitted == 1) else None
                 try:
                     tid = emit_turn(
                         langfuse,
@@ -729,7 +762,7 @@ def main() -> int:
                         turn_num,
                         t,
                         transcript_path,
-                        pre_trace_id=pre_trace_id,
+                        pre_trace_id=use_trace_id,
                         git_metadata=git_metadata,
                         propagated_metadata=propagated_metadata,
                         user_id=user_email,
