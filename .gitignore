@@ -6,3 +6,6 @@ bun.lockb
 .env
 .env.local
 .DS_Store
+
+.langfuse/
+.claude/settings.local.json

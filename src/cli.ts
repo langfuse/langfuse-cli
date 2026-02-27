@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runDisable } from "./commands/disable";
+import { runEnable } from "./commands/enable";
+import { DEFAULT_HOST } from "./commands/shared/constants";
+import { parseEnvContent } from "./commands/shared/env";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const DEFAULT_HOST = "https://cloud.langfuse.com";
 const LANGFUSE_FLAGS = new Set([
   "--public-key",
   "--secret-key",
@@ -15,19 +17,8 @@ const LANGFUSE_BOOL_FLAGS = new Set(["--refetch-api-spec"]);
 
 function loadEnvFile(filePath: string): void {
   const content = readFileSync(filePath, "utf-8");
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = trimmed.slice(0, eqIdx).trim();
-    let val = trimmed.slice(eqIdx + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
+  const values = parseEnvContent(content);
+  for (const [key, val] of Object.entries(values)) {
     process.env[key] = val;
   }
 }
@@ -108,6 +99,35 @@ export async function run(argv: string[]): Promise<void> {
     return runApi({ passthrough, boolFlags, publicKey, secretKey, host });
   }
 
+  if (subcommand === "integration") {
+    const integration = passthrough[3];
+
+    if (integration === "claudecode") {
+      const claudeCodeCommand = passthrough[4];
+      const commandArgs = passthrough.slice(5);
+
+      try {
+        if (claudeCodeCommand === "enable") {
+          return await runEnable(commandArgs, { publicKey, secretKey, host });
+        }
+
+        if (claudeCodeCommand === "disable") {
+          return await runDisable(commandArgs);
+        }
+      } catch (error) {
+        console.error(`Error: ${(error as Error).message}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      printClaudeCodeHelp();
+      return;
+    }
+
+    printIntegrationHelp();
+    return;
+  }
+
   if (subcommand === "get-skill") {
     const skillPath = join(__dirname, "..", "skill", "langfuse-cli.md");
     process.stdout.write(readFileSync(skillPath, "utf-8"));
@@ -125,16 +145,18 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
+  integration             Manage Langfuse integrations
   get-skill               Print the agent skill file for use in AI prompts
 
 Options:
   --public-key <key>      Langfuse public key (or LANGFUSE_PUBLIC_KEY)
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
   --host <url>            Langfuse host (or LANGFUSE_HOST/LANGFUSE_BASE_URL, default: ${DEFAULT_HOST})
-  --env <path>       Load env vars from file
+  --env <path>            Load env vars from file
   --refetch-api-spec      Fetch latest API spec instead of bundled
 
 Examples:
+  langfuse integration claudecode enable             Enable Claude Code tracing
   langfuse api __schema                              List all available resources
   langfuse api <resource> --help                     Show actions for a resource
   langfuse api traces list --limit 10                List traces
@@ -142,6 +164,30 @@ Examples:
   langfuse api scores create --name quality \\
     --traceId <id> --value 0.9                       Create a score
   langfuse api datasets create --name my-dataset     Create a dataset`);
+}
+
+function printIntegrationHelp(): void {
+  console.log(`Usage: langfuse integration <integration>
+
+Available integrations:
+  claudecode              Claude Code tracing
+
+Examples:
+  langfuse integration claudecode enable             Enable Claude Code tracing
+  langfuse integration claudecode disable            Disable Claude Code tracing
+  langfuse integration claudecode --help             Show Claude Code commands`);
+}
+
+function printClaudeCodeHelp(): void {
+  console.log(`Usage: langfuse integration claudecode <command>
+
+Commands:
+  enable                  Enable Claude Code tracing
+  disable                 Disable Claude Code tracing for this repo
+
+Examples:
+  langfuse integration claudecode enable             Enable tracing in this repo
+  langfuse integration claudecode disable            Disable tracing`);
 }
 
 function printApiHelp(resources: string[]): void {
