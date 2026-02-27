@@ -1,4 +1,4 @@
-<!-- Test: Langfuse tracing integration verification 2026-02-27T00:00 -->
+<!-- Test: Langfuse tracing integration verification 2026-02-27T00:01 -->
 # langfuse-cli
 
 Interact with the [Langfuse](https://langfuse.com) API from the command line.
