@@ -20,7 +20,7 @@ import {
 import { ensureHookCommand } from "./shared/claude-settings";
 import { parseEnvContent } from "./shared/env";
 import { asObject, readJsonFile, readTextFile, type JsonObject } from "./shared/fs";
-import { resolveRepoRoot } from "./shared/git";
+import { ensureLangfusePythonPackage, resolveRepoRoot } from "./shared/git";
 import {
   getGitCommitHookScript,
   getPrepareCommitMsgHookScript,
@@ -404,6 +404,11 @@ export async function runEnable(args: string[], auth: GlobalAuthOptions): Promis
     changes.push(...result.messages);
     warnings.push(...result.warnings);
   }
+
+  // --- Python dependency ---
+  const pipResult = await ensureLangfusePythonPackage({ dryRun: options.dryRun });
+  changes.push(...pipResult.messages);
+  warnings.push(...pipResult.warnings);
 
   // --- Per-repo git hook ---
   if (repo.isGitRepo) {
