@@ -6,6 +6,8 @@ Fires after Bash tool use, checks if a git commit occurred, and records
 metadata in a trace manifest. Installed by langfuse-cli.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re

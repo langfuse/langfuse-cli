@@ -4,6 +4,8 @@ prepare-commit-msg hook: appends a Langfuse-Trace trailer to commit messages.
 Installed by langfuse-cli.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
