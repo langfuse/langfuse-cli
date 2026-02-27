@@ -203,6 +203,7 @@ async function resolveCredentials(
   const hostExplicitFromEnv =
     !!process.env.LANGFUSE_BASE_URL || !!process.env.LANGFUSE_HOST;
   const hostExplicitFromFlag = host !== DEFAULT_HOST;
+  let hostExplicitFromDotEnv = false;
 
   const dotenvCredentials = await readLangfuseEnvFromDotEnv(repoRoot);
   if (dotenvCredentials) {
@@ -217,6 +218,7 @@ async function resolveCredentials(
       secretKey = dotenvCredentials.secretKey;
       if (dotenvCredentials.host) {
         host = dotenvCredentials.host;
+        hostExplicitFromDotEnv = true;
       }
     }
   }
@@ -224,7 +226,7 @@ async function resolveCredentials(
   const hostResolved =
     hostExplicitFromFlag ||
     hostExplicitFromEnv ||
-    (dotenvCredentials?.host != null && host !== DEFAULT_HOST);
+    hostExplicitFromDotEnv;
 
   if (!hostResolved && !nonInteractive) {
     host = await promptForRegion();
