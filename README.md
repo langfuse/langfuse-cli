@@ -105,17 +105,3 @@ bun run patch-openapi -- --refetch --openapi_url http://localhost:3000/generated
 # Patch only (no fetch)
 bun run patch-openapi
 ```
-
-## Claude Code Integration (Beta)
-
-> **Beta**: This integration is under active development. The tracing format and hook behavior may change between releases.
-
-The CLI can set up automatic [Langfuse](https://langfuse.com) tracing for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) sessions. It installs Claude Code hooks that send conversation turns, tool calls, and git commit metadata to Langfuse.
-
-```sh
-# Enable tracing in the current repo (interactive setup)
-langfuse integration claudecode enable
-
-# Disable tracing
-langfuse integration claudecode disable
-```
