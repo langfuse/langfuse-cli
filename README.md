@@ -27,7 +27,7 @@ You can get the values from your project settings. The `.env` file should contai
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default
+LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default (LANGFUSE_BASE_URL also supported)
 ```
 
 Alternatively, export env vars or pass inline flags:
