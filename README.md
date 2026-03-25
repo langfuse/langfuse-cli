@@ -77,13 +77,13 @@ langfuse api score-v2s get-scores --limit 20
 
 ## Agent Usage
 
-A skill file is included for teaching AI agents how to use the CLI. Print it with:
+The latest Langfuse skill lives in [`langfuse/skills`](https://github.com/langfuse/skills). Print the current version with:
 
 ```sh
 langfuse get-skill
 ```
 
-Pipe it into an agent's context or include it in a system prompt.
+This fetches the latest skill from GitHub, so it stays up to date. Pipe it into an agent's context or include it in a system prompt.
 
 ## API Reference
 

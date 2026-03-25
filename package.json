@@ -24,7 +24,6 @@
     "bin",
     "dist",
     "openapi.yml",
-    "skill",
     "README.md"
   ],
   "scripts": {
