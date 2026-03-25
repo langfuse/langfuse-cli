@@ -4,6 +4,7 @@ const DEFAULT_HOST = "https://cloud.langfuse.com";
 const OPENAPI_FILE_URL = new URL("../openapi.yml", import.meta.url);
 const LANGFUSE_SKILL_URL =
   "https://raw.githubusercontent.com/langfuse/skills/main/skills/langfuse/SKILL.md";
+const GET_SKILL_FETCH_TIMEOUT_MS = 5000;
 const LANGFUSE_FLAGS = new Set([
   "--public-key",
   "--secret-key",
@@ -56,8 +57,17 @@ async function getSpecText(params: {
   return readFileSync(OPENAPI_FILE_URL, "utf-8");
 }
 
-async function fetchText(url: string, label: string): Promise<string> {
-  const resp = await fetch(url);
+async function fetchText(
+  url: string,
+  label: string,
+  options?: { timeoutMs?: number },
+): Promise<string> {
+  const resp = await fetch(url, {
+    signal:
+      typeof options?.timeoutMs === "number"
+        ? AbortSignal.timeout(options.timeoutMs)
+        : undefined,
+  });
   if (!resp.ok) {
     throw new Error(
       `Failed to fetch ${label} from ${url}: ${resp.status} ${resp.statusText}`,
@@ -67,7 +77,24 @@ async function fetchText(url: string, label: string): Promise<string> {
 }
 
 async function getSkillText(): Promise<string> {
-  return fetchText(LANGFUSE_SKILL_URL, "skill");
+  return fetchText(LANGFUSE_SKILL_URL, "skill", {
+    timeoutMs: GET_SKILL_FETCH_TIMEOUT_MS,
+  });
+}
+
+function printGetSkillFetchError(err: unknown): void {
+  const reason = err instanceof Error ? err.message : String(err);
+
+  process.stderr.write(`Failed to fetch the latest Langfuse skill from GitHub.
+This environment may block direct GitHub access.
+
+Download the skill manually from:
+  ${LANGFUSE_SKILL_URL}
+
+Then add the downloaded SKILL.md to your agent context manually.
+
+Original error: ${reason}
+`);
 }
 
 export async function run(argv: string[]): Promise<void> {
@@ -115,7 +142,12 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   if (subcommand === "get-skill") {
-    process.stdout.write(await getSkillText());
+    try {
+      process.stdout.write(await getSkillText());
+    } catch (err) {
+      printGetSkillFetchError(err);
+      process.exitCode = 1;
+    }
     return;
   }
 
