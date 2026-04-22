@@ -1,12 +1,12 @@
 {
   "name": "langfuse-cli",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Interact with Langfuse API from the command line",
   "author": "Langfuse",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/langfuse/langfuse-cli.git"
+    "url": "git+https://github.com/langfuse/langfuse-cli.git"
   },
   "keywords": [
     "langfuse",
@@ -18,7 +18,7 @@
   ],
   "type": "module",
   "bin": {
-    "langfuse": "./bin/langfuse.mjs"
+    "langfuse": "bin/langfuse.mjs"
   },
   "files": [
     "bin",
