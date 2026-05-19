@@ -18,7 +18,8 @@
   ],
   "type": "module",
   "bin": {
-    "langfuse": "./bin/langfuse.mjs"
+    "langfuse": "./bin/langfuse.mjs",
+    "langfuse-cli": "./bin/langfuse.mjs"
   },
   "files": [
     "bin",
