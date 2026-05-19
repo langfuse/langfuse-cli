@@ -77,6 +77,12 @@ langfuse api score-v2s get-scores --limit 20
 
 ## Agent Usage
 
+Install the official Langfuse AI skill:
+
+```sh
+npx skills add langfuse/skills --skill "langfuse"
+```
+
 A skill file is included for teaching AI agents how to use the CLI. Print it with:
 
 ```sh
@@ -84,6 +90,12 @@ langfuse get-skill
 ```
 
 Pipe it into an agent's context or include it in a system prompt.
+
+## Tracing
+
+This CLI is instrumented with Langfuse tracing when credentials are configured (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and optional `LANGFUSE_HOST`).
+
+It creates traces for each command and nested spans for API spec loading/help/execution, while only recording safe command metadata (not secret flags).
 
 ## API Reference
 

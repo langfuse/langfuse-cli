@@ -13,6 +13,11 @@ const LANGFUSE_FLAGS = new Set([
 ]);
 const LANGFUSE_BOOL_FLAGS = new Set(["--refetch-api-spec"]);
 
+type TracingRuntime = {
+  startActiveObservation: typeof import("@langfuse/tracing").startActiveObservation;
+  updateActiveObservation: typeof import("@langfuse/tracing").updateActiveObservation;
+};
+
 function loadEnvFile(filePath: string): void {
   const content = readFileSync(filePath, "utf-8");
   for (const line of content.split("\n")) {
@@ -64,6 +69,111 @@ async function getSpecText(params: {
   return readFileSync(specPath, "utf-8");
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+async function runTracedStep<T>(params: {
+  tracing: TracingRuntime | null;
+  name: string;
+  input?: unknown;
+  fn: () => Promise<T>;
+}): Promise<T> {
+  const { tracing, name, input, fn } = params;
+  if (!tracing) return fn();
+
+  return tracing.startActiveObservation(name, async () => {
+    const startedAt = Date.now();
+    if (input !== undefined) {
+      tracing.updateActiveObservation({ input });
+    }
+    try {
+      const result = await fn();
+      tracing.updateActiveObservation({
+        output: {
+          status: "ok",
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      return result;
+    } catch (error) {
+      tracing.updateActiveObservation({
+        level: "ERROR",
+        statusMessage: getErrorMessage(error),
+        output: {
+          status: "error",
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      throw error;
+    }
+  });
+}
+
+async function withLangfuseTracing<T>(params: {
+  publicKey: string | undefined;
+  secretKey: string | undefined;
+  host: string;
+  command: string;
+  fn: (tracing: TracingRuntime | null) => Promise<T>;
+}): Promise<T> {
+  const { publicKey, secretKey, host, command, fn } = params;
+  if (!publicKey || !secretKey) {
+    return fn(null);
+  }
+
+  const [{ LangfuseSpanProcessor }, tracingModule, { NodeTracerProvider }] =
+    await Promise.all([
+      import("@langfuse/otel"),
+      import("@langfuse/tracing"),
+      import("@opentelemetry/sdk-trace-node"),
+    ]);
+
+  const provider = new NodeTracerProvider({
+    spanProcessors: [
+      new LangfuseSpanProcessor({
+        publicKey,
+        secretKey,
+        baseUrl: host,
+      }),
+    ],
+  });
+  provider.register();
+  tracingModule.setLangfuseTracerProvider(provider);
+
+  const tracing: TracingRuntime = {
+    startActiveObservation: tracingModule.startActiveObservation,
+    updateActiveObservation: tracingModule.updateActiveObservation,
+  };
+
+  try {
+    return await tracingModule.propagateAttributes(
+      {
+        traceName: `langfuse-cli.${command}`,
+        metadata: {
+          command,
+          runtime: "langfuse-cli",
+        },
+        tags: ["langfuse-cli", "cli"],
+      },
+      () =>
+        runTracedStep({
+          tracing,
+          name: "langfuse-cli.command",
+          input: { command },
+          fn: () => fn(tracing),
+        }),
+    );
+  } finally {
+    try {
+      await provider.shutdown();
+    } finally {
+      tracingModule.setLangfuseTracerProvider(null);
+    }
+  }
+}
+
 export async function run(argv: string[]): Promise<void> {
   const extracted: Record<string, string> = {};
   const boolFlags: Record<string, boolean> = {};
@@ -102,20 +212,36 @@ export async function run(argv: string[]): Promise<void> {
 
   // First positional arg determines the subcommand
   const subcommand = passthrough[2];
+  const commandForTracing = subcommand ?? "help";
 
-  if (subcommand === "api") {
-    passthrough.splice(2, 1);
-    return runApi({ passthrough, boolFlags, publicKey, secretKey, host });
-  }
+  await withLangfuseTracing({
+    publicKey,
+    secretKey,
+    host,
+    command: commandForTracing,
+    fn: async (tracing) => {
+      if (subcommand === "api") {
+        passthrough.splice(2, 1);
+        return runApi({
+          passthrough,
+          boolFlags,
+          publicKey,
+          secretKey,
+          host,
+          tracing,
+        });
+      }
 
-  if (subcommand === "get-skill") {
-    const skillPath = join(__dirname, "..", "skill", "langfuse-cli.md");
-    process.stdout.write(readFileSync(skillPath, "utf-8"));
-    return;
-  }
+      if (subcommand === "get-skill") {
+        const skillPath = join(__dirname, "..", "skill", "langfuse-cli.md");
+        process.stdout.write(readFileSync(skillPath, "utf-8"));
+        return;
+      }
 
-  // Show help for anything else (no args, --help, -h, unknown command)
-  printHelp();
+      // Show help for anything else (no args, --help, -h, unknown command)
+      printHelp();
+    },
+  });
 }
 
 function printHelp(): void {
@@ -196,12 +322,23 @@ async function runApi(params: {
   publicKey: string | undefined;
   secretKey: string | undefined;
   host: string;
+  tracing: TracingRuntime | null;
 }): Promise<void> {
-  const { passthrough, boolFlags, publicKey, secretKey, host } = params;
+  const { passthrough, boolFlags, publicKey, secretKey, host, tracing } = params;
+  const apiResource = passthrough[2] ?? "unknown-resource";
+  const apiAction = passthrough[3] ?? "help-action";
 
-  const specText = await getSpecText({
-    refetch: boolFlags["refetch-api-spec"] ?? false,
-    host,
+  const specText = await runTracedStep({
+    tracing,
+    name: "langfuse-cli.api.load-spec",
+    input: {
+      refetchApiSpec: boolFlags["refetch-api-spec"] ?? false,
+    },
+    fn: () =>
+      getSpecText({
+        refetch: boolFlags["refetch-api-spec"] ?? false,
+        host,
+      }),
   });
 
   // Intercept help: no args, --help, or -h
@@ -210,7 +347,17 @@ async function runApi(params: {
     args.length === 0 ||
     (args.length === 1 && (args[0] === "--help" || args[0] === "-h"))
   ) {
-    printApiHelp(await getResources(specText));
+    await runTracedStep({
+      tracing,
+      name: "langfuse-cli.api.help",
+      input: {
+        resource: apiResource,
+        action: apiAction,
+      },
+      fn: async () => {
+        printApiHelp(await getResources(specText));
+      },
+    });
     return;
   }
 
@@ -220,10 +367,20 @@ async function runApi(params: {
   if (secretKey) inject.push("--password", secretKey);
   specliArgv.splice(2, 0, ...inject);
 
-  const main = await loadMain();
-  await main(specliArgv, {
-    cliName: "langfuse api",
-    auth: "BasicAuth",
-    embeddedSpecText: specText,
+  await runTracedStep({
+    tracing,
+    name: "langfuse-cli.api.execute",
+    input: {
+      resource: apiResource,
+      action: apiAction,
+    },
+    fn: async () => {
+      const main = await loadMain();
+      await main(specliArgv, {
+        cliName: "langfuse api",
+        auth: "BasicAuth",
+        embeddedSpecText: specText,
+      });
+    },
   });
 }
