@@ -84,18 +84,27 @@ async function runTracedStep<T>(params: {
   if (!tracing) return fn();
 
   return tracing.startActiveObservation(name, async () => {
+    const startedAt = Date.now();
     if (input !== undefined) {
       tracing.updateActiveObservation({ input });
     }
     try {
       const result = await fn();
-      tracing.updateActiveObservation({ output: { status: "ok" } });
+      tracing.updateActiveObservation({
+        output: {
+          status: "ok",
+          durationMs: Date.now() - startedAt,
+        },
+      });
       return result;
     } catch (error) {
       tracing.updateActiveObservation({
         level: "ERROR",
         statusMessage: getErrorMessage(error),
-        output: { status: "error" },
+        output: {
+          status: "error",
+          durationMs: Date.now() - startedAt,
+        },
       });
       throw error;
     }
@@ -157,8 +166,11 @@ async function withLangfuseTracing<T>(params: {
         }),
     );
   } finally {
-    await provider.shutdown();
-    tracingModule.setLangfuseTracerProvider(null);
+    try {
+      await provider.shutdown();
+    } finally {
+      tracingModule.setLangfuseTracerProvider(null);
+    }
   }
 }
 
@@ -200,13 +212,13 @@ export async function run(argv: string[]): Promise<void> {
 
   // First positional arg determines the subcommand
   const subcommand = passthrough[2];
-  const command = subcommand ?? "help";
+  const commandForTracing = subcommand ?? "help";
 
   await withLangfuseTracing({
     publicKey,
     secretKey,
     host,
-    command,
+    command: commandForTracing,
     fn: async (tracing) => {
       if (subcommand === "api") {
         passthrough.splice(2, 1);
@@ -313,8 +325,8 @@ async function runApi(params: {
   tracing: TracingRuntime | null;
 }): Promise<void> {
   const { passthrough, boolFlags, publicKey, secretKey, host, tracing } = params;
-  const apiResource = passthrough[2] ?? "__unknown__";
-  const apiAction = passthrough[3] ?? "__help__";
+  const apiResource = passthrough[2] ?? "unknown-resource";
+  const apiAction = passthrough[3] ?? "help-action";
 
   const specText = await runTracedStep({
     tracing,
