@@ -30,6 +30,7 @@
     "patch-openapi": "bun scripts/patch-openapi.ts",
     "refetch-openapi": "bun scripts/patch-openapi.ts --refetch",
     "build": "bun run refetch-openapi && bun build src/cli.ts --outdir dist --target node --format esm",
+    "release": "bun scripts/release.ts",
     "prepublishOnly": "rm -rf dist && bun run build"
   },
   "dependencies": {
