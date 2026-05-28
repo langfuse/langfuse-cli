@@ -62,7 +62,7 @@ describe("langfuse get-skill", () => {
       expect(process.exitCode).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
-      process.exitCode = originalExitCode;
+      process.exitCode = originalExitCode ?? 0;
     }
   });
 });

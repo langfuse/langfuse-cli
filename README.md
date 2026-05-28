@@ -105,3 +105,11 @@ bun run patch-openapi -- --refetch --openapi_url http://localhost:3000/generated
 # Patch only (no fetch)
 bun run patch-openapi
 ```
+
+## Release
+
+```sh
+bun run release
+```
+
+This interactively bumps the package version, runs tests, rebuilds the CLI, checks the npm package contents with `npm pack --dry-run`, then asks before publishing to npm.
