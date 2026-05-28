@@ -99,8 +99,8 @@ function commandText(command: string, args: string[]): string {
 async function runCommand(
   command: string,
   args: string[],
-  options: { capture?: boolean } = {},
-): Promise<{ stdout: string; stderr: string }> {
+  options: { capture?: boolean; throwOnError?: boolean } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   if (!options.capture) console.log(`\n$ ${commandText(command, args)}`);
 
   const proc = Bun.spawn([command, ...args], {
@@ -115,13 +115,13 @@ async function runCommand(
   const stdout = await stdoutPromise;
   const stderr = await stderrPromise;
 
-  if (exitCode !== 0) {
+  if (exitCode !== 0 && options.throwOnError !== false) {
     throw new Error(
       `${commandText(command, args)} failed with exit code ${exitCode}\n${stderr}`,
     );
   }
 
-  return { stdout, stderr };
+  return { stdout, stderr, exitCode };
 }
 
 function statusLinePaths(line: string): string[] {
@@ -186,22 +186,42 @@ async function assertVersionNotPublished(
 }
 
 async function assertNpmPublishContext(): Promise<void> {
-  const [whoami, registry] = await Promise.all([
-    runCommand("npm", ["whoami"], { capture: true }),
-    runCommand("npm", ["config", "get", "registry"], { capture: true }),
-  ]);
-  const username = whoami.stdout.trim();
+  const registry = await runCommand("npm", ["config", "get", "registry"], {
+    capture: true,
+  });
   const registryUrl = registry.stdout.trim();
-
-  if (!username) {
-    throw new Error("npm whoami did not return a username.");
-  }
 
   if (registryUrl !== "https://registry.npmjs.org/") {
     throw new Error(
       `npm registry is ${registryUrl}; expected https://registry.npmjs.org/`,
     );
   }
+
+  let whoami = await runCommand("npm", ["whoami"], {
+    capture: true,
+    throwOnError: false,
+  });
+
+  if (whoami.exitCode !== 0) {
+    console.error(whoami.stderr.trim());
+    const shouldLogin = await confirm(
+      rl,
+      "npm is not authenticated. Run npm login now?",
+    );
+    if (!shouldLogin) {
+      throw new Error("npm login required before release.");
+    }
+
+    await runCommand("npm", [
+      "login",
+      "--registry=https://registry.npmjs.org/",
+      "--auth-type=web",
+    ]);
+    whoami = await runCommand("npm", ["whoami"], { capture: true });
+  }
+
+  const username = whoami.stdout.trim();
+  if (!username) throw new Error("npm whoami did not return a username.");
 
   console.log(`npm auth: ${username}`);
   console.log(`npm registry: ${registryUrl}`);
