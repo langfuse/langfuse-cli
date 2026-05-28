@@ -6,18 +6,6 @@ type PackageJson = {
   [key: string]: unknown;
 };
 
-type Version = {
-  major: number;
-  minor: number;
-  patch: number;
-  suffix: string;
-};
-
-type CommandResult = {
-  stdout: string;
-  stderr: string;
-};
-
 const packageJsonPath = `${import.meta.dir}/../package.json`;
 const npmCache = `${process.env.TMPDIR ?? "/tmp"}/langfuse-cli-npm-cache`;
 const semverPattern =
@@ -40,10 +28,8 @@ const unknownArgs = rawArgs.filter(
 );
 
 let originalPackageJsonText: string | null = null;
-let packageJsonChanged = false;
+let shouldRestorePackageJson = false;
 let publishStarted = false;
-let published = false;
-let restoredPackageJson = false;
 
 function printHelp(): void {
   console.log(`Usage: bun run release -- [options]
@@ -54,47 +40,29 @@ Options:
   -h, --help      Show this help`);
 }
 
-function parseVersion(version: string): Version | null {
+function bumpVersion(
+  version: string,
+  bump: "patch" | "minor" | "major",
+): string | null {
   const match = semverPattern.exec(version);
   if (!match) return null;
 
-  return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
-    suffix: match[4] ?? "",
-  };
-}
+  let major = Number(match[1]);
+  let minor = Number(match[2]);
+  let patch = Number(match[3]);
 
-function formatVersion(version: Version): string {
-  return `${version.major}.${version.minor}.${version.patch}${version.suffix}`;
-}
-
-function bumpVersion(current: Version, bump: "patch" | "minor" | "major"): string {
-  if (bump === "patch") {
-    return formatVersion({
-      major: current.major,
-      minor: current.minor,
-      patch: current.patch + 1,
-      suffix: "",
-    });
-  }
-
+  if (bump === "patch") patch++;
   if (bump === "minor") {
-    return formatVersion({
-      major: current.major,
-      minor: current.minor + 1,
-      patch: 0,
-      suffix: "",
-    });
+    minor++;
+    patch = 0;
+  }
+  if (bump === "major") {
+    major++;
+    minor = 0;
+    patch = 0;
   }
 
-  return formatVersion({
-    major: current.major + 1,
-    minor: 0,
-    patch: 0,
-    suffix: "",
-  });
+  return `${major}.${minor}.${patch}`;
 }
 
 async function readPackageJson(): Promise<PackageJson> {
@@ -104,22 +72,14 @@ async function readPackageJson(): Promise<PackageJson> {
 
 async function writePackageJson(pkg: PackageJson): Promise<void> {
   await Bun.write(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
-  packageJsonChanged = true;
+  shouldRestorePackageJson = true;
 }
 
 async function restorePackageJsonIfNeeded(): Promise<void> {
-  if (
-    !originalPackageJsonText ||
-    !packageJsonChanged ||
-    published ||
-    publishStarted ||
-    restoredPackageJson
-  ) {
-    return;
-  }
+  if (!originalPackageJsonText || !shouldRestorePackageJson || publishStarted) return;
 
   await Bun.write(packageJsonPath, originalPackageJsonText);
-  restoredPackageJson = true;
+  shouldRestorePackageJson = false;
   console.log("Restored package.json to its original version.");
 }
 
@@ -136,33 +96,21 @@ function commandText(command: string, args: string[]): string {
   return [command, ...args].join(" ");
 }
 
-async function runCommand(command: string, args: string[]): Promise<void> {
-  console.log(`\n$ ${commandText(command, args)}`);
+async function runCommand(
+  command: string,
+  args: string[],
+  options: { capture?: boolean } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  if (!options.capture) console.log(`\n$ ${commandText(command, args)}`);
 
   const proc = Bun.spawn([command, ...args], {
     env: envForCommand(command),
     stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+    stdout: options.capture ? "pipe" : "inherit",
+    stderr: options.capture ? "pipe" : "inherit",
   });
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    throw new Error(`${commandText(command, args)} failed with exit code ${exitCode}`);
-  }
-}
-
-async function runCommandCapture(
-  command: string,
-  args: string[],
-): Promise<CommandResult> {
-  const proc = Bun.spawn([command, ...args], {
-    env: envForCommand(command),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdoutPromise = proc.stdout.text();
-  const stderrPromise = proc.stderr.text();
+  const stdoutPromise = options.capture ? proc.stdout.text() : Promise.resolve("");
+  const stderrPromise = options.capture ? proc.stderr.text() : Promise.resolve("");
   const exitCode = await proc.exited;
   const stdout = await stdoutPromise;
   const stderr = await stderrPromise;
@@ -189,11 +137,11 @@ function isReleaseRelevantPath(path: string): boolean {
 }
 
 async function assertNoReleaseRelevantChanges(): Promise<void> {
-  const { stdout } = await runCommandCapture("git", [
-    "status",
-    "--porcelain=v1",
-    "--untracked-files=all",
-  ]);
+  const { stdout } = await runCommand(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    { capture: true },
+  );
   const dirtyRelevantLines = stdout
     .trim()
     .split("\n")
@@ -224,12 +172,11 @@ async function assertVersionNotPublished(
   version: string,
 ): Promise<void> {
   console.log(`\nChecking npm for ${packageName}@${version}...`);
-  const { stdout } = await runCommandCapture("npm", [
-    "view",
-    packageName,
-    "versions",
-    "--json",
-  ]);
+  const { stdout } = await runCommand(
+    "npm",
+    ["view", packageName, "versions", "--json"],
+    { capture: true },
+  );
   const parsed = JSON.parse(stdout) as string | string[];
   const versions = Array.isArray(parsed) ? parsed : [parsed];
 
@@ -240,8 +187,8 @@ async function assertVersionNotPublished(
 
 async function assertNpmPublishContext(): Promise<void> {
   const [whoami, registry] = await Promise.all([
-    runCommandCapture("npm", ["whoami"]),
-    runCommandCapture("npm", ["config", "get", "registry"]),
+    runCommand("npm", ["whoami"], { capture: true }),
+    runCommand("npm", ["config", "get", "registry"], { capture: true }),
   ]);
   const username = whoami.stdout.trim();
   const registryUrl = registry.stdout.trim();
@@ -262,19 +209,23 @@ async function assertNpmPublishContext(): Promise<void> {
 
 async function printPostBuildReview(): Promise<void> {
   const [status, diffStat] = await Promise.all([
-    runCommandCapture("git", ["status", "--short"]),
-    runCommandCapture("git", [
-      "diff",
-      "--stat",
-      "--",
-      "LICENSE",
-      "README.md",
-      "bin",
-      "openapi.yml",
-      "package.json",
-      "scripts",
-      "src",
-    ]),
+    runCommand("git", ["status", "--short"], { capture: true }),
+    runCommand(
+      "git",
+      [
+        "diff",
+        "--stat",
+        "--",
+        "LICENSE",
+        "README.md",
+        "bin",
+        "openapi.yml",
+        "package.json",
+        "scripts",
+        "src",
+      ],
+      { capture: true },
+    ),
   ]);
 
   console.log("\nPost-build release review");
@@ -288,41 +239,44 @@ async function selectVersion(
   rl: ReturnType<typeof createInterface>,
   currentVersion: string,
 ): Promise<string | null> {
-  const current = parseVersion(currentVersion);
-  if (!current) {
+  const patch = bumpVersion(currentVersion, "patch");
+  const minor = bumpVersion(currentVersion, "minor");
+  const major = bumpVersion(currentVersion, "major");
+
+  if (!patch || !minor || !major) {
     throw new Error(`Current package version is not valid semver: ${currentVersion}`);
   }
 
-  const options = {
-    patch: bumpVersion(current, "patch"),
-    minor: bumpVersion(current, "minor"),
-    major: bumpVersion(current, "major"),
-  };
-
   console.log(`Current version: ${currentVersion}`);
-  console.log(`1) patch  ${options.patch}`);
-  console.log(`2) minor  ${options.minor}`);
-  console.log(`3) major  ${options.major}`);
+  console.log(`1) patch  ${patch}`);
+  console.log(`2) minor  ${minor}`);
+  console.log(`3) major  ${major}`);
   console.log("4) custom");
+
+  const choices: Record<string, string | null> = {
+    "": patch,
+    "1": patch,
+    p: patch,
+    patch,
+    "2": minor,
+    minor,
+    "3": major,
+    major,
+    q: null,
+    quit: null,
+    cancel: null,
+  };
 
   while (true) {
     const choice = (await rl.question("Bump version [1]: ")).trim().toLowerCase();
 
-    if (choice === "" || choice === "1" || choice === "patch" || choice === "p") {
-      return options.patch;
+    if (Object.hasOwn(choices, choice)) {
+      return choices[choice];
     }
-    if (choice === "2" || choice === "minor") {
-      return options.minor;
-    }
-    if (choice === "3" || choice === "major") {
-      return options.major;
-    }
-    if (choice === "q" || choice === "quit" || choice === "cancel") {
-      return null;
-    }
+
     if (choice === "4" || choice === "custom" || choice === "c") {
       const custom = (await rl.question("Version: ")).trim();
-      if (!parseVersion(custom)) {
+      if (!semverPattern.test(custom)) {
         console.error(`Invalid semver: ${custom}`);
         continue;
       }
@@ -418,7 +372,6 @@ async function main(): Promise<void> {
   // contents. Avoid a second lifecycle run producing a different publish.
   publishStarted = true;
   await runCommand("npm", ["publish", "--ignore-scripts"]);
-  published = true;
   console.log(`Published ${pkg.name}@${nextVersion}.`);
 }
 
@@ -427,7 +380,7 @@ try {
 } catch (error) {
   if (!publishStarted) {
     await restorePackageJsonIfNeeded();
-  } else if (!published) {
+  } else {
     console.error(
       "Publish command failed after npm publish started. Verify npm state before retrying; package.json was not rolled back.",
     );
