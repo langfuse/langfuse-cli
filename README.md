@@ -1,3 +1,5 @@
+<img width="2400" height="600" alt="hero-b" src="https://github.com/user-attachments/assets/85dcdba4-c037-4e3e-9f20-e39cde0a15ec" />
+
 # langfuse-cli
 
 Interact with the [Langfuse](https://langfuse.com) API from the command line.
