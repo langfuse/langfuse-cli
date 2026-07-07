@@ -99,21 +99,34 @@ function commandText(command: string, args: string[]): string {
 async function runCommand(
   command: string,
   args: string[],
-  options: { capture?: boolean; throwOnError?: boolean } = {},
+  options: {
+    capture?: boolean;
+    suspendPrompt?: boolean;
+    throwOnError?: boolean;
+  } = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   if (!options.capture) console.log(`\n$ ${commandText(command, args)}`);
 
-  const proc = Bun.spawn([command, ...args], {
-    env: envForCommand(command),
-    stdin: "inherit",
-    stdout: options.capture ? "pipe" : "inherit",
-    stderr: options.capture ? "pipe" : "inherit",
-  });
-  const stdoutPromise = options.capture ? proc.stdout.text() : Promise.resolve("");
-  const stderrPromise = options.capture ? proc.stderr.text() : Promise.resolve("");
-  const exitCode = await proc.exited;
-  const stdout = await stdoutPromise;
-  const stderr = await stderrPromise;
+  if (options.suspendPrompt) rl.pause();
+  let stdout = "";
+  let stderr = "";
+  let exitCode = 0;
+
+  try {
+    const proc = Bun.spawn([command, ...args], {
+      env: envForCommand(command),
+      stdin: "inherit",
+      stdout: options.capture ? "pipe" : "inherit",
+      stderr: options.capture ? "pipe" : "inherit",
+    });
+    const stdoutPromise = options.capture ? proc.stdout.text() : Promise.resolve("");
+    const stderrPromise = options.capture ? proc.stderr.text() : Promise.resolve("");
+    exitCode = await proc.exited;
+    stdout = await stdoutPromise;
+    stderr = await stderrPromise;
+  } finally {
+    if (options.suspendPrompt) rl.resume();
+  }
 
   if (exitCode !== 0 && options.throwOnError !== false) {
     throw new Error(
@@ -216,7 +229,7 @@ async function assertNpmPublishContext(): Promise<void> {
       "login",
       "--registry=https://registry.npmjs.org/",
       "--auth-type=web",
-    ]);
+    ], { suspendPrompt: true });
     whoami = await runCommand("npm", ["whoami"], { capture: true });
   }
 
@@ -391,8 +404,13 @@ async function main(): Promise<void> {
   // prepublishOnly already ran above, and npm pack --dry-run showed the package
   // contents. Avoid a second lifecycle run producing a different publish.
   publishStarted = true;
-  await runCommand("npm", ["publish", "--ignore-scripts"]);
+  await runCommand("npm", ["publish", "--ignore-scripts"], {
+    suspendPrompt: true,
+  });
   console.log(`Published ${pkg.name}@${nextVersion}.`);
+  console.log(
+    `Create a release commit/tag for ${pkg.name}@${nextVersion}; this script does not commit automatically.`,
+  );
 }
 
 try {

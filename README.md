@@ -114,4 +114,16 @@ bun run patch-openapi
 bun run release
 ```
 
-This interactively bumps the package version, runs tests, rebuilds the CLI, checks the npm package contents with `npm pack --dry-run`, then asks before publishing to npm.
+This interactively selects the package version, verifies it is not already on npm, checks npm auth/registry, runs tests, rebuilds the CLI via `prepublishOnly`, checks the npm package contents with `npm pack --dry-run`, shows the post-build git status, then asks before publishing to npm.
+
+To test the flow without publishing:
+
+```sh
+bun run release -- --dry-run
+```
+
+Dry-run still runs the full rebuild path, so it may update generated release artifacts like `dist/` and `openapi.yml`; it restores the package version before exiting.
+
+If you are testing local changes to the release script itself, add `--allow-dirty`. Do not use `--allow-dirty` for a real publish.
+
+The release script does not commit or tag automatically. After a successful publish, create the release commit/tag intentionally.
