@@ -19,7 +19,6 @@ export interface CatalogEntry {
   ref: string;
   commit: string;
   sha256: string;
-  support: string;
   knownIssues?: string[];
 }
 

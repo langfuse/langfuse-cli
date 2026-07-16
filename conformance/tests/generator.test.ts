@@ -53,7 +53,6 @@ describe("language-neutral conformance generation", () => {
         ref: "fixture",
         commit: "0".repeat(40),
         sha256: "0".repeat(64),
-        support: "test",
       },
       raw,
       "fixture.yml",

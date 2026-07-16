@@ -1,10 +1,4 @@
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
-
-import {
-  generatedDir,
-  readVerifiedSpec,
-} from "./catalog";
+import { readVerifiedSpec } from "./catalog";
 import { compileOpenApi, type CompiledSpec } from "./openapi";
 import { invalidValueForSchema } from "./schema";
 import { expectedRequest } from "./serialize";
@@ -428,16 +422,6 @@ export async function generateCorpus(entry: CatalogEntry): Promise<GeneratedCorp
       coverage: json(coverage),
     },
   };
-}
-
-export async function writeCorpus(entry: CatalogEntry): Promise<GeneratedCorpus> {
-  const corpus = await generateCorpus(entry);
-  const directory = generatedDir(entry);
-  await mkdir(directory, { recursive: true });
-  await Bun.write(resolve(directory, "manifest.json"), corpus.files.manifest);
-  await Bun.write(resolve(directory, "vectors.jsonl"), corpus.files.vectors);
-  await Bun.write(resolve(directory, "coverage.json"), corpus.files.coverage);
-  return corpus;
 }
 
 export async function checkCorpus(entry: CatalogEntry): Promise<GeneratedCorpus> {

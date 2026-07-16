@@ -62,7 +62,6 @@ process.exit(response.ok ? 0 : 1);
       ref: "fixture",
       commit: "0".repeat(40),
       sha256: "0".repeat(64),
-      support: "test",
     };
     const compiled = compileOpenApi(entry, raw, "fixture.yml");
     const vector = generateVectors(compiled).find(

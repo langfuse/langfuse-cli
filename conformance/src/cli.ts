@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { loadCatalog, selectEntries, syncSpecs } from "./catalog";
-import { checkCorpus, writeCorpus } from "./generator";
+import { checkCorpus } from "./generator";
 import { runConformance } from "./runner";
 import type { AdapterName } from "./adapters";
 import type { VectorKind } from "./types";
@@ -22,7 +22,6 @@ function option(args: string[], name: string): string | undefined {
 function usage(): never {
   process.stderr.write(`Usage:
   bun run conformance:sync [--version 3.216.0]
-  bun run conformance:generate [--version 3.216.0]
   bun run conformance:check [--version 3.216.0]
   bun run conformance:run --version 3.216.0 --adapter specli-v0 --current-cli [filters]
   bun run conformance:run --version 3.216.0 --adapter contract-v1 [filters] -- <command...>
@@ -46,20 +45,6 @@ async function main(): Promise<void> {
   const selected = selectEntries(catalog, optionValues(controlArgs, "--version"));
   if (command === "sync") {
     await syncSpecs(selected);
-    return;
-  }
-  if (command === "generate") {
-    for (const entry of selected) {
-      const corpus = await writeCorpus(entry);
-      if (corpus.coverage.unsupported.length > 0) {
-        throw new Error(
-          `${entry.ref}: unsupported features: ${corpus.coverage.unsupported.join(", ")}`,
-        );
-      }
-      process.stdout.write(
-        `generated ${entry.ref}: ${corpus.coverage.counts.operations} operations, ${corpus.coverage.counts.vectors} vectors\n`,
-      );
-    }
     return;
   }
   if (command === "check") {

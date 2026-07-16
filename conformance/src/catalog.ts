@@ -20,10 +20,6 @@ export function specPath(entry: CatalogEntry): string {
   return resolve(CONFORMANCE_ROOT, "specs", entry.version, "openapi.yml");
 }
 
-export function generatedDir(entry: CatalogEntry): string {
-  return resolve(CONFORMANCE_ROOT, "generated", entry.version);
-}
-
 export function rawSpecUrl(catalog: Catalog, entry: CatalogEntry): string {
   return `${catalog.repository.replace("github.com", "raw.githubusercontent.com")}/${entry.commit}/${catalog.specPath}`;
 }
