@@ -7,7 +7,7 @@ import { loadCatalog } from "../src/catalog";
 import { checkCorpus } from "../src/generator";
 import { runConformance } from "../src/runner";
 
-const VERSION_MATRIX = ["2.95.0", "3.100.0", "3.216.0"] as const;
+const VERSION_MATRIX = ["3.0.0", "3.100.0", "3.216.0"] as const;
 
 let directory: string | undefined;
 

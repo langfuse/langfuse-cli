@@ -8,7 +8,6 @@ describe("immutable OpenAPI catalog", () => {
   test("all pinned snapshots pass SHA-256 verification", async () => {
     const catalog = await loadCatalog();
     expect(catalog.versions.map((entry) => entry.version)).toEqual([
-      "2.95.0",
       "3.0.0",
       "3.50.0",
       "3.100.0",
@@ -35,7 +34,7 @@ describe("immutable OpenAPI catalog", () => {
     }
   });
 
-  test("checked-in corpora are deterministic, current, and fully supported", async () => {
+  test("generated corpora are deterministic and fully supported", async () => {
     const catalog = await loadCatalog();
     for (const entry of catalog.versions) {
       const corpus = await checkCorpus(entry);

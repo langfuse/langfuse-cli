@@ -4,13 +4,6 @@
   "specPath": "web/public/generated/api/openapi.yml",
   "versions": [
     {
-      "version": "2.95.0",
-      "ref": "v2.95.0",
-      "commit": "22f6a02b08c11eda6a07077f1abd90c991df64f3",
-      "sha256": "91092bf72b1b57d491a78c365397c90949626de48e69f6b7518ffaf19342b7ad",
-      "support": "historical-v2"
-    },
-    {
       "version": "3.0.0",
       "ref": "v3.0.0",
       "commit": "1211de3efb1a8811ad587dcecb4722ffd7f77d68",

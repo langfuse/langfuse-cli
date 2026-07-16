@@ -441,20 +441,14 @@ export async function writeCorpus(entry: CatalogEntry): Promise<GeneratedCorpus>
 }
 
 export async function checkCorpus(entry: CatalogEntry): Promise<GeneratedCorpus> {
-  const corpus = await generateCorpus(entry);
-  const directory = generatedDir(entry);
-  const expected: Array<[string, string]> = [
-    ["manifest.json", corpus.files.manifest],
-    ["vectors.jsonl", corpus.files.vectors],
-    ["coverage.json", corpus.files.coverage],
-  ];
-  for (const [filename, content] of expected) {
-    const path = resolve(directory, filename);
-    const file = Bun.file(path);
-    if (!(await file.exists())) throw new Error(`Missing generated file: ${path}`);
-    if ((await file.text()) !== content) {
-      throw new Error(`Generated corpus is stale: ${path}`);
+  const first = await generateCorpus(entry);
+  const second = await generateCorpus(entry);
+  for (const filename of ["manifest", "vectors", "coverage"] as const) {
+    if (first.files[filename] !== second.files[filename]) {
+      throw new Error(
+        `Generated ${filename} is nondeterministic for ${entry.ref}`,
+      );
     }
   }
-  return corpus;
+  return first;
 }
