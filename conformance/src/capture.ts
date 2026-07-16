@@ -102,7 +102,7 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-function same(left: unknown, right: unknown): boolean {
+export function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 }
 
@@ -126,7 +126,7 @@ export function requestDiff(
       `pathname: expected ${expected.pathname}, got ${actual.pathname}`,
     );
   }
-  if (!same(sortedQuery(actual.query), sortedQuery(expected.query))) {
+  if (!sameJson(sortedQuery(actual.query), sortedQuery(expected.query))) {
     differences.push(
       `query: expected ${JSON.stringify(expected.query)}, got ${JSON.stringify(actual.query)}`,
     );
@@ -138,7 +138,7 @@ export function requestDiff(
       );
     }
   }
-  if (!same(expected.body, actual.body)) {
+  if (!sameJson(expected.body, actual.body)) {
     differences.push(
       `body: expected ${JSON.stringify(expected.body)}, got ${JSON.stringify(actual.body)}`,
     );

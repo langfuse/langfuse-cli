@@ -9,7 +9,7 @@ import {
   operationForVector,
   type AdapterName,
 } from "./adapters";
-import { CaptureServer, requestDiff } from "./capture";
+import { CaptureServer, requestDiff, sameJson } from "./capture";
 import { POLICY_PATH, REPOSITORY_ROOT, readVerifiedSpec } from "./catalog";
 import type {
   CatalogEntry,
@@ -32,6 +32,7 @@ export interface RunOptions {
   currentCli?: boolean;
   timeoutMs?: number;
   failFast?: boolean;
+  quiet?: boolean;
 }
 
 export interface CaseResult {
@@ -233,11 +234,20 @@ export async function runConformance(options: RunOptions): Promise<CaseResult[]>
           }
         }
       }
-      if (vector.kind === "response" && vector.response && execution.exitCode === 0) {
+      if (vector.expected.reachesServer && vector.response && execution.exitCode === 0) {
         const output = parseJson(execution.stdout);
         if (output?.status !== vector.response.status) {
           failures.push(
             `response: expected status ${vector.response.status}, got ${output?.status}`,
+          );
+        }
+        const actualBody = output?.body ?? null;
+        const bodyMatches = vector.response.sample === undefined
+          ? actualBody === null || actualBody === ""
+          : sameJson(actualBody, vector.response.sample);
+        if (!bodyMatches) {
+          failures.push(
+            `response body: expected ${JSON.stringify(vector.response.sample ?? null)}, got ${JSON.stringify(output?.body ?? null)}`,
           );
         }
       }
@@ -248,9 +258,13 @@ export async function runConformance(options: RunOptions): Promise<CaseResult[]>
         process: execution,
       };
       results.push(result);
-      process.stdout.write(`${result.passed ? "PASS" : "FAIL"} ${result.id}\n`);
+      if (!options.quiet) {
+        process.stdout.write(`${result.passed ? "PASS" : "FAIL"} ${result.id}\n`);
+      }
       if (!result.passed) {
-        for (const failure of failures) process.stdout.write(`  ${failure}\n`);
+        if (!options.quiet) {
+          for (const failure of failures) process.stdout.write(`  ${failure}\n`);
+        }
         if (options.failFast) break;
       }
     }
