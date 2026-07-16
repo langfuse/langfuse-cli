@@ -7,43 +7,37 @@
       "version": "3.0.0",
       "ref": "v3.0.0",
       "commit": "1211de3efb1a8811ad587dcecb4722ffd7f77d68",
-      "sha256": "eb4d11e8a672140b6f567384bc2d78c84086791259c543e0396929a6a8b51ffd",
-      "support": "historical-v3"
+      "sha256": "eb4d11e8a672140b6f567384bc2d78c84086791259c543e0396929a6a8b51ffd"
     },
     {
       "version": "3.50.0",
       "ref": "v3.50.0",
       "commit": "8907056b39e2edba5ec450a4c88ebed42da04696",
-      "sha256": "87f7849ded9b65762109789d61902bb3811850821093c3c1f0b088a9d23df21d",
-      "support": "historical-v3"
+      "sha256": "87f7849ded9b65762109789d61902bb3811850821093c3c1f0b088a9d23df21d"
     },
     {
       "version": "3.100.0",
       "ref": "v3.100.0",
       "commit": "9276d2dbbbeef869880e4e6e75443c635cbb451f",
-      "sha256": "2c6da549eb7e91e63a16502be31bb938c15cf3ffa4b2646da1261521a4c790cc",
-      "support": "historical-v3"
+      "sha256": "2c6da549eb7e91e63a16502be31bb938c15cf3ffa4b2646da1261521a4c790cc"
     },
     {
       "version": "3.150.0",
       "ref": "v3.150.0",
       "commit": "4637152a68b0e4d31cacd2b870d7e2dddebff499",
-      "sha256": "fa08d30f1984e480be0b413de20bfc6e0c96b90f109067b45d58013ace144c3c",
-      "support": "historical-v3"
+      "sha256": "fa08d30f1984e480be0b413de20bfc6e0c96b90f109067b45d58013ace144c3c"
     },
     {
       "version": "3.176.0",
       "ref": "v3.176.0",
       "commit": "41f584782e156731029d9f7a3539cfbb83e979f8",
-      "sha256": "9308a1970b80905fe13618c86a27ccb94144f6de952032f69673372c77ca08a4",
-      "support": "historical-v3"
+      "sha256": "9308a1970b80905fe13618c86a27ccb94144f6de952032f69673372c77ca08a4"
     },
     {
       "version": "3.200.0",
       "ref": "v3.200.0",
       "commit": "a5579dc748854d2aa237116d06a0a83c40590618",
       "sha256": "99034491bcaf059f83d8a406c42f49892b0b1888e4bba8d837a7d4e2ef4393fa",
-      "support": "historical-v3",
       "knownIssues": ["oas3.0-const-keyword"]
     },
     {
@@ -51,7 +45,6 @@
       "ref": "v3.212.0",
       "commit": "3a572984276dd2dc2f8f77f1b2aadb799aa17fdf",
       "sha256": "7a47da98cdf4f2cd3cb894c3e02ea3bcfe23d43962102cc52857ffe413065bc5",
-      "support": "current-cli-baseline",
       "knownIssues": ["oas3.0-const-keyword"]
     },
     {
@@ -59,7 +52,6 @@
       "ref": "v3.216.0",
       "commit": "706f1bb4231ba4433c8fc101b85167471693180a",
       "sha256": "551e824dd11fc137557d7092596eba09ae342698c7ce63ceb86d90909afd7ee0",
-      "support": "current",
       "knownIssues": ["oas3.0-const-keyword"]
     }
   ]
