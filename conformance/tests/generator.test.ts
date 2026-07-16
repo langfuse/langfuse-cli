@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { coverageReport, generateVectors } from "../src/generator";
+import { generateVectors } from "../src/generator";
 import { compileOpenApi } from "../src/openapi";
 
 const raw = `openapi: 3.0.1
@@ -45,8 +45,8 @@ paths:
         '201': { description: created }
 `;
 
-describe("language-neutral conformance generation", () => {
-  test("covers every operation, parameter, required field, and response", () => {
+describe("endpoint call generation", () => {
+  test("creates one minimally valid request per operation", () => {
     const compiled = compileOpenApi(
       {
         version: "fixture",
@@ -55,30 +55,18 @@ describe("language-neutral conformance generation", () => {
         sha256: "0".repeat(64),
       },
       raw,
-      "fixture.yml",
     );
     const vectors = generateVectors(compiled);
-    const coverage = coverageReport(compiled, vectors);
-    expect(coverage.unsupported).toEqual([]);
-    expect(coverage.sourceIssues).toEqual([]);
-    expect(coverage.counts).toEqual({
-      paths: 2,
-      operations: 2,
-      parameters: 2,
-      requiredParameters: 2,
-      requestBodies: 1,
-      bodyBranches: 1,
-      requiredBodyFields: 1,
-      responses: 3,
-      vectors: 15,
-    });
+    expect(compiled.unsupported).toEqual([]);
+    expect(vectors).toHaveLength(2);
     expect(new Set(vectors.map((vector) => vector.id)).size).toBe(vectors.length);
-    expect(vectors.filter((vector) => vector.kind === "response")).toHaveLength(3);
-    expect(
-      vectors.filter((vector) => vector.kind === "missing-required-parameter"),
-    ).toHaveLength(2);
-    expect(
-      vectors.filter((vector) => vector.kind === "missing-required-body-field"),
-    ).toHaveLength(1);
+    expect(vectors.map((vector) => vector.operationId)).toEqual([
+      "widgets_create",
+      "widgets_get",
+    ]);
+    expect(vectors[0].input.body).toEqual({ name: "test-name" });
+    expect(vectors[0].response.status).toBe(201);
+    expect(vectors[1].input.path).toEqual({ id: "test-id" });
+    expect(vectors[1].input.query).toEqual({ limit: 1 });
   });
 });

@@ -29,7 +29,6 @@
   "scripts": {
     "test": "bun test",
     "conformance:sync": "bun conformance/src/cli.ts sync",
-    "conformance:check": "bun conformance/src/cli.ts check",
     "conformance:run": "bun conformance/src/cli.ts run",
     "patch-openapi": "bun scripts/patch-openapi.ts",
     "refetch-openapi": "bun scripts/patch-openapi.ts --refetch",

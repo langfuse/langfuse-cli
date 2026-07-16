@@ -8,7 +8,6 @@ const operation: OperationContract = {
   operationId: "items_get",
   method: "GET",
   path: "/items/{itemId}",
-  tags: ["Items"],
   auth: { required: false, schemes: [] },
   command: { resource: "items", action: "get", canonicalAction: "get" },
   pathParameterOrder: ["itemId"],
@@ -20,7 +19,6 @@ const operation: OperationContract = {
       required: true,
       style: "simple",
       explode: false,
-      schema: { type: "string" },
       sample: "a/b",
     },
     {
@@ -30,7 +28,6 @@ const operation: OperationContract = {
       required: false,
       style: "form",
       explode: true,
-      schema: { type: "array", items: { type: "string" } },
       sample: ["one", "two"],
     },
   ],

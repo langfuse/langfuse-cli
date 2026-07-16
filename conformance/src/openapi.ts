@@ -1,13 +1,8 @@
 import { parse } from "yaml";
 
 import { kebabCase, planCommandNames } from "./naming";
-import {
-  expandSchemaBranches,
-  resolveLocalRef,
-  sampleFromSchema,
-} from "./schema";
+import { resolveLocalRef, sampleFromSchema } from "./schema";
 import type {
-  BodyBranch,
   CatalogEntry,
   HttpMethod,
   JsonSchema,
@@ -34,7 +29,6 @@ interface RawOperation {
   operationId: string;
   method: HttpMethod;
   path: string;
-  summary?: string;
   tags: string[];
   auth: {
     required: boolean;
@@ -76,9 +70,7 @@ function normalizeAuth(
 export interface CompiledSpec {
   document: Record<string, any>;
   manifest: Manifest;
-  pathCount: number;
   unsupported: string[];
-  sourceIssues: string[];
 }
 
 function parameterDefaults(location: string): { style: string; explode: boolean } {
@@ -112,7 +104,6 @@ function mergeParameters(
       required: location === "path" || Boolean(parameter.required),
       style: parameter.style ?? defaults.style,
       explode: parameter.explode ?? defaults.explode,
-      schema,
       sample: sampleFromSchema(document, schema, String(parameter.name)),
     });
   }
@@ -122,15 +113,6 @@ function mergeParameters(
     }
     return left.name.localeCompare(right.name);
   });
-}
-
-function branchId(schema: JsonSchema, sample: any, index: number): string {
-  const discriminator = schema.discriminator?.propertyName;
-  const value = discriminator && sample && typeof sample === "object"
-    ? sample[discriminator]
-    : sample?.type;
-  const suffix = typeof value === "string" ? `-${kebabCase(value)}` : "";
-  return `branch-${String(index + 1).padStart(2, "0")}${suffix}`;
 }
 
 function normalizeRequestBody(
@@ -155,26 +137,12 @@ function normalizeRequestBody(
   const schema = requestBody.content[contentType]?.schema as JsonSchema | undefined;
   if (!schema) {
     unsupported.add(`request-body-without-schema:${contentType}`);
-    return {
-      required: Boolean(requestBody.required),
-      contentType,
-      branches: [],
-    };
+    return undefined;
   }
-  const expanded = expandSchemaBranches(document, schema);
-  const branches: BodyBranch[] = expanded.map((branch, index) => {
-    const sample = sampleFromSchema(document, branch, `body-${index + 1}`);
-    return {
-      id: branchId(branch, sample, index),
-      requiredFields: [...new Set<string>(branch.required ?? [])].sort(),
-      schema: branch,
-      sample,
-    };
-  });
   return {
     required: Boolean(requestBody.required),
     contentType,
-    branches,
+    sample: sampleFromSchema(document, schema, "body"),
   };
 }
 
@@ -207,7 +175,6 @@ function normalizeResponses(
       return {
         key,
         status: concreteStatus(key),
-        ...(response.description ? { description: String(response.description) } : {}),
         ...(contentType ? { contentType } : {}),
         ...(schema
           ? { sample: sampleFromSchema(document, schema, `response-${key}`) }
@@ -223,7 +190,6 @@ function normalizeResponses(
 export function compileOpenApi(
   entry: CatalogEntry,
   raw: string,
-  specPath: string,
 ): CompiledSpec {
   const document = parse(raw, {
     maxAliasCount: 100_000,
@@ -247,7 +213,6 @@ export function compileOpenApi(
         operationId,
         method: method.toUpperCase() as HttpMethod,
         path,
-        ...(operation.summary ? { summary: String(operation.summary) } : {}),
         tags: (operation.tags ?? []).map(String),
         auth: normalizeAuth(document, operation, unsupported),
         pathParameterOrder: pathParameterOrder(path),
@@ -274,10 +239,12 @@ export function compileOpenApi(
     return left.method.localeCompare(right.method);
   });
   const names = planCommandNames(operations);
-  const normalized: OperationContract[] = operations.map((operation, index) => ({
-    ...operation,
-    command: names[index],
-  }));
+  const normalized: OperationContract[] = operations.map(
+    ({ tags: _tags, ...operation }, index) => ({
+      ...operation,
+      command: names[index],
+    }),
+  );
   for (const operation of normalized) {
     for (const parameter of operation.parameters) {
       if (parameter.location === "path" && parameter.style !== "simple") {
@@ -290,20 +257,9 @@ export function compileOpenApi(
   }
   return {
     document,
-    pathCount: Object.keys(document.paths ?? {}).length,
     unsupported: [...unsupported].sort(),
-    sourceIssues: [...(entry.knownIssues ?? [])].sort(),
     manifest: {
-      schemaVersion: 1,
       version: entry.version,
-      source: {
-        ref: entry.ref,
-        commit: entry.commit,
-        sha256: entry.sha256,
-        path: specPath,
-      },
-      openapi: String(document.openapi),
-      generatedAt: "deterministic",
       operations: normalized,
     },
   };

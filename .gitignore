@@ -6,4 +6,3 @@ bun.lockb
 .env
 .env.local
 .DS_Store
-/conformance/reports/

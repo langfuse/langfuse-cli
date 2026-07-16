@@ -30,9 +30,7 @@ describe("multi-version black-box matrix", () => {
     const catalog = await loadCatalog();
     await Promise.all(catalog.versions.map(async (entry) => {
       const corpus = await generateCorpus(entry);
-      const vectors = corpus.vectors.filter(
-        (vector) => vector.kind === "minimal-request",
-      );
+      const vectors = corpus.vectors;
       expect(vectors).toHaveLength(corpus.compiled.manifest.operations.length);
       const results = await runConformance({
         entry,

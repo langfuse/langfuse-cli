@@ -155,13 +155,3 @@ export function sampleFromSchema(
   }
   return sampleString(schema, seed);
 }
-
-export function invalidValueForSchema(schema: JsonSchema): JsonValue | undefined {
-  if (Array.isArray(schema.enum) && schema.enum.length > 0) return "__invalid_enum__";
-  const type = Array.isArray(schema.type)
-    ? schema.type.find((candidate: string) => candidate !== "null")
-    : schema.type;
-  if (type === "integer" || type === "number") return "not-a-number";
-  if (type === "boolean") return "not-a-boolean";
-  return undefined;
-}

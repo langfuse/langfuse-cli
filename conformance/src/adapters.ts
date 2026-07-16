@@ -55,7 +55,6 @@ function parameterValue(
   parameter: ParameterContract,
 ): JsonValue | undefined {
   const input = vector.input;
-  if (!input) return undefined;
   if (parameter.location === "path") return input.path[parameter.name];
   if (parameter.location === "query") return input.query[parameter.name];
   if (parameter.location === "header") return input.headers[parameter.name];
@@ -71,8 +70,7 @@ export async function loadPolicy(path: string): Promise<Policy> {
 export function operationForVector(
   manifest: Manifest,
   vector: ConformanceVector,
-): OperationContract | undefined {
-  if (!vector.operationKey) return undefined;
+): OperationContract {
   const operation = manifest.operations.find(
     (candidate) => candidate.key === vector.operationKey,
   );
@@ -97,11 +95,7 @@ export function invocationArgs(params: {
     "--secret-key",
     policy.auth.secretKey,
   ];
-  if (vector.kind === "discovery") {
-    return [...globals, ...policy.commandPrefix, "__schema", "--commands", "--json"];
-  }
   const operation = operationForVector(manifest, vector);
-  if (!operation || !vector.command) throw new Error(`${vector.id}: missing command`);
   const args = [
     ...globals,
     ...policy.commandPrefix,
@@ -116,7 +110,6 @@ export function invocationArgs(params: {
     const value = parameterValue(vector, parameter);
     if (value !== undefined) args.push(optionValue(value));
   }
-  if (vector.kind === "help") return [...args, "--help"];
   for (const parameter of operation.parameters) {
     if (parameter.location === "path") continue;
     const value = parameterValue(vector, parameter);
@@ -125,7 +118,7 @@ export function invocationArgs(params: {
     const flagName = profile.queryAliases[aliasKey] ?? parameter.cliName;
     addFlag(args, `--${flagName}`, value);
   }
-  if (vector.input?.body !== undefined) {
+  if (vector.input.body !== undefined) {
     if (profile.bodyMode === "body-json") {
       args.push("--body-json", JSON.stringify(vector.input.body));
     } else {
@@ -137,22 +130,4 @@ export function invocationArgs(params: {
   }
   args.push("--json");
   return args;
-}
-
-export function expectedHelpTokens(
-  adapter: AdapterName,
-  operation: OperationContract,
-): string[] {
-  const tokens = [operation.command.resource, operation.command.action];
-  for (const parameter of operation.parameters) {
-    tokens.push(
-      parameter.location === "path"
-        ? `<${parameter.cliName}>`
-        : `--${parameter.cliName}`,
-    );
-  }
-  if (adapter === "contract-v1" && operation.requestBody) {
-    tokens.push("--body-json");
-  }
-  return [...new Set(tokens)];
 }

@@ -43,27 +43,18 @@ export interface ParameterContract {
   required: boolean;
   style: string;
   explode: boolean;
-  schema: JsonSchema;
-  sample: JsonValue;
-}
-
-export interface BodyBranch {
-  id: string;
-  requiredFields: string[];
-  schema: JsonSchema;
   sample: JsonValue;
 }
 
 export interface RequestBodyContract {
   required: boolean;
   contentType: string;
-  branches: BodyBranch[];
+  sample: JsonValue;
 }
 
 export interface ResponseContract {
   key: string;
   status: number;
-  description?: string;
   contentType?: string;
   sample?: JsonValue;
 }
@@ -73,8 +64,6 @@ export interface OperationContract {
   operationId: string;
   method: HttpMethod;
   path: string;
-  summary?: string;
-  tags: string[];
   auth: {
     required: boolean;
     schemes: string[];
@@ -87,16 +76,7 @@ export interface OperationContract {
 }
 
 export interface Manifest {
-  schemaVersion: 1;
   version: string;
-  source: {
-    ref: string;
-    commit: string;
-    sha256: string;
-    path: string;
-  };
-  openapi: string;
-  generatedAt: "deterministic";
   operations: OperationContract[];
 }
 
@@ -116,52 +96,13 @@ export interface ExpectedRequest {
   body?: JsonValue;
 }
 
-export type VectorKind =
-  | "discovery"
-  | "help"
-  | "minimal-request"
-  | "parameter-serialization"
-  | "body-branch"
-  | "missing-required-parameter"
-  | "invalid-parameter"
-  | "missing-required-body-field"
-  | "response";
-
 export interface ConformanceVector {
-  schemaVersion: 1;
   id: string;
   version: string;
-  kind: VectorKind;
-  operationKey?: string;
-  operationId?: string;
-  command?: CommandName;
-  input?: SemanticInput;
-  expectedRequest?: ExpectedRequest;
-  response?: ResponseContract;
-  expected: {
-    reachesServer: boolean;
-    exit: "zero" | "nonzero";
-    errorContains?: string;
-  };
-  covers: string[];
-}
-
-export interface CoverageReport {
-  schemaVersion: 1;
-  version: string;
-  sourceSha256: string;
-  counts: {
-    paths: number;
-    operations: number;
-    parameters: number;
-    requiredParameters: number;
-    requestBodies: number;
-    bodyBranches: number;
-    requiredBodyFields: number;
-    responses: number;
-    vectors: number;
-  };
-  vectorsByKind: Record<string, number>;
-  unsupported: string[];
-  sourceIssues: string[];
+  operationKey: string;
+  operationId: string;
+  command: CommandName;
+  input: SemanticInput;
+  expectedRequest: ExpectedRequest;
+  response: ResponseContract;
 }

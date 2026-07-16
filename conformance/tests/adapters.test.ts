@@ -16,7 +16,6 @@ const operation: OperationContract = {
   operationId: "widgets_create",
   method: "POST",
   path: "/widgets/{id}",
-  tags: ["Widgets"],
   auth: { required: true, schemes: ["BasicAuth"] },
   command: { resource: "widgets", action: "create", canonicalAction: "create" },
   pathParameterOrder: ["id"],
@@ -28,7 +27,6 @@ const operation: OperationContract = {
       required: true,
       style: "simple",
       explode: false,
-      schema: { type: "string" },
       sample: "widget-1",
     },
     {
@@ -38,35 +36,23 @@ const operation: OperationContract = {
       required: false,
       style: "form",
       explode: true,
-      schema: { type: "boolean" },
       sample: true,
     },
   ],
   requestBody: {
     required: true,
     contentType: "application/json",
-    branches: [],
+    sample: { name: "test", nested: { count: 1 } },
   },
   responses: [],
 };
 const manifest: Manifest = {
-  schemaVersion: 1,
   version: "fixture",
-  source: {
-    ref: "fixture",
-    commit: "0".repeat(40),
-    sha256: "0".repeat(64),
-    path: "fixture.yml",
-  },
-  openapi: "3.0.1",
-  generatedAt: "deterministic",
   operations: [operation],
 };
 const vector: ConformanceVector = {
-  schemaVersion: 1,
-  id: "fixture:widgets_create:body-branch",
+  id: "fixture:widgets_create:minimal-request",
   version: "fixture",
-  kind: "body-branch",
   operationKey: operation.key,
   operationId: operation.operationId,
   command: operation.command,
@@ -77,8 +63,14 @@ const vector: ConformanceVector = {
     cookies: {},
     body: { name: "test", nested: { count: 1 } },
   },
-  expected: { reachesServer: true, exit: "zero" },
-  covers: [],
+  expectedRequest: {
+    method: "POST",
+    pathname: "/widgets/widget-1",
+    query: [["dryRun", "true"]],
+    headers: {},
+    body: { name: "test", nested: { count: 1 } },
+  },
+  response: { key: "200", status: 200 },
 };
 
 describe("implementation adapters", () => {

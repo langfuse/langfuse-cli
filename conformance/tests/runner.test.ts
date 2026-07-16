@@ -63,15 +63,12 @@ process.exit(response.ok ? 0 : 1);
       commit: "0".repeat(40),
       sha256: "0".repeat(64),
     };
-    const compiled = compileOpenApi(entry, raw, "fixture.yml");
-    const vector = generateVectors(compiled).find(
-      (candidate) => candidate.kind === "minimal-request",
-    );
-    expect(vector).toBeDefined();
+    const compiled = compileOpenApi(entry, raw);
+    const vector = generateVectors(compiled)[0];
     const results = await runConformance({
       entry,
       manifest: compiled.manifest,
-      vectors: [vector!],
+      vectors: [vector],
       adapter: "contract-v1",
       command: ["bun", script],
     });

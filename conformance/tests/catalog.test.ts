@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import SwaggerParser from "@apidevtools/swagger-parser";
 
 import { loadCatalog, readVerifiedSpec, specPath } from "../src/catalog";
-import { checkCorpus } from "../src/generator";
+import { generateCorpus } from "../src/generator";
 
 describe("immutable OpenAPI catalog", () => {
   test("all pinned snapshots pass SHA-256 verification", async () => {
@@ -34,16 +34,15 @@ describe("immutable OpenAPI catalog", () => {
     }
   });
 
-  test("generated corpora are deterministic and fully supported", async () => {
+  test("each operation produces one supported endpoint call", async () => {
     const catalog = await loadCatalog();
     for (const entry of catalog.versions) {
-      const corpus = await checkCorpus(entry);
-      expect(corpus.coverage.unsupported).toEqual([]);
-      expect(corpus.coverage.sourceIssues).toEqual(entry.knownIssues ?? []);
-      expect(corpus.coverage.counts.operations).toBeGreaterThan(0);
-      expect(corpus.coverage.counts.vectors).toBeGreaterThan(
-        corpus.coverage.counts.operations,
+      const corpus = await generateCorpus(entry);
+      expect(corpus.compiled.unsupported).toEqual([]);
+      expect(corpus.vectors).toHaveLength(
+        corpus.compiled.manifest.operations.length,
       );
+      expect(corpus.vectors.length).toBeGreaterThan(0);
     }
   });
 });

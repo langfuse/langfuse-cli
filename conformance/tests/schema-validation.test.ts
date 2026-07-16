@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { loadCatalog, readVerifiedSpec } from "../src/catalog";
-import { compileOpenApi } from "../src/openapi";
+import { loadCatalog } from "../src/catalog";
+import { generateCorpus } from "../src/generator";
 import { resolveLocalRef } from "../src/schema";
 import { validateSchemaCases } from "../src/validation";
-import type { JsonSchema, JsonValue } from "../src/types";
+import type {
+  ConformanceVector,
+  JsonSchema,
+  JsonValue,
+  ParameterContract,
+} from "../src/types";
 
 const methods = new Set([
   "get",
@@ -42,17 +47,32 @@ function originalParameters(
   return [...merged.values()];
 }
 
+function parameterValue(
+  vector: ConformanceVector,
+  parameter: ParameterContract,
+): JsonValue | undefined {
+  if (parameter.location === "path") return vector.input.path[parameter.name];
+  if (parameter.location === "query") return vector.input.query[parameter.name];
+  if (parameter.location === "header") return vector.input.headers[parameter.name];
+  return vector.input.cookies[parameter.name];
+}
+
 describe("generated samples against original OpenAPI schemas", () => {
-  test("every catalog sample is valid according to its untouched source schema", async () => {
+  test("every generated endpoint call is valid against its untouched spec", async () => {
     const catalog = await loadCatalog();
     for (const entry of catalog.versions) {
-      const raw = await readVerifiedSpec(entry);
-      const compiled = compileOpenApi(entry, raw, catalog.specPath);
+      const { compiled, vectors } = await generateCorpus(entry);
       const cases: Array<{ label: string; schema: JsonSchema; value: JsonValue }> = [];
-      for (const operation of compiled.manifest.operations) {
+      for (const vector of vectors) {
+        const operation = compiled.manifest.operations.find(
+          (candidate) => candidate.key === vector.operationKey,
+        );
+        if (!operation) throw new Error(`${vector.id}: operation not found`);
         const original = originalOperation(compiled.document, operation.key);
         const parameters = originalParameters(compiled.document, operation.key);
         for (const parameter of operation.parameters) {
+          const value = parameterValue(vector, parameter);
+          if (value === undefined) continue;
           const source = parameters.find(
             (candidate) =>
               candidate.in === parameter.location && candidate.name === parameter.name,
@@ -60,22 +80,20 @@ describe("generated samples against original OpenAPI schemas", () => {
           cases.push({
             label: `${operation.operationId} parameter ${parameter.name}`,
             schema: source.schema,
-            value: parameter.sample,
+            value,
           });
         }
-        if (operation.requestBody) {
+        if (operation.requestBody && vector.input.body !== undefined) {
           const requestBody = resolveLocalRef(compiled.document, original.requestBody);
           const schema = requestBody.content[operation.requestBody.contentType].schema;
-          for (const branch of operation.requestBody.branches) {
-            cases.push({
-              label: `${operation.operationId} body ${branch.id}`,
-              schema,
-              value: branch.sample,
-            });
-          }
+          cases.push({
+            label: `${operation.operationId} body`,
+            schema,
+            value: vector.input.body,
+          });
         }
-        for (const response of operation.responses) {
-          if (response.sample === undefined || !response.contentType) continue;
+        const response = vector.response;
+        if (response.sample !== undefined && response.contentType) {
           const originalResponse = resolveLocalRef(
             compiled.document,
             original.responses[response.key],

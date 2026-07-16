@@ -4,9 +4,7 @@ import { join, resolve } from "node:path";
 
 import {
   invocationArgs,
-  expectedHelpTokens,
   loadPolicy,
-  operationForVector,
   type AdapterName,
 } from "./adapters";
 import { CaptureServer, requestDiff, sameJson } from "./capture";
@@ -138,17 +136,6 @@ async function currentCliCommand(entry: CatalogEntry): Promise<{
   };
 }
 
-function exitFailure(vector: ConformanceVector, code: number): string | undefined {
-  const zero = code === 0;
-  if (vector.expected.exit === "zero" && !zero) {
-    return `exit: expected zero, got ${code}`;
-  }
-  if (vector.expected.exit === "nonzero" && zero) {
-    return "exit: expected nonzero, got 0";
-  }
-  return undefined;
-}
-
 function parseJson(stdout: string): any | undefined {
   try {
     return JSON.parse(stdout);
@@ -181,60 +168,16 @@ export async function runConformance(options: RunOptions): Promise<CaseResult[]>
       });
       const execution = await spawn(command, args, options.timeoutMs ?? 10_000);
       const failures: string[] = [];
-      const exit = exitFailure(vector, execution.exitCode);
-      if (exit) failures.push(exit);
+      if (execution.exitCode !== 0) {
+        failures.push(`exit: expected zero, got ${execution.exitCode}`);
+      }
       const captured = capture.requests.slice(before);
-      if (!vector.expected.reachesServer && captured.length > 0) {
-        failures.push(`server: expected no request, got ${captured.length}`);
+      if (captured.length !== 1) {
+        failures.push(`server: expected one request, got ${captured.length}`);
+      } else {
+        failures.push(...requestDiff(vector.expectedRequest, captured[0]));
       }
-      if (vector.expected.reachesServer) {
-        if (captured.length !== 1) {
-          failures.push(`server: expected one request, got ${captured.length}`);
-        } else if (vector.expectedRequest) {
-          failures.push(...requestDiff(vector.expectedRequest, captured[0]));
-        }
-      }
-      if (vector.expected.errorContains) {
-        const output = `${execution.stdout}\n${execution.stderr}`.toLowerCase();
-        if (!output.includes(vector.expected.errorContains.toLowerCase())) {
-          failures.push(
-            `error: expected output to contain ${JSON.stringify(vector.expected.errorContains)}`,
-          );
-        }
-      }
-      if (vector.kind === "discovery" && execution.exitCode === 0) {
-        const output = parseJson(execution.stdout);
-        const actual = new Set(
-          (output?.data?.commands ?? []).map(
-            (command: any) => `${command.resource}:${command.action}`,
-          ),
-        );
-        const expected = new Set(
-          options.manifest.operations.map(
-            (operation) =>
-              `${operation.command.resource}:${operation.command.action}`,
-          ),
-        );
-        if (
-          actual.size !== expected.size ||
-          [...expected].some((commandName) => !actual.has(commandName))
-        ) {
-          failures.push(
-            `discovery: expected ${expected.size} commands, got ${actual.size}`,
-          );
-        }
-      }
-      if (vector.kind === "help" && execution.exitCode === 0) {
-        const operation = operationForVector(options.manifest, vector);
-        if (operation) {
-          for (const token of expectedHelpTokens(options.adapter, operation)) {
-            if (!execution.stdout.includes(token)) {
-              failures.push(`help: missing ${JSON.stringify(token)}`);
-            }
-          }
-        }
-      }
-      if (vector.expected.reachesServer && vector.response && execution.exitCode === 0) {
+      if (execution.exitCode === 0) {
         const output = parseJson(execution.stdout);
         if (output?.status !== vector.response.status) {
           failures.push(

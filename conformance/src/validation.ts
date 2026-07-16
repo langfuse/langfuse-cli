@@ -22,30 +22,6 @@ function normalizeNullable(value: any): any {
   return { anyOf: [normalized, { type: "null" }] };
 }
 
-export function validateSchemaValue(
-  document: Record<string, any>,
-  schema: JsonSchema,
-  value: JsonValue,
-): { valid: boolean; errors: ErrorObject[] } {
-  const ajv = new Ajv({
-    allErrors: true,
-    strict: false,
-    allowUnionTypes: true,
-    validateFormats: true,
-  });
-  addFormats(ajv);
-  const root = {
-    components: normalizeNullable(structuredClone(document.components ?? {})),
-    definitions: {
-      target: normalizeNullable(structuredClone(schema)),
-    },
-    $ref: "#/definitions/target",
-  };
-  const validate = ajv.compile(root);
-  const valid = validate(value);
-  return { valid: Boolean(valid), errors: validate.errors ?? [] };
-}
-
 export function validateSchemaCases(
   document: Record<string, any>,
   cases: Array<{ label: string; schema: JsonSchema; value: JsonValue }>,
