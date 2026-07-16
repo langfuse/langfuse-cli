@@ -27,6 +27,11 @@
     "README.md"
   ],
   "scripts": {
+    "test": "bun test",
+    "conformance:sync": "bun conformance/src/cli.ts sync",
+    "conformance:generate": "bun conformance/src/cli.ts generate",
+    "conformance:check": "bun conformance/src/cli.ts check",
+    "conformance:run": "bun conformance/src/cli.ts run",
     "patch-openapi": "bun scripts/patch-openapi.ts",
     "refetch-openapi": "bun scripts/patch-openapi.ts --refetch",
     "build": "bun run refetch-openapi && bun build src/cli.ts --outdir dist --target node --format esm",
@@ -35,6 +40,13 @@
   },
   "dependencies": {
     "specli": "^0.0.39"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
+    "@types/bun": "^1.3.14",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.8.2"
   },
   "engines": {
     "node": ">=20"
