@@ -15,10 +15,9 @@ const exactReleaseFiles = new Set([
   "LICENSE",
   "README.md",
   "bun.lock",
-  "openapi.yml",
   "package.json",
 ]);
-const releasePathPrefixes = ["bin/", "scripts/", "src/"];
+const releasePathPrefixes = ["bin/", "conformance/", "scripts/", "src/"];
 const rawArgs = process.argv.slice(2);
 const isDryRun = rawArgs.includes("--dry-run");
 const allowDirty = rawArgs.includes("--allow-dirty");
@@ -119,8 +118,14 @@ async function runCommand(
       stdout: options.capture ? "pipe" : "inherit",
       stderr: options.capture ? "pipe" : "inherit",
     });
-    const stdoutPromise = options.capture ? proc.stdout.text() : Promise.resolve("");
-    const stderrPromise = options.capture ? proc.stderr.text() : Promise.resolve("");
+    const stdoutPromise =
+      proc.stdout instanceof ReadableStream
+        ? new Response(proc.stdout).text()
+        : Promise.resolve("");
+    const stderrPromise =
+      proc.stderr instanceof ReadableStream
+        ? new Response(proc.stderr).text()
+        : Promise.resolve("");
     exitCode = await proc.exited;
     stdout = await stdoutPromise;
     stderr = await stderrPromise;
@@ -252,7 +257,7 @@ async function printPostBuildReview(): Promise<void> {
         "LICENSE",
         "README.md",
         "bin",
-        "openapi.yml",
+        "conformance",
         "package.json",
         "scripts",
         "src",
@@ -379,8 +384,9 @@ async function main(): Promise<void> {
   await writePackageJson(pkg);
   console.log(`Updated package.json to ${pkg.name}@${nextVersion}`);
 
+  await runCommand("bun", ["run", "typecheck"]);
   await runCommand("bun", ["test"]);
-  await runCommand("bun", ["run", "prepublishOnly"]);
+  await runCommand("bun", ["run", "conformance:all"]);
 
   await runCommand("npm", ["pack", "--dry-run"]);
   await printPostBuildReview();
@@ -401,7 +407,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // prepublishOnly already ran above, and npm pack --dry-run showed the package
+  // conformance:all already built above, and npm pack --dry-run showed the package
   // contents. Avoid a second lifecycle run producing a different publish.
   publishStarted = true;
   await runCommand("npm", ["publish", "--ignore-scripts"], {

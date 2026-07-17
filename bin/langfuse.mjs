@@ -1,3 +1,3 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { run } from "../dist/cli.js";
-run(process.argv);
+await run(process.argv);
