@@ -13,7 +13,11 @@ import { parseDocument, type Document } from "yaml";
 import { resolve } from "path";
 import { parseArgs } from "util";
 
+import { isV3DependentOperation } from "./openapi-deprecations";
+
 const DEFAULT_OPENAPI_URL = "https://cloud.langfuse.com/generated/api/openapi.yml";
+const V3_DEPRECATED_PREFIX = "[DEPRECATED] ";
+const V3_DEPRECATED_FALLBACK_SUMMARY = `${V3_DEPRECATED_PREFIX}Legacy API action`;
 
 const { values: args } = parseArgs({
   args: process.argv.slice(2),
@@ -183,6 +187,50 @@ if (paths?.items) {
   });
 }
 
+// Mark operations that require the legacy v3 data model. These return 404 after
+// a Langfuse v4 deployment switches to events_only mode.
+let deprecationCount = 0;
+if (paths?.items) {
+  for (const pathPair of paths.items) {
+    const path = pathPair.key?.value;
+    const methods = pathPair.value;
+    if (typeof path !== "string" || !methods?.items) continue;
+
+    for (const methodPair of methods.items) {
+      const method = methodPair.key?.value;
+      const operation = methodPair.value;
+      if (
+        typeof method !== "string" ||
+        !operation?.items ||
+        !isV3DependentOperation(path, method)
+      ) {
+        continue;
+      }
+
+      let changed = false;
+      if (operation.get("deprecated") !== true) {
+        operation.set("deprecated", true);
+        changed = true;
+      }
+      const summary = operation.get("summary");
+      const deprecatedSummary =
+        typeof summary === "string" && summary.length > 0
+          ? summary.startsWith(V3_DEPRECATED_PREFIX)
+            ? summary
+            : `${V3_DEPRECATED_PREFIX}${summary}`
+          : V3_DEPRECATED_FALLBACK_SUMMARY;
+      if (summary !== deprecatedSummary) {
+        operation.set("summary", deprecatedSummary);
+        changed = true;
+      }
+      if (!changed) continue;
+
+      deprecationCount++;
+      console.log(`Deprecated operation: ${method.toUpperCase()} ${path}`);
+    }
+  }
+}
+
 // Patch operation descriptions with examples
 const examples: Record<string, string> = {
   prompts_create: [
@@ -268,10 +316,12 @@ if (paths?.items) {
   }
 }
 
-const dirty = patchCount > 0 || renameCount > 0;
+const dirty = patchCount > 0 || renameCount > 0 || deprecationCount > 0;
 if (dirty) {
   writeFileSync(specPath, doc.toString({ singleQuote: true }));
-  console.log(`\nWrote patched spec to ${specPath} (${patchCount} schema(s), ${renameCount} param rename(s))`);
+  console.log(
+    `\nWrote patched spec to ${specPath} (${patchCount} schema(s), ${renameCount} param rename(s), ${deprecationCount} deprecated operation(s))`,
+  );
 } else {
   console.log("No patches needed.");
 }

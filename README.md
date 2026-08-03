@@ -51,19 +51,17 @@ langfuse --public-key pk-lf-... --secret-key sk-lf-... api prompts list
 langfuse api __schema
 
 # List actions for a resource
-langfuse api traces --help
+langfuse api observations --help
 
-# List traces
-langfuse api traces list --limit 10
-
-# Get a specific trace
-langfuse api traces get <trace-id>
+# List traces via the observations API
+langfuse api observations list --limit 10 \
+  --filter '[{"type":"boolean","column":"isRootObservation","operator":"=","value":true}]'
 
 # JSON output (for piping/scripting)
-langfuse api traces list --limit 5 --json
+langfuse api prompts list --limit 5 --json
 
 # Preview curl command
-langfuse api traces list --limit 5 --curl
+langfuse api prompts list --limit 5 --curl
 
 # Prompts
 langfuse api prompts list
@@ -73,8 +71,6 @@ langfuse api prompts get --name my-prompt
 langfuse api datasets list
 langfuse api dataset-items list --dataset-name my-dataset
 
-# Scores
-langfuse api score-v2s get-scores --limit 20
 ```
 
 ## Agent Usage

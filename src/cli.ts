@@ -174,11 +174,10 @@ Options:
 Examples:
   langfuse api __schema                              List all available resources
   langfuse api <resource> --help                     Show actions for a resource
-  langfuse api traces list --limit 10                List traces
   langfuse api prompts list                          List prompts
-  langfuse api scores create --name quality \\
-    --traceId <id> --value 0.9                       Create a score
-  langfuse api datasets create --name my-dataset     Create a dataset`);
+  langfuse api prompts get --name my-prompt          Get a prompt
+  langfuse api datasets create --name my-dataset     Create a dataset
+  langfuse api dataset-items list --dataset-name <id> List dataset items`);
 }
 
 function printApiHelp(resources: string[]): void {
