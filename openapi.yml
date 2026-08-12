@@ -11914,9 +11914,38 @@ components:
         - lastConfig
     CreatePromptRequest:
       title: CreatePromptRequest
-      oneOf:
-        - $ref: '#/components/schemas/CreateChatPromptRequest'
-        - $ref: '#/components/schemas/CreateTextPromptRequest'
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - chat
+            - text
+        name:
+          type: string
+        prompt:
+          type: string
+        config: {}
+        labels:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: List of deployment labels of this prompt version.
+        tags:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: List of tags to apply to all versions of this prompt.
+        commitMessage:
+          type: string
+          nullable: true
+          description: Commit message for this prompt version.
+      required:
+        - type
+        - name
+        - prompt
     CreateChatPromptRequest:
       title: CreateChatPromptRequest
       type: object
@@ -12043,9 +12072,21 @@ components:
         - tags
     ChatMessageWithPlaceholders:
       title: ChatMessageWithPlaceholders
-      oneOf:
-        - $ref: '#/components/schemas/ChatMessage'
-        - $ref: '#/components/schemas/PlaceholderMessage'
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - chatmessage
+            - placeholder
+        role:
+          type: string
+        content:
+          type: string
+        name:
+          type: string
+      required:
+        - type
     ChatMessage:
       title: ChatMessage
       type: object

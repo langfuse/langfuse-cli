@@ -93,7 +93,7 @@ See the full [Langfuse API Reference](https://api.reference.langfuse.com/).
 
 ## OpenAPI Patch Script
 
-The bundled `openapi.yml` is post-processed by `scripts/patch-openapi.ts` to flatten discriminated unions (`oneOf` with `allOf` branches) into plain objects. This is needed because specli can only generate CLI flags from flat `type: object` schemas — it doesn't handle `oneOf`/`allOf`. Without the patch, endpoints like `prompts create` produce zero flags.
+The bundled `openapi.yml` is post-processed by `scripts/patch-openapi.ts` to flatten discriminated unions (`oneOf` branches using either `allOf` wrappers or direct component references) into plain objects. This is needed because specli can only generate CLI flags from flat `type: object` schemas — it doesn't handle `oneOf`/`allOf`. Without the patch, endpoints like `prompts create` produce zero flags.
 
 The patch runs automatically as part of `bun run build`. To fetch a fresh spec and patch it:
 

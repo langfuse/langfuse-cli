@@ -13,6 +13,8 @@ import { parseDocument, type Document } from "yaml";
 import { resolve } from "path";
 import { parseArgs } from "util";
 
+import { flattenDiscriminatedUnion } from "./patch-openapi-logic";
+
 const DEFAULT_OPENAPI_URL = "https://cloud.langfuse.com/generated/api/openapi.yml";
 
 const { values: args } = parseArgs({
@@ -51,119 +53,14 @@ const schemasJS = schemas.toJSON() as Record<string, any>;
 let patchCount = 0;
 
 for (const [name, schema] of Object.entries<any>(schemasJS)) {
-  if (!schema.oneOf || !Array.isArray(schema.oneOf)) continue;
-
-  // Check if every branch matches the discriminated union pattern:
-  //   { allOf: [{ properties: { <disc>: { enum: [val] } } }, { $ref }], required: [<disc>] }
-  const branches: Array<{
-    discriminatorKey: string;
-    discriminatorValue: string;
-    refSchemaName: string;
-  }> = [];
-
-  let isDiscriminatedUnion = true;
-  for (const branch of schema.oneOf) {
-    if (!branch.allOf || branch.allOf.length !== 2) {
-      isDiscriminatedUnion = false;
-      break;
-    }
-
-    const [inline, ref] = branch.allOf;
-    const props = inline?.properties;
-    if (!props || !ref?.$ref) {
-      isDiscriminatedUnion = false;
-      break;
-    }
-
-    // Find the discriminator: a property with a single-value enum
-    const discEntries = Object.entries<any>(props).filter(
-      ([, v]) => v.type === "string" && Array.isArray(v.enum) && v.enum.length === 1,
-    );
-    if (discEntries.length !== 1) {
-      isDiscriminatedUnion = false;
-      break;
-    }
-
-    const [discKey, discSchema] = discEntries[0];
-    const refName = ref.$ref.replace("#/components/schemas/", "");
-
-    branches.push({
-      discriminatorKey: discKey,
-      discriminatorValue: discSchema.enum[0],
-      refSchemaName: refName,
-    });
-  }
-
-  if (!isDiscriminatedUnion || branches.length === 0) continue;
-
-  // all branches should use the same discriminator key
-  const discKey = branches[0].discriminatorKey;
-  if (!branches.every((b) => b.discriminatorKey === discKey)) continue;
-
-  const mergedProperties: Record<string, any> = {};
-  const requiredSets: Set<string>[] = [];
-
-  // property to discriminate
-  mergedProperties[discKey] = {
-    type: "string",
-    enum: branches.map((b) => b.discriminatorValue),
-  };
-
-  for (const branch of branches) {
-    const branchSchema = schemasJS[branch.refSchemaName];
-    if (!branchSchema?.properties) continue;
-
-    const branchRequired = new Set<string>(branchSchema.required ?? []);
-    requiredSets.push(branchRequired);
-
-    for (const [propName, propSchema] of Object.entries<any>(branchSchema.properties)) {
-      if (propName === discKey) continue; // already handled
-
-      if (!(propName in mergedProperties)) {
-        mergedProperties[propName] = structuredClone(propSchema);
-      } else {
-        // property exists in multiple branches — check for type conflict
-        const existing = mergedProperties[propName];
-        if (JSON.stringify(existing) !== JSON.stringify(propSchema)) {
-          // conflict: fall back to string so specli still exposes the flag
-          mergedProperties[propName] = {
-            type: "string",
-            ...(existing.description ? { description: existing.description } : {}),
-            ...(existing.nullable ? { nullable: true } : {}),
-          };
-        }
-      }
-    }
-  }
-
-  // Required = intersection of all branches' required fields + discriminator
-  const intersectedRequired =
-    requiredSets.length > 0
-      ? [...requiredSets[0]].filter((r) => requiredSets.every((s) => s.has(r)))
-      : [];
-  const required = [discKey, ...intersectedRequired.filter((r) => r !== discKey)];
-
-  // Strip nullable from properties that have no type (specli errors on these)
-  for (const [propName, propSchema] of Object.entries<any>(mergedProperties)) {
-    if (propSchema.nullable && !propSchema.type) {
-      delete propSchema.nullable;
-    }
-  }
-
-  const patched: any = {
-    title: schema.title ?? name,
-    type: "object",
-    properties: mergedProperties,
-  };
-  if (required.length > 0) {
-    patched.required = required;
-  }
+  const result = flattenDiscriminatedUnion(name, schema, schemasJS);
+  if (!result) continue;
 
   // Replace the schema node in the document (preserves rest of doc formatting)
-  doc.setIn(["components", "schemas", name], doc.createNode(patched));
+  doc.setIn(["components", "schemas", name], doc.createNode(result.schema));
   patchCount++;
   console.log(
-    `Patched ${name}: merged ${branches.length} branches, ${required.length} required fields`,
+    `Patched ${name}: merged ${result.branchCount} branches, ${result.schema.required?.length ?? 0} required fields`,
   );
 }
 
