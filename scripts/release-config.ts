@@ -1,3 +1,5 @@
+import { validRange } from "semver";
+
 export const semverPattern =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)((?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$/;
 
@@ -46,9 +48,17 @@ export function publishTagForVersion(
 ): string {
   if (!semverPattern.test(version)) throw new Error(`Invalid semver: ${version}`);
   const prerelease = prereleaseIdentifier(version);
+  if (explicitTag === undefined && prerelease && !/^[A-Za-z]/.test(prerelease)) {
+    throw new Error(
+      `Cannot infer an npm dist-tag from ${version}; pass --tag explicitly.`,
+    );
+  }
   const tag = explicitTag ?? prerelease ?? "latest";
   if (!/^[A-Za-z][A-Za-z0-9._-]*$/.test(tag)) {
     throw new Error(`Invalid npm dist-tag: ${tag}`);
+  }
+  if (validRange(tag) !== null) {
+    throw new Error(`npm dist-tag must not be a valid SemVer range: ${tag}`);
   }
   if (prerelease && tag === "latest") {
     throw new Error(`Prerelease ${version} cannot be published with the latest tag`);

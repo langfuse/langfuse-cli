@@ -40,14 +40,18 @@ let shouldRestorePackageJson = false;
 let publishStarted = false;
 
 function printHelp(): void {
-  console.log(`Usage: bun run release -- [options]
-
-Options:
-  --version <semver>  Release an explicit version without the version-selection prompt
-  --tag <tag>         npm dist-tag; inferred from prerelease identifier or latest for stable versions
-  --dry-run       Run checks, build, version bump, and npm pack dry-run, then restore package.json and skip publish
-  --allow-dirty   Allow release-relevant local changes; intended for testing the release script itself
-  -h, --help      Show this help`);
+  const options = [
+    ["--version <semver>", "Release an explicit version without the version-selection prompt"],
+    ["--tag <tag>", "npm dist-tag; inferred from prerelease identifier or latest for stable versions"],
+    ["--dry-run", "Run checks, build, version bump, and npm pack dry-run, then restore package.json and skip publish"],
+    ["--allow-dirty", "Allow release-relevant local changes; intended for testing the release script itself"],
+    ["-h, --help", "Show this help"],
+  ] as const;
+  const optionWidth = Math.max(...options.map(([option]) => option.length));
+  const lines = options.map(
+    ([option, description]) => `  ${option.padEnd(optionWidth)}  ${description}`,
+  );
+  console.log(`Usage: bun run release -- [options]\n\nOptions:\n${lines.join("\n")}`);
 }
 
 function bumpVersion(
@@ -376,9 +380,6 @@ async function main(): Promise<void> {
   if (!nextVersion) {
     console.log("Release cancelled.");
     return;
-  }
-  if (!semverPattern.test(nextVersion)) {
-    throw new Error(`Invalid semver: ${nextVersion}`);
   }
   if (nextVersion === pkg.version) throw new Error("Version must change.");
   const publishTag = publishTagForVersion(nextVersion, releaseOptions.tag);
