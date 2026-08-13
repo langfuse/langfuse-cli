@@ -1,7 +1,4 @@
-import { validRange } from "semver";
-
-export const semverPattern =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)((?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$/;
+import { prerelease, valid, validRange } from "semver";
 
 export interface ReleaseOptions {
   dryRun: boolean;
@@ -36,31 +33,30 @@ export function parseReleaseArgs(args: string[]): ReleaseOptions {
   return options;
 }
 
-function prereleaseIdentifier(version: string): string | undefined {
-  const suffix = semverPattern.exec(version)?.[4] ?? "";
-  if (!suffix.startsWith("-")) return undefined;
-  return suffix.slice(1).split("+", 1)[0].split(".", 1)[0].toLowerCase();
-}
-
 export function publishTagForVersion(
   version: string,
   explicitTag?: string,
 ): string {
-  if (!semverPattern.test(version)) throw new Error(`Invalid semver: ${version}`);
-  const prerelease = prereleaseIdentifier(version);
-  if (explicitTag === undefined && prerelease && !/^[A-Za-z]/.test(prerelease)) {
+  if (!valid(version)) throw new Error(`Invalid semver: ${version}`);
+  const prereleaseParts = prerelease(version);
+  const prereleaseTag = prereleaseParts?.[0]?.toString().toLowerCase();
+  if (
+    explicitTag === undefined &&
+    prereleaseTag &&
+    !/^[A-Za-z]/.test(prereleaseTag)
+  ) {
     throw new Error(
       `Cannot infer an npm dist-tag from ${version}; pass --tag explicitly.`,
     );
   }
-  const tag = explicitTag ?? prerelease ?? "latest";
+  const tag = explicitTag ?? prereleaseTag ?? "latest";
   if (!/^[A-Za-z][A-Za-z0-9._-]*$/.test(tag)) {
     throw new Error(`Invalid npm dist-tag: ${tag}`);
   }
   if (validRange(tag) !== null) {
     throw new Error(`npm dist-tag must not be a valid SemVer range: ${tag}`);
   }
-  if (prerelease && tag === "latest") {
+  if (prereleaseParts && tag === "latest") {
     throw new Error(`Prerelease ${version} cannot be published with the latest tag`);
   }
   return tag;

@@ -41,6 +41,7 @@ describe("release configuration", () => {
     expect(() => parseReleaseArgs(["--wat"])).toThrow(
       "Unknown release option: --wat",
     );
+    expect(() => publishTagForVersion("1.0")).toThrow("Invalid semver: 1.0");
     expect(() => publishTagForVersion("1.0.0-rc.0", "latest")).toThrow();
     expect(() => publishTagForVersion("1.0.0", "v1")).toThrow();
     expect(() => publishTagForVersion("1.0.0-x.0")).toThrow();

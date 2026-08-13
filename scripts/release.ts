@@ -1,11 +1,11 @@
 import { createInterface } from "node:readline/promises";
+import { inc, valid } from "semver";
 
 import {
   npmEnvironment,
   parseReleaseArgs,
   publishTagForVersion,
   type ReleaseOptions,
-  semverPattern,
 } from "./release-config";
 
 type PackageJson = {
@@ -52,31 +52,6 @@ function printHelp(): void {
     ([option, description]) => `  ${option.padEnd(optionWidth)}  ${description}`,
   );
   console.log(`Usage: bun run release -- [options]\n\nOptions:\n${lines.join("\n")}`);
-}
-
-function bumpVersion(
-  version: string,
-  bump: "patch" | "minor" | "major",
-): string | null {
-  const match = semverPattern.exec(version);
-  if (!match) return null;
-
-  let major = Number(match[1]);
-  let minor = Number(match[2]);
-  let patch = Number(match[3]);
-
-  if (bump === "patch") patch++;
-  if (bump === "minor") {
-    minor++;
-    patch = 0;
-  }
-  if (bump === "major") {
-    major++;
-    minor = 0;
-    patch = 0;
-  }
-
-  return `${major}.${minor}.${patch}`;
 }
 
 async function readPackageJson(): Promise<PackageJson> {
@@ -288,9 +263,9 @@ async function selectVersion(
   rl: ReturnType<typeof createInterface>,
   currentVersion: string,
 ): Promise<string | null> {
-  const patch = bumpVersion(currentVersion, "patch");
-  const minor = bumpVersion(currentVersion, "minor");
-  const major = bumpVersion(currentVersion, "major");
+  const patch = inc(currentVersion, "patch");
+  const minor = inc(currentVersion, "minor");
+  const major = inc(currentVersion, "major");
 
   if (!patch || !minor || !major) {
     throw new Error(`Current package version is not valid semver: ${currentVersion}`);
@@ -325,7 +300,7 @@ async function selectVersion(
 
     if (choice === "4" || choice === "custom" || choice === "c") {
       const custom = (await rl.question("Version: ")).trim();
-      if (!semverPattern.test(custom)) {
+      if (!valid(custom)) {
         console.error(`Invalid semver: ${custom}`);
         continue;
       }
