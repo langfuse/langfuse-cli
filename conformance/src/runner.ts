@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -9,6 +9,7 @@ import {
 } from "./adapters";
 import { CaptureServer, requestDiff, sameJson } from "./capture";
 import { POLICY_PATH, REPOSITORY_ROOT, readVerifiedSpec } from "./catalog";
+import { compileApiContract } from "../../src/contracts/compiler";
 import type {
   CatalogEntry,
   ConformanceVector,
@@ -95,11 +96,6 @@ async function currentCliCommand(entry: CatalogEntry): Promise<{
   const bin = resolve(directory, "bin");
   await mkdir(dist, { recursive: true });
   await mkdir(bin, { recursive: true });
-  await symlink(
-    resolve(REPOSITORY_ROOT, "node_modules"),
-    resolve(directory, "node_modules"),
-    "dir",
-  );
   const build = Bun.spawn(
     [
       "bun",
@@ -108,7 +104,7 @@ async function currentCliCommand(entry: CatalogEntry): Promise<{
       "--outfile",
       resolve(dist, "cli.js"),
       "--target",
-      "node",
+      "bun",
       "--format",
       "esm",
     ],
@@ -125,7 +121,21 @@ async function currentCliCommand(entry: CatalogEntry): Promise<{
     await rm(directory, { recursive: true, force: true });
     throw new Error(`Current CLI build failed:\n${stdout}${stderr}`);
   }
-  await Bun.write(resolve(directory, "openapi.yml"), await readVerifiedSpec(entry));
+  const raw = await readVerifiedSpec(entry);
+  const contracts = resolve(dist, "contracts");
+  await mkdir(contracts, { recursive: true });
+  await Bun.write(
+    resolve(contracts, `${entry.version}.json`),
+    `${JSON.stringify(compileApiContract(entry, raw))}\n`,
+  );
+  await Bun.write(
+    resolve(contracts, "catalog.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      latest: entry.version,
+      versions: [{ version: entry.version, sourceSha256: entry.sha256 }],
+    })}\n`,
+  );
   await Bun.write(
     resolve(bin, "langfuse.mjs"),
     await Bun.file(resolve(REPOSITORY_ROOT, "bin/langfuse.mjs")).text(),
@@ -168,16 +178,37 @@ export async function runConformance(options: RunOptions): Promise<CaseResult[]>
       });
       const execution = await spawn(command, args, options.timeoutMs ?? 10_000);
       const failures: string[] = [];
-      if (execution.exitCode !== 0) {
-        failures.push(`exit: expected zero, got ${execution.exitCode}`);
-      }
       const captured = capture.requests.slice(before);
-      if (captured.length !== 1) {
-        failures.push(`server: expected one request, got ${captured.length}`);
+      const operation = options.manifest.operations.find(
+        (candidate) => candidate.key === vector.operationKey,
+      );
+      if (!operation) {
+        failures.push("manifest: operation not found");
+      } else if (operation.deprecated) {
+        if (execution.exitCode !== 2) {
+          failures.push(
+            `exit: expected deprecated-operation exit 2, got ${execution.exitCode}`,
+          );
+        }
+        if (captured.length !== 0) {
+          failures.push(
+            `server: expected no request for deprecated operation, got ${captured.length}`,
+          );
+        }
+        if (!execution.stderr.includes("Cannot call deprecated API operation")) {
+          failures.push("stderr: expected a helpful deprecated-operation error");
+        }
       } else {
-        failures.push(...requestDiff(vector.expectedRequest, captured[0]));
+        if (execution.exitCode !== 0) {
+          failures.push(`exit: expected zero, got ${execution.exitCode}`);
+        }
+        if (captured.length !== 1) {
+          failures.push(`server: expected one request, got ${captured.length}`);
+        } else {
+          failures.push(...requestDiff(vector.expectedRequest, captured[0]));
+        }
       }
-      if (execution.exitCode === 0) {
+      if (!operation?.deprecated && execution.exitCode === 0) {
         const output = parseJson(execution.stdout);
         if (output?.status !== vector.response.status) {
           failures.push(

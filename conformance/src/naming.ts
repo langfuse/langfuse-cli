@@ -1,13 +1,28 @@
-import type { CommandName, HttpMethod } from "./types";
+import type { CommandAlias, CommandName, HttpMethod } from "./types";
 
 interface NamingInput {
   operationId?: string;
   method: HttpMethod;
   path: string;
   tags: string[];
+  deprecated?: true;
 }
 
-interface PlannedNaming extends NamingInput, CommandName {}
+interface RouteName {
+  resource: string;
+  version?: string;
+  tail: string[];
+}
+
+interface PlannedName {
+  input: NamingInput;
+  route: RouteName;
+  baseAction: string;
+  resource: string;
+  action: string;
+  aliases: CommandAlias[];
+  index: number;
+}
 
 const IRREGULAR: Record<string, string> = {
   person: "people",
@@ -27,6 +42,7 @@ const UNCOUNTABLE = new Set([
   "series",
   "species",
 ]);
+const API_VERSION = /^v\d+$/i;
 
 export function kebabCase(input: string): string {
   return input
@@ -51,132 +67,200 @@ export function pluralize(input: string): string {
   return `${word}s`;
 }
 
-function pathArgs(path: string): string[] {
-  return [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+function singularize(input: string): string {
+  if (input.endsWith("ies")) return `${input.slice(0, -3)}y`;
+  if (/(ches|shes|xes|zes)$/.test(input)) return input.slice(0, -2);
+  if (input.endsWith("s") && !input.endsWith("ss")) return input.slice(0, -1);
+  return input;
 }
 
-function operationIdParts(operationId = ""): {
-  prefix?: string;
-  suffix?: string;
-} {
-  const separator = operationId.includes(".")
-    ? "."
-    : operationId.includes("__")
-      ? "__"
-      : operationId.includes("_")
-        ? "_"
-        : undefined;
-  if (!separator) return operationId ? { suffix: operationId } : {};
-  const [prefix, ...rest] = operationId.split(separator);
-  return { prefix, suffix: rest.join(separator) };
+function isParameter(segment: string | undefined): boolean {
+  return Boolean(segment?.startsWith("{") && segment.endsWith("}"));
 }
 
-function canonicalAction(input: string): string {
-  const action = kebabCase(input);
-  if (["retrieve", "read"].includes(action)) return "get";
-  if (["search"].includes(action)) return "list";
-  if (action === "patch") return "update";
-  if (action === "remove") return "delete";
-  return action;
-}
+function routeName(path: string): RouteName {
+  const all = path.split("/").filter(Boolean);
+  const publicIndex = all.lastIndexOf("public");
+  const segments = all.slice(publicIndex === -1 ? 0 : publicIndex + 1);
+  let version: string | undefined;
+  if (API_VERSION.test(segments[0] ?? "")) version = segments.shift()!.toLowerCase();
+  while (isParameter(segments[0])) segments.shift();
+  if (segments.length === 0) return { resource: "api", ...(version ? { version } : {}), tail: [] };
 
-function inferResource(input: NamingInput): string {
-  const tag = input.tags[0]?.trim();
-  if (tag && !["default", "defaults", "api"].includes(tag.toLowerCase())) {
-    return pluralize(kebabCase(tag));
+  let resource = kebabCase(segments.shift()!);
+  if (resource === "unstable" && segments[0] && !isParameter(segments[0])) {
+    resource = `${resource}-${kebabCase(segments.shift()!)}`;
   }
-  const prefix = operationIdParts(input.operationId).prefix;
-  if (prefix) return pluralize(kebabCase(prefix));
-  const segment = input.path.split("/").filter(Boolean)[0] ?? "api";
-  return pluralize(kebabCase(segment.replace(/^\{.+\}$/, "") || "api"));
+  if (resource === "otel" && API_VERSION.test(segments[0] ?? "")) {
+    version ??= segments.shift()!.toLowerCase();
+  }
+  return { resource, ...(version ? { version } : {}), tail: segments };
 }
 
-function inferAction(input: NamingInput): string {
-  const suffix = operationIdParts(input.operationId).suffix;
-  if (suffix) {
-    const action = canonicalAction(suffix);
-    if (["get", "list", "create", "update", "delete"].includes(action)) {
-      return action;
+function operationSuffix(operationId = ""): string {
+  const splitAt = Math.max(
+    operationId.lastIndexOf("__"),
+    operationId.lastIndexOf("_"),
+    operationId.lastIndexOf("."),
+  );
+  const suffix = splitAt === -1 ? operationId : operationId.slice(splitAt + 1);
+  return kebabCase(suffix).replace(/-v\d+$/i, "");
+}
+
+function restAction(input: NamingInput, route: RouteName, suffix: string): string {
+  const tail = route.tail.filter((segment) => !API_VERSION.test(segment));
+  const staticTail = tail.filter((segment) => !isParameter(segment));
+  const subject = kebabCase(staticTail.at(-1) ?? "");
+  const singularSubject = singularize(subject);
+  const item = isParameter(tail.at(-1));
+
+  if (staticTail.length === 0) {
+    if (input.method === "GET") {
+      if (item) return "get";
+      if (["health", "metrics"].includes(suffix)) return "get";
+      return "list";
     }
+    if (input.method === "POST") return "create";
+    if (["PUT", "PATCH"].includes(input.method)) return "update";
+    if (input.method === "DELETE") return item ? "delete" : "delete-many";
+    return kebabCase(input.method);
   }
-  const hasPathArg = pathArgs(input.path).length > 0;
-  if (input.method === "GET") return hasPathArg ? "get" : "list";
-  if (input.method === "POST" && !hasPathArg) return "create";
-  if (["PUT", "PATCH"].includes(input.method) && hasPathArg) return "update";
-  if (input.method === "DELETE" && hasPathArg) return "delete";
-  return kebabCase(input.method);
+
+  if (input.method === "GET") {
+    if (item) return `get-${singularSubject}`;
+    const suffixSubject = suffix.split("-").at(-1) ?? "";
+    const explicitSingleton = suffix.startsWith("get-") && !suffixSubject.endsWith("s");
+    return `${explicitSingleton ? "get" : "list"}-${subject}`;
+  }
+  if (input.method === "POST") {
+    return `${suffix.startsWith("add-") ? "add" : "create"}-${singularSubject}`;
+  }
+  if (["PUT", "PATCH"].includes(input.method)) {
+    return `${suffix.startsWith("upsert-") ? "upsert" : "update"}-${singularSubject}`;
+  }
+  if (input.method === "DELETE") return `delete-${singularSubject}`;
+  return `${kebabCase(input.method)}-${singularSubject}`;
 }
 
-function disambiguator(operation: PlannedNaming, index: number): string {
-  let name = kebabCase(operation.operationId ?? "");
-  const synonyms: Record<string, string[]> = {
-    get: ["get", "retrieve", "read", "list", "search"],
-    list: ["list", "search", "get"],
-    create: ["create", "post"],
-    update: ["update", "patch", "put"],
-    delete: ["delete", "remove"],
-  };
-  for (const synonym of synonyms[operation.action] ?? [operation.action]) {
-    if (name.startsWith(`${synonym}-`)) {
-      name = name.slice(synonym.length + 1);
-      break;
-    }
+function inferAction(input: NamingInput, route: RouteName): string {
+  const suffix = operationSuffix(input.operationId);
+  if (["batch", "submit", "upsert"].includes(suffix)) return suffix;
+  if (suffix === "delete-multiple") return "delete-many";
+  if (suffix.startsWith("add-") || suffix.startsWith("export-")) return suffix;
+  if (suffix.startsWith("get-") && input.method !== "GET") return suffix;
+  if (suffix.endsWith("-status")) return suffix;
+  return restAction(input, route, suffix);
+}
+
+function versionRank(version?: string): number {
+  return version ? Number(version.slice(1)) : 0;
+}
+
+function commandKey(resource: string, action: string): string {
+  return `${resource}\u0000${action}`;
+}
+
+function tagResources(input: NamingInput): string[] {
+  return input.tags
+    .map((tag) => kebabCase(tag))
+    .filter((tag) => tag && !["default", "defaults", "api"].includes(tag));
+}
+
+function uniqueFallbackAction(plan: PlannedName, used: Set<string>): string {
+  const suffix = operationSuffix(plan.input.operationId) || kebabCase(plan.input.method);
+  let candidate = suffix === plan.action ? `${plan.action}-${plan.index + 1}` : suffix;
+  let index = 2;
+  while (used.has(commandKey(plan.resource, candidate))) {
+    candidate = `${suffix}-${index++}`;
   }
-  const singular = operation.resource.replace(/s$/, "");
-  for (const resource of [operation.resource, singular]) {
-    if (name.startsWith(`${resource}-`)) name = name.slice(resource.length + 1);
-    else if (name.includes(`-${resource}-`)) {
-      name = name.replace(`-${resource}-`, "-");
-    } else if (name.endsWith(`-${resource}`)) {
-      name = name.slice(0, -(resource.length + 1));
-    }
-  }
-  if (name && name !== operation.action && name !== operation.resource) {
-    return `${operation.action}-${name}`;
-  }
-  const segments = operation.path.split("/").filter(Boolean).reverse();
-  for (const segment of segments) {
-    if (segment.startsWith("{")) continue;
-    const candidate = kebabCase(segment);
-    if (![operation.resource, singular].includes(candidate)) {
-      return `${operation.action}-${candidate}`;
-    }
-  }
-  return `${operation.action}-${index}`;
+  return candidate;
 }
 
 export function planCommandNames(inputs: NamingInput[]): CommandName[] {
-  const planned: PlannedNaming[] = inputs.map((input) => {
-    const action = inferAction(input);
+  const planned: PlannedName[] = inputs.map((input, index) => {
+    const route = routeName(input.path);
+    const baseAction = inferAction(input, route);
+    const resource = input.deprecated
+      ? route.version
+        ? `${route.resource}-${route.version}`
+        : `legacy-${route.resource}`
+      : route.resource;
     return {
-      ...input,
-      resource: inferResource(input),
-      action,
-      canonicalAction: action,
+      input,
+      route,
+      baseAction,
+      resource,
+      action: baseAction,
+      aliases: [],
+      index,
     };
   });
-  const totals = new Map<string, number>();
-  for (const operation of planned) {
-    const key = `${operation.resource}:${operation.action}`;
-    totals.set(key, (totals.get(key) ?? 0) + 1);
+
+  const activeGroups = new Map<string, PlannedName[]>();
+  for (const plan of planned.filter((candidate) => !candidate.input.deprecated)) {
+    const key = commandKey(plan.route.resource, plan.baseAction);
+    const group = activeGroups.get(key) ?? [];
+    group.push(plan);
+    activeGroups.set(key, group);
   }
-  const seen = new Map<string, number>();
-  return planned.map((operation) => {
-    const key = `${operation.resource}:${operation.action}`;
-    if ((totals.get(key) ?? 0) === 1) {
-      return {
-        resource: operation.resource,
-        action: operation.action,
-        canonicalAction: operation.canonicalAction,
-      };
+  for (const group of activeGroups.values()) {
+    group.sort((left, right) => {
+      const versionDifference = versionRank(right.route.version) - versionRank(left.route.version);
+      return versionDifference || left.index - right.index;
+    });
+    for (const loser of group.slice(1)) {
+      if (loser.route.version) loser.resource = `${loser.route.resource}-${loser.route.version}`;
     }
-    const index = (seen.get(key) ?? 0) + 1;
-    seen.set(key, index);
-    return {
-      resource: operation.resource,
-      action: disambiguator(operation, index),
-      canonicalAction: operation.canonicalAction,
-      aliasOf: `${operation.resource} ${operation.canonicalAction}`,
-    };
-  });
+  }
+
+  const usedCanonical = new Set<string>();
+  for (const plan of planned) {
+    let key = commandKey(plan.resource, plan.action);
+    if (usedCanonical.has(key)) {
+      plan.action = uniqueFallbackAction(plan, usedCanonical);
+      key = commandKey(plan.resource, plan.action);
+    }
+    usedCanonical.add(key);
+  }
+
+  const claimedAliases = new Set<string>();
+  for (const plan of planned) {
+    const candidates: CommandAlias[] = [];
+    if (plan.resource !== plan.route.resource) {
+      candidates.push({
+        resource: plan.route.resource,
+        action: plan.baseAction,
+        source: "path",
+      });
+    }
+    if (plan.route.version) {
+      candidates.push({
+        resource: `${plan.route.resource}-${plan.route.version}`,
+        action: plan.baseAction,
+        source: "version",
+      });
+    }
+    for (const resource of tagResources(plan.input)) {
+      candidates.push({ resource, action: plan.baseAction, source: "tag" });
+    }
+
+    for (const alias of candidates) {
+      const key = commandKey(alias.resource, alias.action);
+      if (
+        key === commandKey(plan.resource, plan.action) ||
+        usedCanonical.has(key) ||
+        claimedAliases.has(key)
+      ) {
+        continue;
+      }
+      claimedAliases.add(key);
+      plan.aliases.push(alias);
+    }
+  }
+
+  return planned.map((plan) => ({
+    resource: plan.resource,
+    action: plan.action,
+    ...(plan.aliases.length ? { aliases: plan.aliases } : {}),
+  }));
 }

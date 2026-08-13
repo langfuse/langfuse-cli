@@ -17,6 +17,7 @@ const CURRENT_CLI_UNSUPPORTED_OPERATIONS = new Set([
   "prompts_create",
   "scim_createUser",
   "score_create",
+  "scores_create",
   "trace_deleteMultiple",
   "unstable_dashboardWidgets_create",
   "unstable_dashboards_addPlacement",
@@ -26,7 +27,7 @@ const CURRENT_CLI_UNSUPPORTED_OPERATIONS = new Set([
 ]);
 
 describe("multi-version black-box matrix", () => {
-  test("fake-calls every endpoint through the real CLI", async () => {
+  test("checks every endpoint through the real CLI", async () => {
     const catalog = await loadCatalog();
     await Promise.all(catalog.versions.map(async (entry) => {
       const corpus = await generateCorpus(entry);
@@ -42,9 +43,15 @@ describe("multi-version black-box matrix", () => {
       });
       expect(results).toHaveLength(vectors.length);
 
+      const deprecatedOperationIds = new Set(
+        corpus.compiled.manifest.operations
+          .filter((operation) => operation.deprecated)
+          .map((operation) => operation.operationId),
+      );
       const expectedFailures = vectors
         .filter((vector) =>
-          CURRENT_CLI_UNSUPPORTED_OPERATIONS.has(vector.operationId ?? ""),
+          CURRENT_CLI_UNSUPPORTED_OPERATIONS.has(vector.operationId ?? "") &&
+          !deprecatedOperationIds.has(vector.operationId ?? ""),
         )
         .map((vector) => vector.id);
       const actualFailures = results

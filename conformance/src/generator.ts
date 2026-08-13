@@ -1,3 +1,5 @@
+import packageJson from "../../package.json";
+
 import { readVerifiedSpec } from "./catalog";
 import { compileOpenApi, type CompiledSpec } from "./openapi";
 import { expectedRequest } from "./serialize";
@@ -45,6 +47,7 @@ function minimalInput(operation: OperationContract): SemanticInput {
 
 function requestWithAuth(operation: OperationContract, input: SemanticInput) {
   const request = expectedRequest(operation, input);
+  request.headers["user-agent"] = `langfuse-cli/${packageJson.version}`;
   if (operation.auth.required && operation.auth.schemes.includes("BasicAuth")) {
     request.headers.authorization =
       "Basic Y29uZm9ybWFuY2UtcHVibGljLWtleTpjb25mb3JtYW5jZS1zZWNyZXQta2V5";

@@ -23,30 +23,29 @@
   "files": [
     "bin",
     "dist",
-    "openapi.yml",
     "README.md"
   ],
   "scripts": {
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "conformance:sync": "bun conformance/src/cli.ts sync",
+    "conformance:add-version": "bun conformance/src/add-version.ts",
     "conformance:run": "bun conformance/src/cli.ts run",
-    "patch-openapi": "bun scripts/patch-openapi.ts",
-    "refetch-openapi": "bun scripts/patch-openapi.ts --refetch",
-    "build": "bun run refetch-openapi && bun build src/cli.ts --outdir dist --target node --format esm",
+    "conformance:all": "bun conformance/src/all.ts",
+    "build": "bun scripts/build.ts",
     "release": "bun scripts/release.ts",
-    "prepublishOnly": "rm -rf dist && bun run build"
+    "prepublishOnly": "bun run build"
   },
-  "dependencies": {
-    "specli": "^0.0.39"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
     "@types/bun": "^1.3.14",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
+    "typescript": "^7.0.2",
     "yaml": "^2.8.2"
   },
   "engines": {
-    "node": ">=20"
+    "bun": ">=1.3.0"
   }
 }

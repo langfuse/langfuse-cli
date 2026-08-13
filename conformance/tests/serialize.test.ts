@@ -9,7 +9,7 @@ const operation: OperationContract = {
   method: "GET",
   path: "/items/{itemId}",
   auth: { required: false, schemes: [] },
-  command: { resource: "items", action: "get", canonicalAction: "get" },
+  command: { resource: "items", action: "get" },
   pathParameterOrder: ["itemId"],
   parameters: [
     {

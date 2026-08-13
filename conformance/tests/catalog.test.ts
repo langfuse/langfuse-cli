@@ -3,20 +3,14 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 
 import { loadCatalog, readVerifiedSpec, specPath } from "../src/catalog";
 import { generateCorpus } from "../src/generator";
+import { compareVersions } from "../src/add-version";
 
 describe("immutable OpenAPI catalog", () => {
   test("all pinned snapshots pass SHA-256 verification", async () => {
     const catalog = await loadCatalog();
-    expect(catalog.versions.map((entry) => entry.version)).toEqual([
-      "3.0.0",
-      "3.50.0",
-      "3.100.0",
-      "3.150.0",
-      "3.176.0",
-      "3.200.0",
-      "3.212.0",
-      "3.216.0",
-    ]);
+    const versions = catalog.versions.map((entry) => entry.version);
+    expect(new Set(versions).size).toBe(versions.length);
+    expect(versions).toEqual([...versions].sort(compareVersions));
     for (const entry of catalog.versions) {
       const raw = await readVerifiedSpec(entry);
       expect(raw.startsWith("openapi: 3.0.")).toBe(true);
@@ -34,7 +28,7 @@ describe("immutable OpenAPI catalog", () => {
     }
   });
 
-  test("each operation produces one supported endpoint call", async () => {
+  test("each operation produces one supported invocation", async () => {
     const catalog = await loadCatalog();
     for (const entry of catalog.versions) {
       const corpus = await generateCorpus(entry);
@@ -43,6 +37,32 @@ describe("immutable OpenAPI catalog", () => {
         corpus.compiled.manifest.operations.length,
       );
       expect(corpus.vectors.length).toBeGreaterThan(0);
+      if (entry.version === "4.10.0") {
+        expect(
+          corpus.compiled.manifest.operations
+            .filter((operation) => operation.deprecated)
+            .map((operation) => operation.operationId)
+            .sort(),
+        ).toEqual(
+          [
+            "datasetRunItems_create",
+            "datasetRunItems_list",
+            "datasets_deleteRun",
+            "datasets_getRun",
+            "datasets_getRuns",
+            "ingestion_batch",
+            "legacy_metricsV1_metrics",
+            "legacy_observationsV1_get",
+            "legacy_observationsV1_getMany",
+            "scores_get-by-id",
+            "scores_get-many",
+            "sessions_get",
+            "sessions_list",
+            "trace_get",
+            "trace_list",
+          ].sort(),
+        );
+      }
     }
   });
 });

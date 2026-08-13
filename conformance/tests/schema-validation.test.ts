@@ -58,7 +58,7 @@ function parameterValue(
 }
 
 describe("generated samples against original OpenAPI schemas", () => {
-  test("every generated endpoint call is valid against its untouched spec", async () => {
+  test("every generated endpoint call is valid against its committed spec", async () => {
     const catalog = await loadCatalog();
     for (const entry of catalog.versions) {
       const { compiled, vectors } = await generateCorpus(entry);

@@ -19,6 +19,8 @@ export interface CatalogEntry {
   ref: string;
   commit: string;
   sha256: string;
+  upstreamSha256?: string;
+  modifications?: string[];
   knownIssues?: string[];
 }
 
@@ -32,8 +34,13 @@ export interface Catalog {
 export interface CommandName {
   resource: string;
   action: string;
-  canonicalAction: string;
-  aliasOf?: string;
+  aliases?: CommandAlias[];
+}
+
+export interface CommandAlias {
+  resource: string;
+  action: string;
+  source: "path" | "tag" | "version";
 }
 
 export interface ParameterContract {
@@ -64,6 +71,7 @@ export interface OperationContract {
   operationId: string;
   method: HttpMethod;
   path: string;
+  deprecated?: true;
   auth: {
     required: boolean;
     schemes: string[];

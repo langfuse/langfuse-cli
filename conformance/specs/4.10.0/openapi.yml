@@ -804,7 +804,8 @@ paths:
         - name: objectType
           in: query
           description: >-
-            Filter comments by object type (trace, observation, session, prompt).
+            Filter comments by object type (trace, observation, session,
+            prompt).
           required: false
           schema:
             type: string
@@ -1088,7 +1089,8 @@ paths:
       security: *ref_0
     delete:
       description: >-
-        Delete a dataset item and all its run items. This action is irreversible.
+        Delete a dataset item and all its run items. This action is
+        irreversible.
       operationId: datasetItems_delete
       tags:
         - DatasetItems
@@ -1177,6 +1179,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateDatasetRunItemRequest'
+      deprecated: true
     get:
       description: List dataset run items
       operationId: datasetRunItems_list
@@ -1240,6 +1243,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/v2/datasets:
     get:
       description: Get all datasets
@@ -1434,6 +1438,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
     delete:
       description: Delete a dataset run and all its run items. This action is irreversible.
       operationId: datasets_deleteRun
@@ -1483,6 +1488,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/datasets/{datasetName}/runs:
     get:
       description: Get dataset runs
@@ -1542,6 +1548,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/experiments:
     get:
       description: |-
@@ -1794,6 +1801,57 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+  /api/public/feedback:
+    post:
+      description: >-
+        Submit explicit user-approved feedback about Langfuse skills, MCP tools,
+        CLI, docs, or public API. Do not include secrets, credentials, customer
+        data, trace payloads, or unrelated use-case details.
+      operationId: feedback_submit
+      tags:
+        - Feedback
+      parameters: []
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitFeedbackResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: ''
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitFeedbackRequest'
   /api/public/health:
     get:
       description: Check health of API and database
@@ -1932,6 +1990,7 @@ paths:
                     debugging.
               required:
                 - batch
+      deprecated: true
   /api/public/metrics:
     get:
       description: >-
@@ -1958,7 +2017,7 @@ paths:
             ```json
 
             {
-              "view": string,           // Required. One of "traces", "observations", "scores-numeric", "scores-categorical"
+              "view": string,           // Required. One of "traces", "observations", "scores-numeric", "scores-boolean", "scores-categorical"
               "dimensions": [           // Optional. Default: []
                 {
                   "field": string       // Field to group by, e.g. "name", "userId", "sessionId"
@@ -2033,6 +2092,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/observations/{observationId}:
     get:
       description: Get a observation
@@ -2054,7 +2114,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ObservationsView'
+                $ref: '#/components/schemas/ObservationsViewSingle'
         '400':
           description: ''
           content:
@@ -2081,6 +2141,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/observations:
     get:
       description: >-
@@ -2369,52 +2430,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
-  /api/public/scores:
-    post:
-      description: Create a score (supports both trace and session scores)
-      operationId: legacy_scoreV1_create
-      tags:
-        - LegacyScoreV1
-      parameters: []
-      responses:
-        '200':
-          description: ''
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/legacyCreateScoreResponse'
-        '400':
-          description: ''
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: ''
-          content:
-            application/json:
-              schema: {}
-        '403':
-          description: ''
-          content:
-            application/json:
-              schema: {}
-        '404':
-          description: ''
-          content:
-            application/json:
-              schema: {}
-        '405':
-          description: ''
-          content:
-            application/json:
-              schema: {}
-      security: *ref_0
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/legacyCreateScoreRequest'
+      deprecated: true
   /api/public/scores/{scoreId}:
     delete:
       description: Delete a score (supports both trace and session scores)
@@ -2753,10 +2769,13 @@ paths:
 
         ## V2 Differences
 
-        - Supports `observations`, `scores-numeric`, and `scores-categorical`
-        views only (traces view not supported)
+        - Supports `observations`, `scores-numeric`, `scores-boolean`, and
+        `scores-categorical` views only (traces view not supported)
 
         - Direct access to tags and release fields on observations
+
+        - Semantic-root filtering and grouping through the v2-only
+        `isRootObservation` dimension
 
         - Backwards-compatible: traceName, traceRelease, traceVersion dimensions
         are still available on observations view
@@ -2806,6 +2825,10 @@ paths:
         - `promptName` - Name of the prompt used
 
         - `promptVersion` - Version of the prompt used
+
+        - `isRootObservation` - Boolean semantic-root status. `true` includes
+        physical roots and app roots whose SDK parent is external (so
+        `parentObservationId` may be non-null).
 
         - `startTimeMonth` - Month of start_time in YYYY-MM format
 
@@ -2888,6 +2911,24 @@ paths:
         - `value` - Score value (for aggregations)
 
 
+        ### scores-boolean
+
+        Query boolean score data. It has the same score and parent
+        trace/observation dimensions as scores-numeric, plus:
+
+
+        **Dimensions:**
+
+        - `booleanValue` - Boolean value for true/false grouping and filtering
+
+
+        **Measures:**
+
+        - `count` - Total number of boolean scores
+
+        - `value` - Numeric 0/1 score value; `avg` returns the true-rate
+
+
         ### scores-categorical
 
         Query categorical score data. Same dimensions as scores-numeric except
@@ -2920,7 +2961,7 @@ paths:
         - `parentObservationId` - Use parentObservationId filter instead
 
 
-        **scores-numeric / scores-categorical views:**
+        **scores-numeric / scores-boolean / scores-categorical views:**
 
         - `id` - Use specific filters to narrow down results
 
@@ -2959,7 +3000,7 @@ paths:
             ```json
 
             {
-              "view": string,           // Required. One of "observations", "scores-numeric", "scores-categorical"
+              "view": string,           // Required. One of "observations", "scores-numeric", "scores-boolean", "scores-categorical"
               "dimensions": [           // Optional. Default: []
                 {
                   "field": string       // Field to group by (see available dimensions above)
@@ -3003,6 +3044,22 @@ paths:
                 "bins": number,         // Optional. Number of bins for histogram aggregation (1-100), default: 10
                 "row_limit": number     // Optional. Maximum number of rows to return (1-1000), default: 100
               }
+            }
+
+            ```
+
+
+            For example, to count semantic roots (including app roots with a
+            non-null external parent), use a boolean filter:
+
+            ```json
+
+            {
+              "view": "observations",
+              "metrics": [{"measure": "count", "aggregation": "count"}],
+              "filters": [{"column": "isRootObservation", "operator": "=", "value": true, "type": "boolean"}],
+              "fromTimestamp": "2025-01-01T00:00:00.000Z",
+              "toTimestamp": "2025-02-01T00:00:00.000Z"
             }
 
             ```
@@ -3256,7 +3313,7 @@ paths:
         parentObservationId, type
 
         - `basic` - name, level, statusMessage, version, environment,
-        bookmarked, public, userId, sessionId
+        bookmarked, public, userId, sessionId, isRootObservation
 
         - `time` - completionStartTime, createdAt, updatedAt
 
@@ -3354,6 +3411,13 @@ paths:
           schema:
             type: string
             nullable: true
+        - name: sessionId
+          in: query
+          description: Filter by session ID.
+          required: false
+          schema:
+            type: string
+            nullable: true
         - name: type
           in: query
           description: >-
@@ -3381,9 +3445,29 @@ paths:
             nullable: true
         - name: parentObservationId
           in: query
+          description: >-
+            Filter by the physical parent observation ID.
+
+            An empty value matches only observations without a physical parent.
+            Use `isRootObservation` to include observations marked as app roots
+            by the SDK, which may retain a non-null `parentObservationId`.
           required: false
           schema:
             type: string
+            nullable: true
+        - name: isRootObservation
+          in: query
+          description: >-
+            Filter by whether an observation is a logical root.
+
+            Root observations include observations without a physical parent and
+            observations marked as app roots by the SDK.
+
+            An app-root observation may have `isRootObservation=true` and a
+            non-null `parentObservationId`.
+          required: false
+          schema:
+            type: boolean
             nullable: true
         - name: environment
           in: query
@@ -3489,6 +3573,10 @@ paths:
 
             - `sessionId` (string) - Session ID
 
+            - `isRootObservation` (boolean) - Whether the observation is a
+            logical root. Observations marked as app roots by the SDK may retain
+            a non-null parentObservationId.
+
 
             ### Trace-Related Fields
 
@@ -3592,6 +3680,12 @@ paths:
                 "column": "output",
                 "operator": "matches",
                 "value": "needle"
+              },
+              {
+                "type": "boolean",
+                "column": "isRootObservation",
+                "operator": "=",
+                "value": true
               }
             ]
 
@@ -4360,7 +4454,8 @@ paths:
       security: *ref_0
     post:
       description: >-
-        Create a new API key for a project (requires organization-scoped API key)
+        Create a new API key for a project (requires organization-scoped API
+        key)
       operationId: projects_createApiKey
       tags:
         - Projects
@@ -4566,7 +4661,7 @@ paths:
           required: true
           schema:
             type: string
-        - name: prompt-version
+        - name: version
           in: query
           description: Version of the prompt to be retrieved.
           required: false
@@ -4780,12 +4875,7 @@ paths:
               schema: {}
       security: *ref_0
     post:
-      description: >-
-        Create a new version for the prompt with the given `name`
-
-
-        Example:
-          langfuse api prompts create --type text --name my-prompt --prompt 'Hello {{name}}'
+      description: Create a new version for the prompt with the given `name`
       operationId: prompts_create
       tags:
         - Prompts
@@ -5619,6 +5709,54 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+  /api/public/scores:
+    post:
+      description: >-
+        Create a score (supports trace, observation, session, and dataset run
+        scores)
+      operationId: scores_create
+      tags:
+        - Scores
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateScoreResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScoreRequest'
   /api/public/v2/scores:
     get:
       description: |-
@@ -5844,6 +5982,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/v2/scores/{scoreId}:
     get:
       description: |-
@@ -5894,6 +6033,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/sessions:
     get:
       description: >-
@@ -5993,6 +6133,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/sessions/{sessionId}:
     get:
       description: >-
@@ -6051,6 +6192,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
   /api/public/traces/{traceId}:
     get:
       description: Get a specific trace
@@ -6110,6 +6252,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
     delete:
       description: Delete a specific trace
       operationId: trace_delete
@@ -6290,7 +6433,7 @@ paths:
 
             [
               {
-                "type": string,           // Required. One of: "datetime", "string", "number", "stringOptions", "categoryOptions", "arrayOptions", "stringObject", "numberObject", "boolean", "null"
+                "type": string,           // Required. One of: "datetime", "string", "number", "stringOptions", "categoryOptions", "arrayOptions", "stringObject", "numberObject", "booleanObject", "boolean", "null"
                 "column": string,         // Required. Column to filter on (see available columns below)
                 "operator": string,       // Required. Operator based on type:
                                           // - datetime: ">", "<", ">=", "<="
@@ -6301,10 +6444,11 @@ paths:
                                           // - number: "=", ">", "<", ">=", "<="
                                           // - stringObject: "=", "contains", "does not contain", "starts with", "ends with"
                                           // - numberObject: "=", ">", "<", ">=", "<="
+                                          // - booleanObject: "=", "<>"
                                           // - boolean: "=", "<>"
                                           // - null: "is null", "is not null"
                 "value": any,             // Required (except for null type). Value to compare against. Type depends on filter type
-                "key": string             // Required only for stringObject, numberObject, and categoryOptions types when filtering on nested fields like metadata
+                "key": string             // Required only for stringObject, numberObject, booleanObject, and categoryOptions types when filtering on nested fields like metadata or score names
               }
             ]
 
@@ -6388,6 +6532,12 @@ paths:
             `scores`)
 
             - `score_categories` (categoryOptions) - Categorical score values
+
+            - `score_booleans` (booleanObject) - Boolean score values. Use `key`
+            for the score name and a boolean `value`, e.g. `{"type":
+            "booleanObject", "column": "score_booleans", "key": "is_correct",
+            "operator": "=", "value": true}`. The `<>` operator also matches
+            traces without a score of that name.
 
 
             ## Filter Examples
@@ -6475,6 +6625,7 @@ paths:
             application/json:
               schema: {}
       security: *ref_0
+      deprecated: true
     delete:
       description: Delete multiple traces
       operationId: trace_deleteMultiple
@@ -6529,20 +6680,101 @@ paths:
               required:
                 - traceIds
   /api/public/unstable/dashboard-widgets:
+    get:
+      description: |-
+        List dashboard widgets in the project, ordered by most recently
+        updated first.
+
+        Responses may include legacy `traces` widgets created before this
+        API existed. New widgets cannot be created with `view: traces`.
+      operationId: unstable_dashboardWidgets_list
+      tags:
+        - UnstableDashboardWidgets
+      parameters:
+        - name: page
+          in: query
+          description: 1-based page number. Defaults to `1`.
+          required: false
+          schema:
+            type: integer
+            nullable: true
+        - name: limit
+          in: query
+          description: Maximum number of items per page. Defaults to `50`.
+          required: false
+          schema:
+            type: integer
+            nullable: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboardWidgetList'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
     post:
       description: >-
-        Create a reusable dashboard widget.
+        Create a dashboard widget (a standalone chart definition you place on
+
+        any dashboard).
 
 
-        This endpoint creates the widget. It does not place the widget on a
-        dashboard grid, this has to be done in the UI.
+        This endpoint creates the widget only; place it on a dashboard via
+
+        `POST /dashboards/{dashboardId}/placements`.
 
 
-        Supported views are `observations`, `scores-numeric`, and
-        `scores-categorical`.
+        Supported views are `observations`, `scores-numeric`, `scores-boolean`,
+        and `scores-categorical`.
 
-        The legacy `traces` view is not supported by this unstable API,
-        `minVersion` defaults to `2`; values below `2` are rejected.
+        The legacy `traces` view is not supported by this unstable API.
+
+        Widgets are created as v2 internally.
+
+
+        `chartConfig` is optional and defaults to the plain config for
+
+        `chartType`; when `chartConfig.type` is given it must match
+
+        `chartType`.
 
 
         Unstable API note:
@@ -6604,6 +6836,717 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/unstableCreateDashboardWidgetRequest'
+  /api/public/unstable/dashboard-widgets/{widgetId}:
+    get:
+      description: |-
+        Get a dashboard widget by id.
+
+        The response may use `view: traces` for legacy widgets.
+      operationId: unstable_dashboardWidgets_get
+      tags:
+        - UnstableDashboardWidgets
+      parameters:
+        - name: widgetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboardWidget'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+    patch:
+      description: |-
+        Update a dashboard widget.
+
+        All fields are optional; at least one field is required.
+        Changing `chartType` without sending `chartConfig` resets the config
+        to the new chart type's defaults. When `chartConfig.type` is given
+        it must match the widget's (possibly updated) `chartType`.
+
+        `view` cannot be changed to the legacy `traces` value. Existing
+        `traces` widgets may be updated on other fields.
+      operationId: unstable_dashboardWidgets_update
+      tags:
+        - UnstableDashboardWidgets
+      parameters:
+        - name: widgetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboardWidget'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/unstableUpdateDashboardWidgetRequest'
+    delete:
+      description: |-
+        Delete a dashboard widget.
+
+        The API returns `409` while the widget is still placed on a dashboard.
+        Remove those placements first.
+      operationId: unstable_dashboardWidgets_delete
+      tags:
+        - UnstableDashboardWidgets
+      parameters:
+        - name: widgetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDeleteDashboardWidgetResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+  /api/public/unstable/dashboards:
+    get:
+      description: |-
+        List dashboards in the project, ordered by most recently updated
+        first.
+      operationId: unstable_dashboards_list
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: page
+          in: query
+          description: 1-based page number. Defaults to `1`.
+          required: false
+          schema:
+            type: integer
+            nullable: true
+        - name: limit
+          in: query
+          description: Maximum number of items per page. Defaults to `50`.
+          required: false
+          schema:
+            type: integer
+            nullable: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboardList'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+    post:
+      description: Create a dashboard.
+      operationId: unstable_dashboards_create
+      tags:
+        - UnstableDashboards
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboard'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/unstableCreateDashboardRequest'
+  /api/public/unstable/dashboards/{dashboardId}:
+    get:
+      description: Get a dashboard by id.
+      operationId: unstable_dashboards_get
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: dashboardId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboard'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+    patch:
+      description: Update a dashboard's name, description, definition, or filters.
+      operationId: unstable_dashboards_update
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: dashboardId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboard'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/unstableUpdateDashboardRequest'
+    delete:
+      description: Delete a dashboard.
+      operationId: unstable_dashboards_delete
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: dashboardId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDeleteDashboardResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+  /api/public/unstable/dashboards/{dashboardId}/placements:
+    post:
+      description: |-
+        Add a placement to a dashboard grid (see `DashboardPlacement` for
+        grid semantics).
+
+        `id` and the position fields are optional: when omitted, the
+        placement gets a server-generated id and is appended below all
+        existing tiles as a 6x6 tile. Returns the created placement.
+
+        The referenced widget must exist in the same project or be a
+        Langfuse-managed widget. The API returns `409` if a placement with
+        the same `id` already exists on the dashboard.
+      operationId: unstable_dashboards_addPlacement
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: dashboardId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboardPlacement'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/unstableCreateDashboardPlacementRequest'
+  /api/public/unstable/dashboards/{dashboardId}/placements/{placementId}:
+    patch:
+      description: |-
+        Move or resize a placement. All fields are optional; at least one is
+        required. Omitted fields keep their current value. The placement's
+        content (widget/preset reference) and id cannot change — delete and
+        re-add the placement to swap content. Returns the updated placement.
+      operationId: unstable_dashboards_updatePlacement
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: dashboardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: placementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDashboardPlacement'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/unstableUpdateDashboardPlacementRequest'
+    delete:
+      description: >-
+        Remove a placement from a dashboard grid without deleting the referenced
+        widget.
+      operationId: unstable_dashboards_deletePlacement
+      tags:
+        - UnstableDashboards
+      parameters:
+        - name: dashboardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: placementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstableDeleteDashboardPlacementResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '429':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unstablePublicApiError'
+      security: *ref_0
   /api/public/unstable/evaluation-rules:
     post:
       description: >-
@@ -6767,8 +7710,10 @@ paths:
         List evaluation rules in the authenticated project.
 
 
-        Each item describes one live evaluation rule and its effective runtime
-        status.
+        This includes legacy `trace` and `dataset` rules so they can be
+        inspected and migrated to v4 rules. Legacy rules are read-only through
+        this API; create, update, and delete continue to support only
+        `observation` and `experiment` rules.
       operationId: unstable_evaluationRules_list
       tags:
         - UnstableEvaluationRules
@@ -6839,7 +7784,9 @@ paths:
 
 
         Use this endpoint to inspect the current evaluator, target, mapping,
-        filters, and effective runtime status.
+        filters, execution timing, and effective runtime status. Legacy `trace`
+        and `dataset` rules are returned for migration and are read-only through
+        this API.
       operationId: unstable_evaluationRules_get
       tags:
         - UnstableEvaluationRules
@@ -6847,7 +7794,8 @@ paths:
         - name: evaluationRuleId
           in: path
           description: >-
-            Evaluation rule identifier returned by the evaluation rule endpoints.
+            Evaluation rule identifier returned by the evaluation rule
+            endpoints.
           required: true
           schema:
             type: string
@@ -6857,7 +7805,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/unstableEvaluationRule'
+                $ref: '#/components/schemas/unstableReadableEvaluationRule'
         '400':
           description: ''
           content:
@@ -7631,6 +8579,13 @@ components:
         - JSON
         - CSV
         - JSONL
+        - PARQUET
+      description: >-
+        File format for exported data. `PARQUET` is a columnar binary format
+        encoded and compressed by the storage engine; gzip compression does not
+        apply to it. Note that the model-price columns (`input_price`,
+        `output_price`, `total_price`) are not included in Parquet observation
+        exports.
     BlobStorageIntegrationFileTypeResponse:
       title: BlobStorageIntegrationFileTypeResponse
       type: string
@@ -7639,10 +8594,7 @@ components:
         - CSV
         - JSONL
         - PARQUET
-      description: >-
-        File type reported for an existing integration. Includes `PARQUET`,
-        which a project may enable through the Langfuse UI but cannot yet be set
-        via this API (the request `fileType` omits it).
+      description: File type reported for an existing integration.
     BlobStorageExportMode:
       title: BlobStorageExportMode
       type: string
@@ -8035,7 +8987,10 @@ components:
         authorUserId:
           type: string
           nullable: true
-          description: The id of the user who created the comment.
+          description: >-
+            The id of the user who created the comment. Must be a member of the
+            organization that owns the project, otherwise an error will be
+            thrown.
       required:
         - projectId
         - objectType
@@ -8063,6 +9018,37 @@ components:
       required:
         - data
         - meta
+    Deprecation:
+      title: Deprecation
+      type: object
+      description: >-
+        Migration signal returned by deprecated endpoints. Optional fields are
+        omitted when they have no value.
+      properties:
+        message:
+          type: string
+          description: >-
+            Human- and agent-readable summary of the deprecation and its
+            replacement.
+        replacement:
+          type: string
+          nullable: true
+          description: >-
+            The replacement endpoint, e.g. "GET /api/public/v2/observations".
+            Omitted when the endpoint is being removed without a direct
+            replacement.
+        docsUrl:
+          type: string
+          nullable: true
+          description: Link to the migration documentation (markdown), when available.
+        sunsetAt:
+          type: string
+          nullable: true
+          description: >-
+            ISO date after which the endpoint may stop working, when a removal
+            date is committed.
+      required:
+        - message
     Trace:
       title: Trace
       type: object
@@ -8188,6 +9174,9 @@ components:
           items:
             $ref: '#/components/schemas/ScoreV1'
           description: List of scores
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - htmlPath
         - observations
@@ -8221,6 +9210,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Trace'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - traces
       allOf:
@@ -8414,6 +9406,15 @@ components:
         - timeToFirstToken
       allOf:
         - $ref: '#/components/schemas/Observation'
+    ObservationsViewSingle:
+      title: ObservationsViewSingle
+      type: object
+      properties:
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
+      allOf:
+        - $ref: '#/components/schemas/ObservationsView'
     ObservationV2:
       title: ObservationV2
       type: object
@@ -8445,10 +9446,22 @@ components:
         parentObservationId:
           type: string
           nullable: true
-          description: The parent observation ID
+          description: >-
+            The physical parent observation ID, if present.
+
+            Observations marked as app roots by the SDK may retain a non-null
+            parent ID.
         type:
           type: string
           description: The type of the observation (e.g. GENERATION, SPAN, EVENT)
+        isRootObservation:
+          type: boolean
+          nullable: true
+          description: >-
+            Whether this observation is a logical root.
+
+            This is true for observations without a physical parent and
+            observations marked as app roots by the SDK.
         name:
           type: string
           nullable: true
@@ -8817,7 +9830,8 @@ components:
           type: number
           format: double
           description: >-
-            The numeric value of the score. Equals 1 for "True" and 0 for "False"
+            The numeric value of the score. Equals 1 for "True" and 0 for
+            "False"
         stringValue:
           type: string
           description: >-
@@ -8861,24 +9875,51 @@ components:
         - $ref: '#/components/schemas/BaseScoreV1'
     ScoreV1:
       title: ScoreV1
-      type: object
-      properties:
-        dataType:
-          type: string
-          enum:
-            - NUMERIC
-            - CATEGORICAL
-            - BOOLEAN
-            - TEXT
-        value:
-          type: string
-          description: The numeric value of the score
-        stringValue:
-          type: string
-          description: The string representation of the score value. If no config is
-            linked, can be any string. Otherwise, must map to a config category
-      required:
-        - dataType
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - NUMERIC
+            - $ref: '#/components/schemas/NumericScoreV1'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CATEGORICAL
+            - $ref: '#/components/schemas/CategoricalScoreV1'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - BOOLEAN
+            - $ref: '#/components/schemas/BooleanScoreV1'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - TEXT
+            - $ref: '#/components/schemas/TextScoreV1'
+          required:
+            - dataType
     BaseScore:
       title: BaseScore
       type: object
@@ -8976,7 +10017,8 @@ components:
           type: number
           format: double
           description: >-
-            The numeric value of the score. Equals 1 for "True" and 0 for "False"
+            The numeric value of the score. Equals 1 for "True" and 0 for
+            "False"
         stringValue:
           type: string
           description: >-
@@ -9036,25 +10078,66 @@ components:
         - $ref: '#/components/schemas/BaseScore'
     Score:
       title: Score
-      type: object
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - NUMERIC
+            - $ref: '#/components/schemas/NumericScore'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CATEGORICAL
+            - $ref: '#/components/schemas/CategoricalScore'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - BOOLEAN
+            - $ref: '#/components/schemas/BooleanScore'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CORRECTION
+            - $ref: '#/components/schemas/CorrectionScore'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - TEXT
+            - $ref: '#/components/schemas/TextScore'
+          required:
+            - dataType
       properties:
-        dataType:
-          type: string
-          enum:
-            - NUMERIC
-            - CATEGORICAL
-            - BOOLEAN
-            - CORRECTION
-            - TEXT
-        value:
-          type: string
-          description: The numeric value of the score
-        stringValue:
-          type: string
-          description: The string representation of the score value. If no config is
-            linked, can be any string. Otherwise, must map to a config category
-      required:
-        - dataType
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
     CreateScoreValue:
       title: CreateScoreValue
       oneOf:
@@ -9323,6 +10406,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DatasetRunItem'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - datasetRunItems
       allOf:
@@ -9981,6 +11067,9 @@ components:
             $ref: '#/components/schemas/DatasetRunItem'
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
         - meta
@@ -10031,6 +11120,9 @@ components:
             $ref: '#/components/schemas/DatasetRun'
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
         - meta
@@ -10211,6 +11303,61 @@ components:
         - experimentId
         - experimentName
         - experimentItemId
+    FeedbackTargetType:
+      title: FeedbackTargetType
+      type: string
+      enum:
+        - skill
+        - mcp-tool
+        - cli
+        - docs
+        - public-api
+        - other
+    SubmitFeedbackRequest:
+      title: SubmitFeedbackRequest
+      type: object
+      properties:
+        targetType:
+          $ref: '#/components/schemas/FeedbackTargetType'
+          description: Category of the thing the feedback is about.
+        target:
+          type: string
+          description: >-
+            The specific instance within targetType: the skill name, MCP tool
+            name, CLI command, API endpoint path, or docs page path (e.g.
+            'queryMetrics', '/docs/mcp'). An identifier, not a sentence. Must be
+            between 1 and 200 characters.
+        feedback:
+          type: string
+          description: >-
+            Concise feedback text approved by the user. Must be between 1 and
+            3000 characters.
+        goal:
+          type: string
+          nullable: true
+          description: >-
+            Optional user-approved goal or use case they were trying to achieve.
+            Must be between 1 and 1500 characters when provided. Do not include
+            secrets, customer data, trace payloads, or broad unrelated context.
+        referenceUrl:
+          type: string
+          nullable: true
+          description: >-
+            Optional HTTP(S) reference URL. Langfuse stores it as text for
+            triage and does not fetch it.
+      required:
+        - targetType
+        - target
+        - feedback
+    SubmitFeedbackResponse:
+      title: SubmitFeedbackResponse
+      type: object
+      properties:
+        id:
+          type: string
+          description: Correlation ID for the submitted feedback.
+      required:
+        - id
     HealthResponse:
       title: HealthResponse
       type: object
@@ -10225,26 +11372,117 @@ components:
         - status
     IngestionEvent:
       title: IngestionEvent
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - trace-create
-            - score-create
-            - span-create
-            - span-update
-            - generation-create
-            - generation-update
-            - event-create
-            - sdk-log
-            - observation-create
-            - observation-update
-        body:
-          type: string
-      required:
-        - type
-        - body
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - trace-create
+            - $ref: '#/components/schemas/TraceEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - score-create
+            - $ref: '#/components/schemas/ScoreEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - span-create
+            - $ref: '#/components/schemas/CreateSpanEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - span-update
+            - $ref: '#/components/schemas/UpdateSpanEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - generation-create
+            - $ref: '#/components/schemas/CreateGenerationEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - generation-update
+            - $ref: '#/components/schemas/UpdateGenerationEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - event-create
+            - $ref: '#/components/schemas/CreateEventEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - sdk-log
+            - $ref: '#/components/schemas/SDKLogEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - observation-create
+            - $ref: '#/components/schemas/CreateObservationEvent'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - observation-update
+            - $ref: '#/components/schemas/UpdateObservationEvent'
+          required:
+            - type
     ObservationType:
       title: ObservationType
       type: string
@@ -10839,6 +12077,9 @@ components:
             Format varies based on the query parameters.
 
             Histograms will return an array with [lower, upper, height] tuples.
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
     legacyObservations:
@@ -10864,102 +12105,12 @@ components:
             $ref: '#/components/schemas/ObservationsView'
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
         - meta
-    legacyCreateScoreRequest:
-      title: legacyCreateScoreRequest
-      type: object
-      properties:
-        id:
-          type: string
-          nullable: true
-        traceId:
-          type: string
-          nullable: true
-        sessionId:
-          type: string
-          nullable: true
-        observationId:
-          type: string
-          nullable: true
-        datasetRunId:
-          type: string
-          nullable: true
-        name:
-          type: string
-        value:
-          $ref: '#/components/schemas/CreateScoreValue'
-          description: >-
-            The value of the score. Must be passed as string for categorical and
-            text scores, and numeric for boolean and numeric scores. Boolean
-            score values must equal either 1 or 0 (true or false). Text score
-            values must be between 1 and 500 characters.
-        comment:
-          type: string
-          nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
-          nullable: true
-        environment:
-          type: string
-          nullable: true
-          description: >-
-            The environment of the score. Can be any lowercase alphanumeric
-            string with hyphens and underscores that does not start with
-            'langfuse'.
-        queueId:
-          type: string
-          nullable: true
-          description: >-
-            The annotation queue referenced by the score. Indicates if score was
-            initially created while processing annotation queue.
-        dataType:
-          $ref: '#/components/schemas/ScoreDataType'
-          nullable: true
-          description: >-
-            The data type of the score. When passing a configId this field is
-            inferred. Otherwise, this field must be passed or will default to
-            numeric.
-        configId:
-          type: string
-          nullable: true
-          description: >-
-            Reference a score config on a score. The unique langfuse identifier
-            of a score config. When passing this field, the dataType and
-            stringValue fields are automatically populated.
-        source:
-          $ref: '#/components/schemas/legacyCreateScoreSource'
-          nullable: true
-          description: >-
-            The source of the score. Defaults to API. Set to ANNOTATION to
-            prefill scores (e.g. from an LLM) for a human reviewer to verify in
-            an annotation queue. When source is ANNOTATION, a configId is
-            required unless dataType is CORRECTION. EVAL is reserved for
-            internal evaluator outputs and is not accepted on this endpoint.
-      required:
-        - name
-        - value
-    legacyCreateScoreSource:
-      title: legacyCreateScoreSource
-      type: string
-      enum:
-        - API
-        - ANNOTATION
-      description: |-
-        Source values accepted when creating a score via the public REST API.
-        EVAL is reserved for internal evaluator outputs and is intentionally not
-        exposed here — use commons.ScoreSource when reading scores.
-    legacyCreateScoreResponse:
-      title: legacyCreateScoreResponse
-      type: object
-      properties:
-        id:
-          type: string
-          description: The id of the created object in Langfuse
-      required:
-        - id
     LlmConnection:
       title: LlmConnection
       type: object
@@ -11985,18 +13136,29 @@ components:
         - prompt
     Prompt:
       title: Prompt
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - chat
-            - text
-        prompt:
-          type: string
-      required:
-        - type
-        - prompt
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - chat
+            - $ref: '#/components/schemas/ChatPrompt'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - text
+            - $ref: '#/components/schemas/TextPrompt'
+          required:
+            - type
     PromptType:
       title: PromptType
       type: string
@@ -12551,25 +13713,54 @@ components:
         - id
     ScoreSubjectV3:
       title: ScoreSubjectV3
-      type: object
-      properties:
-        kind:
-          type: string
-          enum:
-            - trace
-            - observation
-            - session
-            - experiment
-        id:
-          type: string
-          description: The trace ID.
-        traceId:
-          type: string
-          nullable: true
-          description: The parent trace ID, if available.
-      required:
-        - kind
-        - id
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - trace
+            - $ref: '#/components/schemas/ScoreSubjectTraceV3'
+          required:
+            - kind
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - observation
+            - $ref: '#/components/schemas/ScoreSubjectObservationV3'
+          required:
+            - kind
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - session
+            - $ref: '#/components/schemas/ScoreSubjectSessionV3'
+          required:
+            - kind
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - experiment
+            - $ref: '#/components/schemas/ScoreSubjectExperimentV3'
+          required:
+            - kind
+      description: >-
+        A reference to the entity this score is attached to. Discriminated by
+        "kind" — one of trace, observation, session, or experiment.
     BaseScoreV3:
       title: BaseScoreV3
       type: object
@@ -12699,22 +13890,62 @@ components:
         - $ref: '#/components/schemas/BaseScoreV3'
     ScoreV3:
       title: ScoreV3
-      type: object
-      properties:
-        dataType:
-          type: string
-          enum:
-            - NUMERIC
-            - BOOLEAN
-            - CATEGORICAL
-            - TEXT
-            - CORRECTION
-        value:
-          type: string
-          description: The numeric value of the score.
-      required:
-        - dataType
-        - value
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - NUMERIC
+            - $ref: '#/components/schemas/NumericScoreV3'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - BOOLEAN
+            - $ref: '#/components/schemas/BooleanScoreV3'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CATEGORICAL
+            - $ref: '#/components/schemas/CategoricalScoreV3'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - TEXT
+            - $ref: '#/components/schemas/TextScoreV3'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CORRECTION
+            - $ref: '#/components/schemas/CorrectionScoreV3'
+          required:
+            - dataType
     GetScoresV3Meta:
       title: GetScoresV3Meta
       type: object
@@ -12742,6 +13973,99 @@ components:
       required:
         - data
         - meta
+    CreateScoreRequest:
+      title: CreateScoreRequest
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        traceId:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        observationId:
+          type: string
+          nullable: true
+        datasetRunId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        value:
+          $ref: '#/components/schemas/CreateScoreValue'
+          description: >-
+            The value of the score. Must be passed as string for categorical and
+            text scores, and numeric for boolean and numeric scores. Boolean
+            score values must equal either 1 or 0 (true or false). Text score
+            values must be between 1 and 500 characters.
+        comment:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        environment:
+          type: string
+          nullable: true
+          description: >-
+            The environment of the score. Can be any lowercase alphanumeric
+            string with hyphens and underscores that does not start with
+            'langfuse'.
+        queueId:
+          type: string
+          nullable: true
+          description: >-
+            The annotation queue referenced by the score. Indicates if score was
+            initially created while processing annotation queue.
+        dataType:
+          $ref: '#/components/schemas/ScoreDataType'
+          nullable: true
+          description: >-
+            The data type of the score. When passing a configId this field is
+            inferred. Otherwise, this field must be passed or will default to
+            numeric.
+        configId:
+          type: string
+          nullable: true
+          description: >-
+            Reference a score config on a score. The unique langfuse identifier
+            of a score config. When passing this field, the dataType and
+            stringValue fields are automatically populated.
+        source:
+          $ref: '#/components/schemas/CreateScoreSource'
+          nullable: true
+          description: >-
+            The source of the score. Defaults to API. Set to ANNOTATION to
+            prefill scores (e.g. from an LLM) for a human reviewer to verify in
+            an annotation queue. When source is ANNOTATION, a configId is
+            required unless dataType is CORRECTION. EVAL is reserved for
+            internal evaluator outputs and is not accepted on this endpoint.
+      required:
+        - name
+        - value
+    CreateScoreSource:
+      title: CreateScoreSource
+      type: string
+      enum:
+        - API
+        - ANNOTATION
+      description: |-
+        Source values accepted when creating a score via the public REST API.
+        EVAL is reserved for internal evaluator outputs and is intentionally not
+        exposed here — use commons.ScoreSource when reading scores.
+    CreateScoreResponse:
+      title: CreateScoreResponse
+      type: object
+      properties:
+        id:
+          type: string
+          description: The id of the created object in Langfuse
+      required:
+        - id
     GetScoresResponseTraceData:
       title: GetScoresResponseTraceData
       type: object
@@ -12811,20 +14135,62 @@ components:
         - $ref: '#/components/schemas/TextScore'
     GetScoresResponseData:
       title: GetScoresResponseData
-      type: object
-      properties:
-        dataType:
-          type: string
-          enum:
-            - NUMERIC
-            - CATEGORICAL
-            - BOOLEAN
-            - CORRECTION
-            - TEXT
-        trace:
-          $ref: '#/components/schemas/GetScoresResponseTraceData'
-      required:
-        - dataType
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - NUMERIC
+            - $ref: '#/components/schemas/GetScoresResponseDataNumeric'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CATEGORICAL
+            - $ref: '#/components/schemas/GetScoresResponseDataCategorical'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - BOOLEAN
+            - $ref: '#/components/schemas/GetScoresResponseDataBoolean'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CORRECTION
+            - $ref: '#/components/schemas/GetScoresResponseDataCorrection'
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - TEXT
+            - $ref: '#/components/schemas/GetScoresResponseDataText'
+          required:
+            - dataType
     GetScoresResponse:
       title: GetScoresResponse
       type: object
@@ -12835,6 +14201,9 @@ components:
             $ref: '#/components/schemas/GetScoresResponseData'
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
         - meta
@@ -12848,6 +14217,9 @@ components:
             $ref: '#/components/schemas/Session'
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
         - meta
@@ -12861,6 +14233,9 @@ components:
             $ref: '#/components/schemas/TraceWithDetails'
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
+        _deprecation:
+          $ref: '#/components/schemas/Deprecation'
+          nullable: true
       required:
         - data
         - meta
@@ -12923,7 +14298,7 @@ components:
 
         - `observation` evaluates live-ingested observations such as
         generations, spans, and events.
-          It supports mapping from `input`, `output`, and `metadata`.
+          It supports mapping from `input`, `output`, `metadata`, and `tool_calls`.
         - `experiment` evaluates live experiment executions and can additionally
         map `expected_output` and `experiment_item_metadata`.
           It currently supports filtering by `datasetId`.
@@ -12952,6 +14327,7 @@ components:
         - input
         - output
         - metadata
+        - tool_calls
         - expected_output
         - experiment_item_metadata
       description: >-
@@ -12963,10 +14339,11 @@ components:
 
         Target-specific rules:
 
-        - `target=observation` supports `input`, `output`, and `metadata`
+        - `target=observation` supports `input`, `output`, `metadata`, and
+        `tool_calls`
 
         - `target=experiment` supports `input`, `output`, `metadata`,
-        `expected_output`, and `experiment_item_metadata`
+        `tool_calls`, `expected_output`, and `experiment_item_metadata`
 
 
         Source semantics:
@@ -12977,6 +14354,11 @@ components:
 
         - `metadata`: the metadata object for the target. Combine with
         `jsonPath` when you need one nested field instead of the whole object.
+
+        - `tool_calls`: the tool calls recorded on the observation, as an array
+        of `{id, name, arguments, type, index}` objects in the order the model
+        emitted them. Combine with `jsonPath` (for example `$[*].name`) to
+        select parts of each call.
 
         - `expected_output`: the experiment item's expected output. Only valid
         for `target=experiment`.
@@ -13024,7 +14406,8 @@ components:
         model:
           type: string
           description: >-
-            Model identifier exposed by the provider, for example `gpt-4.1-mini`.
+            Model identifier exposed by the provider, for example
+            `gpt-4.1-mini`.
       required:
         - provider
         - model
@@ -13060,22 +14443,59 @@ components:
         - description
     unstableEvaluatorOutputDefinition:
       title: unstableEvaluatorOutputDefinition
-      type: object
-      properties:
-        dataType:
-          type: string
-          enum:
-            - NUMERIC
-            - BOOLEAN
-            - CATEGORICAL
-        reasoning:
-          $ref: '#/components/schemas/unstableEvaluatorOutputFieldDefinition'
-        score:
-          type: string
-      required:
-        - dataType
-        - reasoning
-        - score
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - NUMERIC
+            - $ref: >-
+                #/components/schemas/unstablePublicNumericEvaluatorOutputDefinition
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - BOOLEAN
+            - $ref: >-
+                #/components/schemas/unstablePublicBooleanEvaluatorOutputDefinition
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CATEGORICAL
+            - $ref: >-
+                #/components/schemas/unstablePublicCategoricalEvaluatorOutputDefinition
+          required:
+            - dataType
+      description: >-
+        Structured output definition to send when creating an evaluator.
+
+
+        Agent guidance:
+
+        - `dataType` is required.
+
+        - Do not send `version`; that is an internal storage detail and is not
+        part of the public request contract.
+
+        - For `NUMERIC` and `BOOLEAN`, provide `reasoning.description` and
+        `score.description`.
+
+        - For `CATEGORICAL`, also provide `score.categories` and
+        `score.shouldAllowMultipleMatches`.
     unstablePublicNumericEvaluatorOutputDefinition:
       title: unstablePublicNumericEvaluatorOutputDefinition
       type: object
@@ -13140,22 +14560,62 @@ components:
         - score
     unstablePublicEvaluatorOutputDefinition:
       title: unstablePublicEvaluatorOutputDefinition
-      type: object
-      properties:
-        dataType:
-          type: string
-          enum:
-            - NUMERIC
-            - BOOLEAN
-            - CATEGORICAL
-        reasoning:
-          $ref: '#/components/schemas/unstableEvaluatorOutputFieldDefinition'
-        score:
-          type: string
-      required:
-        - dataType
-        - reasoning
-        - score
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - NUMERIC
+            - $ref: >-
+                #/components/schemas/unstablePublicNumericEvaluatorOutputDefinition
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - BOOLEAN
+            - $ref: >-
+                #/components/schemas/unstablePublicBooleanEvaluatorOutputDefinition
+          required:
+            - dataType
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                dataType:
+                  type: string
+                  enum:
+                    - CATEGORICAL
+            - $ref: >-
+                #/components/schemas/unstablePublicCategoricalEvaluatorOutputDefinition
+          required:
+            - dataType
+      description: >-
+        Evaluator output definition returned by the public API.
+
+
+        This response always includes `dataType` and never includes an internal
+        output-definition `version`.
+
+        Legacy stored evaluator definitions are normalized into this shape
+        before they are returned.
+
+
+        Use this response shape when deciding how to interpret future evaluation
+        scores:
+
+        - `NUMERIC`: expect numeric score values
+
+        - `BOOLEAN`: expect `true` / `false`
+
+        - `CATEGORICAL`: expect one or more values from `score.categories`
     unstableEvaluationRuleStringFilterOperator:
       title: unstableEvaluationRuleStringFilterOperator
       type: string
@@ -13442,9 +14902,9 @@ components:
 
             Quick reference:
 
-            - `target=observation`: `input`, `output`, `metadata`
+            - `target=observation`: `input`, `output`, `metadata`, `tool_calls`
 
-            - `target=experiment`: `input`, `output`, `metadata`,
+            - `target=experiment`: `input`, `output`, `metadata`, `tool_calls`,
             `expected_output`, `experiment_item_metadata`
         jsonPath:
           type: string
@@ -13466,44 +14926,210 @@ components:
         - source
     unstableEvaluationRuleFilter:
       title: unstableEvaluationRuleFilter
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - datetime
-            - string
-            - number
-            - stringOptions
-            - categoryOptions
-            - arrayOptions
-            - stringObject
-            - numberObject
-            - boolean
-            - 'null'
-        column:
-          type: string
-          description: Column to filter on.
-        operator:
-          type: string
-          description: Comparison operator for datetime values.
-        value:
-          type: string
-          description: Datetime value to compare against.
-        key:
-          type: string
-          description: Key inside the object-valued column to filter on.
-      required:
-        - type
-        - column
-        - operator
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - datetime
+            - $ref: '#/components/schemas/unstableDateTimeEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - string
+            - $ref: '#/components/schemas/unstableStringEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - number
+            - $ref: '#/components/schemas/unstableNumberEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - stringOptions
+            - $ref: '#/components/schemas/unstableStringOptionsEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - categoryOptions
+            - $ref: '#/components/schemas/unstableCategoryOptionsEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - arrayOptions
+            - $ref: '#/components/schemas/unstableArrayOptionsEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - stringObject
+            - $ref: '#/components/schemas/unstableStringObjectEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - numberObject
+            - $ref: '#/components/schemas/unstableNumberObjectEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - boolean
+            - $ref: '#/components/schemas/unstableBooleanEvaluationRuleFilter'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - 'null'
+            - $ref: '#/components/schemas/unstableNullEvaluationRuleFilter'
+          required:
+            - type
+      description: >-
+        One filter condition used to decide whether a live-ingested target
+        should be evaluated.
+
+
+        An evaluation rule can include zero or more filter objects. All filters
+        must be satisfied for the target to run.
+
+
+        How to build a valid filter object:
+
+        - Pick the `target` first, because it changes the supported columns.
+
+        - Pick the filter `type`. That determines which fields are required.
+
+        - Use `key` only for object filters such as `metadata`.
+
+        - Use the correct `value` shape for the chosen filter `type`.
+
+
+        Operator quick reference by filter `type`:
+
+        - `string`: `"="`, `contains`, `does not contain`, `starts with`, `ends
+        with`
+
+        - `number`: `"="`, `">"`, `"<"`, `">="`, `"<="`
+
+        - `datetime`: `"="`, `">"`, `"<"`, `">="`, `"<="`
+
+        - `stringOptions`: `any of`, `none of`
+
+        - `arrayOptions`: `any of`, `none of`, `all of`
+
+        - `stringObject`: same operators as `string`
+
+        - `boolean`: `"="`, `"<>"`
+
+        - `null`: `is null`, `is not null`
+
+
+        Supported columns by target:
+
+        - `target=observation`
+          - `type`: `stringOptions`, operators `any of` / `none of`, values `GENERATION`, `SPAN`, `EVENT`
+          - `name`: `stringOptions`, operators `any of` / `none of`
+          - `environment`: `stringOptions`, operators `any of` / `none of`
+          - `level`: `stringOptions`, operators `any of` / `none of`, values `DEBUG`, `DEFAULT`, `WARNING`, `ERROR`
+          - `version`: `string`
+          - `traceName`: `stringOptions`, operators `any of` / `none of`
+          - `userId`: `string`
+          - `sessionId`: `string`
+          - `tags`: `arrayOptions`, operators `any of` / `none of` / `all of`
+          - `metadata`: `stringObject` with `key`
+          - `isRootObservation`: `boolean`, operators `=` / `<>`; true when the observation has no parent or is explicitly marked as an application root
+          - `parentObservationId`: `null`, operators `is null` / `is not null`
+          - `calledToolNames`: `arrayOptions`, operators `any of` / `none of` / `all of`
+          - `toolCalls`: `number`
+        - `target=experiment`
+          - `datasetId`: `stringOptions`, operators `any of` / `none of`
+            Use dataset `id` values from `GET /api/public/v2/datasets`, not dataset names.
+
+        Recovery guidance:
+
+        - `invalid_filter_value` with `details.column` but no `invalidValues`:
+        the selected `column` is not supported for the chosen `target`
+
+        - `invalid_filter_value` with `details.invalidValues`: the selected
+        values are not allowed for that column. Replace them with one of
+        `details.allowedValues` when provided.
+
+        - `invalid_filter_value` for `column=datasetId`: call `GET
+        /api/public/v2/datasets`, then retry with dataset `id` values from that
+        response.
     unstableDashboardWidgetView:
       title: unstableDashboardWidgetView
       type: string
       enum:
         - observations
         - scores-numeric
+        - scores-boolean
         - scores-categorical
+    unstableDashboardWidgetViewWithLegacy:
+      title: unstableDashboardWidgetViewWithLegacy
+      type: string
+      enum:
+        - observations
+        - scores-numeric
+        - scores-boolean
+        - scores-categorical
+        - traces
+      description: |-
+        Widget data view. Responses may include the legacy `traces` value for
+        widgets created before this API existed.
     unstableDashboardWidgetChartType:
       title: unstableDashboardWidgetChartType
       type: string
@@ -13556,13 +15182,40 @@ components:
       title: unstableDashboardWidgetFilter
       type: object
       description: >-
-        A dashboard widget filter in Langfuse filter-state shape.
+        A filter in Langfuse filter-state shape. The `value` shape and the
+
+        allowed operators depend on `type`:
 
 
-        Filter shapes depend on `type`, for example string filters use a string
-        `value`,
+        | `type` | `value` | operators |
 
-        option filters use a list of strings, and object filters include `key`.
+        |---|---|---|
+
+        | `string` | string | `=`, `contains`, `does not contain`, `starts
+        with`, `ends with` |
+
+        | `number` | number | `=`, `>`, `<`, `>=`, `<=` |
+
+        | `datetime` | ISO datetime string | `>`, `<`, `>=`, `<=` |
+
+        | `boolean` | boolean | `=`, `<>` |
+
+        | `null` | `""` | `is null`, `is not null` |
+
+        | `stringOptions` | list of strings | `any of`, `none of` |
+
+        | `arrayOptions` | list of strings | `any of`, `none of`, `all of` |
+
+        | `categoryOptions` | list of strings (requires `key`) | `any of`, `none
+        of` |
+
+        | `stringObject` | string (requires `key`, e.g. a metadata key) | same
+        as `string` |
+
+        | `numberObject` | number (requires `key`, e.g. a score name) | same as
+        `number` |
+
+        | `booleanObject` | boolean (requires `key`) | `=`, `<>` |
       properties:
         column:
           type: string
@@ -13623,6 +15276,28 @@ components:
       enum:
         - ASC
         - DESC
+    unstableDashboardWidgetChartConfigInput:
+      title: unstableDashboardWidgetChartConfigInput
+      type: object
+      description: |-
+        Input-side chart config. `type` is optional and defaults to the
+        widget's `chartType`; when given it must match.
+      properties:
+        type:
+          $ref: '#/components/schemas/unstableDashboardWidgetChartType'
+          nullable: true
+        row_limit:
+          type: integer
+          nullable: true
+        show_value_labels:
+          type: boolean
+          nullable: true
+        bins:
+          type: integer
+          nullable: true
+        defaultSort:
+          $ref: '#/components/schemas/unstableDashboardWidgetDefaultSort'
+          nullable: true
     unstableCreateDashboardWidgetRequest:
       title: unstableCreateDashboardWidgetRequest
       type: object
@@ -13631,6 +15306,8 @@ components:
           type: string
         description:
           type: string
+          nullable: true
+          description: Defaults to an empty string.
         view:
           $ref: '#/components/schemas/unstableDashboardWidgetView'
         dimensions:
@@ -13648,19 +15325,71 @@ components:
         chartType:
           $ref: '#/components/schemas/unstableDashboardWidgetChartType'
         chartConfig:
-          $ref: '#/components/schemas/unstableDashboardWidgetChartConfig'
-        minVersion:
-          type: integer
+          $ref: '#/components/schemas/unstableDashboardWidgetChartConfigInput'
           nullable: true
+          description: Defaults to the plain config for `chartType`.
       required:
         - name
-        - description
         - view
         - dimensions
         - metrics
         - filters
         - chartType
-        - chartConfig
+    unstableUpdateDashboardWidgetRequest:
+      title: unstableUpdateDashboardWidgetRequest
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        view:
+          $ref: '#/components/schemas/unstableDashboardWidgetView'
+          nullable: true
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidgetDimension'
+          nullable: true
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidgetMetric'
+          nullable: true
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidgetFilter'
+          nullable: true
+        chartType:
+          $ref: '#/components/schemas/unstableDashboardWidgetChartType'
+          nullable: true
+        chartConfig:
+          $ref: '#/components/schemas/unstableDashboardWidgetChartConfigInput'
+          nullable: true
+    unstableDashboardWidgetList:
+      title: unstableDashboardWidgetList
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidget'
+        meta:
+          $ref: '#/components/schemas/utilsMetaResponse'
+      required:
+        - data
+        - meta
+    unstableDeleteDashboardWidgetResponse:
+      title: unstableDeleteDashboardWidgetResponse
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
     unstableDashboardWidget:
       title: unstableDashboardWidget
       type: object
@@ -13678,7 +15407,7 @@ components:
         description:
           type: string
         view:
-          $ref: '#/components/schemas/unstableDashboardWidgetView'
+          $ref: '#/components/schemas/unstableDashboardWidgetViewWithLegacy'
         dimensions:
           type: array
           items:
@@ -13695,8 +15424,6 @@ components:
           $ref: '#/components/schemas/unstableDashboardWidgetChartType'
         chartConfig:
           $ref: '#/components/schemas/unstableDashboardWidgetChartConfig'
-        minVersion:
-          type: integer
       required:
         - id
         - createdAt
@@ -13709,7 +15436,291 @@ components:
         - filters
         - chartType
         - chartConfig
-        - minVersion
+    unstableDashboardPlacement:
+      title: unstableDashboardPlacement
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - widget
+            - $ref: '#/components/schemas/unstableWidgetPlacement'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - preset
+            - $ref: '#/components/schemas/unstablePresetPlacement'
+          required:
+            - type
+      description: |-
+        A tile on the dashboard's 12-column grid. `x`/`y` are the tile's
+        top-left cell (0-based; `y` grows downward), `width`/`height` its size
+        in cells. The UI default tile is 6x6 (half width). Overlapping tiles
+        are not rejected; prefer appending below existing tiles (or omit the
+        position on create to let the server do it).
+    unstableWidgetPlacement:
+      title: unstableWidgetPlacement
+      type: object
+      properties:
+        id:
+          type: string
+        widgetId:
+          type: string
+        x:
+          type: integer
+        'y':
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+      required:
+        - id
+        - widgetId
+        - x
+        - 'y'
+        - width
+        - height
+    unstablePresetPlacement:
+      title: unstablePresetPlacement
+      type: object
+      properties:
+        id:
+          type: string
+        presetId:
+          type: string
+        x:
+          type: integer
+        'y':
+          type: integer
+        width:
+          type: integer
+        height:
+          type: integer
+      required:
+        - id
+        - presetId
+        - x
+        - 'y'
+        - width
+        - height
+    unstableCreateDashboardPlacementRequest:
+      title: unstableCreateDashboardPlacementRequest
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - widget
+            - $ref: '#/components/schemas/unstableCreateWidgetPlacement'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - preset
+            - $ref: '#/components/schemas/unstableCreatePresetPlacement'
+          required:
+            - type
+    unstableCreateWidgetPlacement:
+      title: unstableCreateWidgetPlacement
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: Server-generated when omitted.
+        widgetId:
+          type: string
+        x:
+          type: integer
+          nullable: true
+          description: Grid column (12-column grid). Defaults to `0`.
+        'y':
+          type: integer
+          nullable: true
+          description: Grid row. Defaults to the first row below all existing tiles.
+        width:
+          type: integer
+          nullable: true
+          description: Width in grid columns. Defaults to `6`.
+        height:
+          type: integer
+          nullable: true
+          description: Height in grid rows. Defaults to `6`.
+      required:
+        - widgetId
+    unstableCreatePresetPlacement:
+      title: unstableCreatePresetPlacement
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: Server-generated when omitted.
+        presetId:
+          type: string
+        x:
+          type: integer
+          nullable: true
+          description: Grid column (12-column grid). Defaults to `0`.
+        'y':
+          type: integer
+          nullable: true
+          description: Grid row. Defaults to the first row below all existing tiles.
+        width:
+          type: integer
+          nullable: true
+          description: Width in grid columns. Defaults to `6`.
+        height:
+          type: integer
+          nullable: true
+          description: Height in grid rows. Defaults to `6`.
+      required:
+        - presetId
+    unstableUpdateDashboardPlacementRequest:
+      title: unstableUpdateDashboardPlacementRequest
+      type: object
+      properties:
+        x:
+          type: integer
+          nullable: true
+          description: Grid column (12-column grid).
+        'y':
+          type: integer
+          nullable: true
+          description: Grid row.
+        width:
+          type: integer
+          nullable: true
+          description: Width in grid columns.
+        height:
+          type: integer
+          nullable: true
+          description: Height in grid rows.
+    unstableDeleteDashboardPlacementResponse:
+      title: unstableDeleteDashboardPlacementResponse
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+    unstableDashboardDefinition:
+      title: unstableDashboardDefinition
+      type: object
+      properties:
+        widgets:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardPlacement'
+      required:
+        - widgets
+    unstableDashboard:
+      title: unstableDashboard
+      type: object
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        name:
+          type: string
+        description:
+          type: string
+        definition:
+          $ref: '#/components/schemas/unstableDashboardDefinition'
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidgetFilter'
+          description: Dashboard-level filters applied to all widgets on the dashboard.
+      required:
+        - id
+        - createdAt
+        - updatedAt
+        - name
+        - description
+        - definition
+        - filters
+    unstableDashboardList:
+      title: unstableDashboardList
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboard'
+        meta:
+          $ref: '#/components/schemas/utilsMetaResponse'
+      required:
+        - data
+        - meta
+    unstableCreateDashboardRequest:
+      title: unstableCreateDashboardRequest
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        definition:
+          $ref: '#/components/schemas/unstableDashboardDefinition'
+          nullable: true
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidgetFilter'
+          nullable: true
+      required:
+        - name
+    unstableUpdateDashboardRequest:
+      title: unstableUpdateDashboardRequest
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        definition:
+          $ref: '#/components/schemas/unstableDashboardDefinition'
+          nullable: true
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableDashboardWidgetFilter'
+          nullable: true
+    unstableDeleteDashboardResponse:
+      title: unstableDeleteDashboardResponse
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
     unstablePublicApiErrorCode:
       title: unstablePublicApiErrorCode
       type: string
@@ -13903,8 +15914,8 @@ components:
       required:
         - message
         - code
-    unstableEvaluationRule:
-      title: unstableEvaluationRule
+    unstableEvaluationRuleBase:
+      title: unstableEvaluationRuleBase
       type: object
       description: >-
         Live evaluation rule for incoming data.
@@ -13953,9 +15964,6 @@ components:
 
             If you create a newer project version with the same evaluator name
             later, existing evaluation rules are moved to it automatically.
-        target:
-          $ref: '#/components/schemas/unstableEvaluationRuleTarget'
-          description: Target object type that should trigger scoring.
         enabled:
           type: boolean
           description: Desired enabled state configured by the client.
@@ -13981,6 +15989,32 @@ components:
             Must be greater than `0` and less than or equal to `1`.
             - `1` means evaluate every matching target.
             - `0.25` means evaluate approximately 25% of matching targets.
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the evaluation rule was created.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the evaluation rule was last updated.
+      required:
+        - id
+        - name
+        - evaluator
+        - enabled
+        - status
+        - pausedReason
+        - pausedMessage
+        - sampling
+        - createdAt
+        - updatedAt
+    unstableEvaluationRule:
+      title: unstableEvaluationRule
+      type: object
+      properties:
+        target:
+          $ref: '#/components/schemas/unstableEvaluationRuleTarget'
+          description: Target object type that should trigger scoring.
         filter:
           type: array
           items:
@@ -13995,28 +16029,66 @@ components:
           description: >-
             Variable mappings used to populate evaluator runtime variables from
             the live target object.
-        createdAt:
-          type: string
-          format: date-time
-          description: Timestamp when the evaluation rule was created.
-        updatedAt:
-          type: string
-          format: date-time
-          description: Timestamp when the evaluation rule was last updated.
       required:
-        - id
-        - name
-        - evaluator
         - target
-        - enabled
-        - status
-        - pausedReason
-        - pausedMessage
-        - sampling
         - filter
         - mapping
-        - createdAt
-        - updatedAt
+      allOf:
+        - $ref: '#/components/schemas/unstableEvaluationRuleBase'
+    unstableLegacyEvaluationRule:
+      title: unstableLegacyEvaluationRule
+      type: object
+      description: >-
+        Legacy trace- or dataset-level evaluation rule returned by list and get
+        for migration.
+
+
+        This resource is read-only through the unstable public API. Its mapping
+        preserves the trace, dataset item, or named observation that each
+        evaluator variable previously read from. Its filters use the persisted
+        legacy filter format so migration clients can read the configuration
+        without losing information.
+      properties:
+        target:
+          $ref: '#/components/schemas/unstableLegacyEvaluationRuleTarget'
+        delay:
+          type: integer
+          description: Delay in milliseconds before the legacy evaluation job runs.
+        timeScope:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableEvaluationRuleTimeScope'
+          description: >-
+            Whether the legacy rule evaluates newly ingested data, existing
+            data, or both.
+        filter:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableEvaluationRuleFilter'
+          description: Stored filters used by the legacy trace or dataset rule.
+        mapping:
+          type: array
+          items:
+            $ref: '#/components/schemas/unstableLegacyEvaluationRuleMapping'
+          description: >-
+            Stored variable mappings, including the trace, dataset item, or
+            named observation selected for each variable.
+      required:
+        - target
+        - delay
+        - timeScope
+        - filter
+        - mapping
+      allOf:
+        - $ref: '#/components/schemas/unstableEvaluationRuleBase'
+    unstableReadableEvaluationRule:
+      title: unstableReadableEvaluationRule
+      oneOf:
+        - $ref: '#/components/schemas/unstableEvaluationRule'
+        - $ref: '#/components/schemas/unstableLegacyEvaluationRule'
+      description: >-
+        Evaluation rule returned by list and get, including read-only legacy
+        trace and dataset rules.
     unstableEvaluationRules:
       title: unstableEvaluationRules
       type: object
@@ -14025,7 +16097,7 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/unstableEvaluationRule'
+            $ref: '#/components/schemas/unstableReadableEvaluationRule'
           description: Evaluation rules in the current page.
         meta:
           $ref: '#/components/schemas/utilsMetaResponse'
@@ -14338,6 +16410,67 @@ components:
       type: string
       enum:
         - llm_as_judge
+    unstableEvaluationRuleTimeScope:
+      title: unstableEvaluationRuleTimeScope
+      type: string
+      enum:
+        - NEW
+        - EXISTING
+    unstableLegacyEvaluationRuleTarget:
+      title: unstableLegacyEvaluationRuleTarget
+      type: string
+      enum:
+        - trace
+        - dataset
+    unstableLegacyEvaluationRuleMapping:
+      title: unstableLegacyEvaluationRuleMapping
+      type: object
+      description: >-
+        Maps one evaluator variable to a trace, dataset item, or field on a
+        named observation in a legacy rule.
+      properties:
+        variable:
+          type: string
+          description: Evaluator prompt variable populated by this mapping.
+        langfuseObject:
+          $ref: '#/components/schemas/unstableLegacyEvaluationObject'
+          description: >-
+            Trace, dataset item, or observation type from which the value is
+            read.
+        objectName:
+          type: string
+          nullable: true
+          description: >-
+            Observation name to match, or `null` when `langfuseObject` is
+            `trace` or `dataset_item`.
+        source:
+          type: string
+          description: Stored field selected from the trace, dataset item, or observation.
+        jsonPath:
+          type: string
+          nullable: true
+          description: Optional JSONPath selector applied to the selected field.
+      required:
+        - variable
+        - langfuseObject
+        - objectName
+        - source
+    unstableLegacyEvaluationObject:
+      title: unstableLegacyEvaluationObject
+      type: string
+      enum:
+        - trace
+        - span
+        - generation
+        - event
+        - agent
+        - tool
+        - chain
+        - retriever
+        - evaluator
+        - embedding
+        - guardrail
+        - dataset_item
     unstableEvaluationRuleEvaluator:
       title: unstableEvaluationRuleEvaluator
       type: object
@@ -14350,7 +16483,8 @@ components:
         id:
           type: string
           description: >-
-            Identifier of the exact evaluator version currently used by the rule.
+            Identifier of the exact evaluator version currently used by the
+            rule.
         name:
           type: string
           description: Evaluator family name.
@@ -14377,38 +16511,59 @@ components:
         - message
     unstableEvaluator:
       title: unstableEvaluator
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - llm_as_judge
-            - code
-        prompt:
-          type: string
-          description: Prompt template used during evaluation.
-        outputDefinition:
-          $ref: '#/components/schemas/unstablePublicEvaluatorOutputDefinition'
-          description: >-
-            Structured output schema returned by this evaluator.
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - llm_as_judge
+            - $ref: '#/components/schemas/unstableLlmAsJudgeEvaluator'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - code
+            - $ref: '#/components/schemas/unstableCodeEvaluator'
+          required:
+            - type
+      description: >-
+        One evaluator that can be used for scoring.
 
 
-            Responses always include `dataType` and omit the internal
-            output-definition `version`.
+        An evaluator describes **how** to score data.
 
-            Use `dataType` to decide how future scores should be interpreted.
-        modelConfig:
-          $ref: '#/components/schemas/unstableEvaluatorModelConfig'
-          description: Explicit model configuration, or `null` when the project default
-            evaluation model is used.
-        sourceCode:
-          type: string
-          description: Source code executed for each matched observation.
-        sourceCodeLanguage:
-          $ref: '#/components/schemas/unstableCodeEvaluatorSourceCodeLanguage'
-          description: Runtime language for `sourceCode`.
-      required:
-        - type
+
+        It does not define **which** live objects are evaluated. That is the job
+        of `evaluation-rules`.
+
+
+        For agent clients, the most important fields are:
+
+        - `type`: determines which evaluator fields are present
+
+        - `variables`: for LLM evaluators, use these exact names when building
+        the evaluation-rule `mapping` array. LLM evaluators require every
+        variable to be mapped. Code evaluators always expose the fixed runtime
+        payload fields and Langfuse maps them automatically.
+
+
+        Versioning behavior:
+
+        - `GET /evaluators` returns the latest version of each available
+        evaluator.
+
+        - `GET /evaluators/{id}` can return an older version.
+
+        - Evaluation rules always run against the latest version for the
+        selected evaluator name within the same source (`project` or `managed`).
     unstableEvaluatorBase:
       title: unstableEvaluatorBase
       type: object
@@ -14519,42 +16674,41 @@ components:
         - meta
     unstableCreateEvaluatorRequest:
       title: unstableCreateEvaluatorRequest
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - llm_as_judge
-            - code
-        name:
-          type: string
-          description: Evaluator name within the authenticated project.
-        prompt:
-          type: string
-          description: Prompt template used by the evaluator.
-        outputDefinition:
-          $ref: '#/components/schemas/unstableEvaluatorOutputDefinition'
-          description: >-
-            Structured output schema the evaluator must return.
+      oneOf:
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - llm_as_judge
+            - $ref: '#/components/schemas/unstableCreateLlmAsJudgeEvaluatorRequest'
+          required:
+            - type
+        - type: object
+          allOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - code
+            - $ref: '#/components/schemas/unstableCreateCodeEvaluatorRequest'
+          required:
+            - type
+      description: >-
+        Request body for creating an evaluator.
 
 
-            Always send `dataType`.
+        If the same `name` already exists in your project, Langfuse creates the
+        next version and returns it.
 
-            Do not send `version`; it is an internal storage detail and not part
-            of the public request contract.
-        modelConfig:
-          $ref: '#/components/schemas/unstableEvaluatorModelConfig'
-          description: Optional explicit model configuration. Omit or set to `null` to use
-            the project default evaluation model.
-        sourceCode:
-          type: string
-          description: Code executed for each matched observation.
-        sourceCodeLanguage:
-          $ref: '#/components/schemas/unstableCodeEvaluatorSourceCodeLanguage'
-          description: Runtime language for `sourceCode`.
-      required:
-        - type
-        - name
+        Existing evaluation rules in the same project are then moved to that new
+        latest version automatically.
+
+        If `type` is omitted, Langfuse defaults it to `llm_as_judge` for
+        backwards compatibility.
     unstableCreateLlmAsJudgeEvaluatorRequest:
       title: unstableCreateLlmAsJudgeEvaluatorRequest
       type: object
