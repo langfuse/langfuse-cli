@@ -40,6 +40,7 @@ const LEGACY_FIELD_FLAGS_UNSUPPORTED = new Set([
   "prompts_create",
   "scim_createUser",
   "score_create",
+  "scores_create",
   "trace_deleteMultiple",
   "unstable_dashboardWidgets_create",
   "unstable_dashboards_addPlacement",
@@ -173,10 +174,18 @@ function collectBodyFields(
     )) {
       const property = resolveLocalRef(document, rawProperty);
       const existing = fields.get(name);
+      const kind = existing?.kind ?? schemaKind(document, property);
       fields.set(name, {
         name,
         required: Boolean(existing?.required || required.has(name)),
-        kind: existing?.kind ?? schemaKind(document, property),
+        kind,
+        ...(kind === "array"
+          ? {
+              itemKind:
+                existing?.itemKind ??
+                schemaKind(document, property.items ?? { type: "string" }),
+            }
+          : {}),
         ...(property.description
           ? { description: String(property.description) }
           : existing?.description

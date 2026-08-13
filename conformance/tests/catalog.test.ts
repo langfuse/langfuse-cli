@@ -3,20 +3,14 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 
 import { loadCatalog, readVerifiedSpec, specPath } from "../src/catalog";
 import { generateCorpus } from "../src/generator";
+import { compareVersions } from "../src/add-version";
 
 describe("immutable OpenAPI catalog", () => {
   test("all pinned snapshots pass SHA-256 verification", async () => {
     const catalog = await loadCatalog();
-    expect(catalog.versions.map((entry) => entry.version)).toEqual([
-      "3.0.0",
-      "3.50.0",
-      "3.100.0",
-      "3.150.0",
-      "3.176.0",
-      "3.200.0",
-      "3.212.0",
-      "3.216.0",
-    ]);
+    const versions = catalog.versions.map((entry) => entry.version);
+    expect(new Set(versions).size).toBe(versions.length);
+    expect(versions).toEqual([...versions].sort(compareVersions));
     for (const entry of catalog.versions) {
       const raw = await readVerifiedSpec(entry);
       expect(raw.startsWith("openapi: 3.0.")).toBe(true);

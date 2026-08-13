@@ -12,7 +12,7 @@ The primary test fake-calls every operation in every cataloged spec through the 
 - compares the received method, path, query, headers, authentication, and JSON body
 - compares the CLI's response status, body, and exit status
 
-The black-box oracle does not share request-building code with the CLI. `bun test` currently attempts all 678 operations across all eight v3 snapshots using the historical field-flag adapter. The 18 operations that require lossless JSON bodies remain an explicit compatibility baseline; any additional failure fails the test. The native `contract-v1` adapter passes all 678 operations through `--body-json`.
+The black-box oracle does not share request-building code with the CLI. `bun test` currently attempts all 792 operations across 9 pinned snapshots using the historical field-flag adapter. Operations that require lossless JSON bodies remain an explicit compatibility baseline; any additional failure fails the test. The native `contract-v1` adapter passes all 792 operations through `--body-json`.
 
 Supporting unit tests verify immutable spec hashes, valid sampling, serialization, naming, adapters, and the capture runner itself.
 
@@ -30,10 +30,11 @@ OpenAPI cannot describe database setup, generated IDs, cross-request bindings, c
 | 3.200.0 | 61 | 98 |
 | 3.212.0 | 64 | 101 |
 | 3.216.0 | 69 | 113 |
+| 4.10.0 | 70 | 114 |
 
 Each source file is downloaded by immutable commit and verified against the SHA-256 in `catalog.json`. Tests are network-free after sync.
 
-Langfuse 3.200.0, 3.212.0, and 3.216.0 use the JSON Schema `const` keyword while declaring OpenAPI 3.0.1. `swagger-parser` correctly reports those sources as invalid OAS 3.0 documents. The catalog records this as `oas3.0-const-keyword`; request sampling still preserves and tests the constraint with the independent JSON Schema validator.
+Some pinned specs use the JSON Schema `const` keyword while declaring OpenAPI 3.0.1. `swagger-parser` correctly reports those sources as invalid OAS 3.0 documents. The catalog records this as `oas3.0-const-keyword`; request sampling still preserves and tests the constraint with the independent JSON Schema validator.
 
 ## Files
 
@@ -96,18 +97,25 @@ The native adapter uses lossless JSON body input via `--body-json`:
 
 ```sh
 bun run conformance:run -- \
-  --version 3.216.0 \
+  --version 4.10.0 \
   --adapter contract-v1 \
-  -- bun bin/langfuse.mjs --api-version 3.216.0
+  -- bun bin/langfuse.mjs --api-version 4.10.0
 ```
 
 The command after the second `--` is treated as an external black-box executable.
 
 ## Add a version
 
-1. Resolve the release tag to its immutable commit.
-2. Add the tag, commit, and SHA-256 to `catalog.json`.
-3. Run `bun run conformance:sync -- --version <version>`.
-4. Run `bun test` and `bun run conformance:all`.
+```sh
+bun run conformance:add-version -- v4.11.0
+```
 
-Never point a committed catalog entry at mutable `main` or `latest`.
+The command accepts only stable semantic release tags. It verifies the published GitHub release, resolves the tag to an immutable commit, downloads the exact OpenAPI bytes, records their SHA-256, checks both compilers, updates the catalog and this table, then runs typecheck, tests, build, and focused black-box conformance. If validation fails, it restores the catalog, spec directory, and documentation.
+
+Preview without writing files:
+
+```sh
+bun run conformance:add-version -- v4.11.0 --dry-run
+```
+
+Review the resulting source diff and live-test added or changed endpoints before committing. Never catalog mutable `main` or `latest`.

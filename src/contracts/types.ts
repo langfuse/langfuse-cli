@@ -44,6 +44,7 @@ export interface ApiBodyField {
   name: string;
   required: boolean;
   kind: ValueKind;
+  itemKind?: ValueKind;
   description?: string;
 }
 

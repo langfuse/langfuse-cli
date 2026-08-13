@@ -53,6 +53,13 @@
       "commit": "706f1bb4231ba4433c8fc101b85167471693180a",
       "sha256": "551e824dd11fc137557d7092596eba09ae342698c7ce63ceb86d90909afd7ee0",
       "knownIssues": ["oas3.0-const-keyword"]
+    },
+    {
+      "version": "4.10.0",
+      "ref": "v4.10.0",
+      "commit": "ddc198b49f1439f95ecf674c68863bfb0c2bd07f",
+      "sha256": "fa4d21a83c49bd0bc3d3f2f751e12fbfce96f72b422267726606ff67bfacf01f",
+      "knownIssues": ["oas3.0-const-keyword"]
     }
   ]
 }

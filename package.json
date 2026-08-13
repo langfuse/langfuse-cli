@@ -29,6 +29,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "conformance:sync": "bun conformance/src/cli.ts sync",
+    "conformance:add-version": "bun conformance/src/add-version.ts",
     "conformance:run": "bun conformance/src/cli.ts run",
     "conformance:all": "bun conformance/src/all.ts",
     "build": "bun scripts/build.ts",

@@ -255,6 +255,12 @@ function kindLabel(kind: ValueKind): string {
   return kind === "array" ? "value (repeatable)" : kind;
 }
 
+function flagUsage(name: string, kind: ValueKind): string {
+  return kind === "boolean"
+    ? `--${name}[=true|false] / --no-${name}`
+    : `--${name} <${kindLabel(kind)}>`;
+}
+
 function printOperationHelp(operation: ApiOperation): void {
   const positionals = operation.pathParameterOrder
     .map((name) => `<${name}>`)
@@ -263,13 +269,13 @@ function printOperationHelp(operation: ApiOperation): void {
   for (const parameter of operation.parameters) {
     if (parameter.location === "path") continue;
     lines.push(
-      `  --${parameter.cliName} <${kindLabel(parameter.kind)}>${parameter.required ? " (required)" : ""}`,
+      `  ${flagUsage(parameter.cliName, parameter.kind)}${parameter.required ? " (required)" : ""}`,
     );
   }
   if (operation.requestBody?.legacyFieldFlags) {
     for (const field of operation.requestBody.fields) {
       lines.push(
-        `  --${field.name} <${kindLabel(field.kind)}>${field.required ? " (required)" : ""}`,
+        `  ${flagUsage(field.name, field.kind)}${field.required ? " (required)" : ""}`,
       );
     }
   }
@@ -383,7 +389,12 @@ function setBodyValue(
     target = target[segment] as Record<string, JsonValue>;
   }
   const name = path.at(-1)!;
-  const kind = path.length > 1 || field?.kind === "array" ? undefined : field?.kind;
+  const kind =
+    path.length > 1
+      ? undefined
+      : field?.kind === "array"
+        ? field.itemKind
+        : field?.kind;
   const parsed = parseJsonValue(raw ?? "true", kind);
   const existing = target[name];
   if (field?.kind === "array") {
@@ -418,7 +429,7 @@ async function readBodyFile(path: string): Promise<JsonValue> {
   }
 }
 
-async function parseOperationInput(
+export async function parseOperationInput(
   operation: ApiOperation,
   tokens: string[],
 ): Promise<ApiCallInput> {
@@ -450,9 +461,18 @@ async function parseOperationInput(
       continue;
     }
     const option = splitOption(token);
+    const parameter = parameterByFlag.get(option.name);
+    const bodyField = operation.requestBody?.legacyFieldFlags
+      ? operation.requestBody.fields.find(
+          (candidate) => candidate.name === option.name.split(".")[0],
+        )
+      : undefined;
+    const isBoolean =
+      parameter?.kind === "boolean" || bodyField?.kind === "boolean";
     let raw = option.inline;
     if (
       raw === undefined &&
+      !isBoolean &&
       tokens[index + 1] !== undefined &&
       !tokens[index + 1].startsWith("--")
     ) {
@@ -474,7 +494,6 @@ async function parseOperationInput(
       completeBody = await readBodyFile(raw);
       continue;
     }
-    const parameter = parameterByFlag.get(option.name);
     if (parameter) {
       if (option.negated && parameter.kind !== "boolean") {
         throw new CliError(`--no-${option.name} is only valid for boolean options`);
@@ -491,9 +510,7 @@ async function parseOperationInput(
       );
     }
     const path = option.name.split(".").filter(Boolean);
-    const field = operation.requestBody.fields.find(
-      (candidate) => candidate.name === path[0],
-    );
+    const field = bodyField;
     if (!field) throw new CliError(`Unknown option --${option.name}`);
     if (option.negated && field.kind !== "boolean") {
       throw new CliError(`--no-${option.name} is only valid for boolean options`);
@@ -581,13 +598,15 @@ function schemaOutput(contract: ApiContract) {
   };
 }
 
-async function writeResult(
+export async function writeResult(
   result: ApiResult,
   config: RuntimeConfig,
 ): Promise<void> {
   if (config.output) {
     const content =
-      typeof result.body === "string"
+      result.body === null
+        ? ""
+        : typeof result.body === "string"
         ? result.body
         : JSON.stringify(result.body, null, 2);
     await Bun.write(config.output, content ?? "");

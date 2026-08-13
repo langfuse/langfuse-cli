@@ -17,9 +17,9 @@ function option(args: string[], name: string): string | undefined {
 
 function usage(): never {
   process.stderr.write(`Usage:
-  bun run conformance:sync [--version 3.216.0]
-  bun run conformance:run --version 3.216.0 --adapter specli-v0 --current-cli [filters]
-  bun run conformance:run --version 3.216.0 --adapter contract-v1 [filters] -- <command...>
+  bun run conformance:sync [--version 4.10.0]
+  bun run conformance:run --version 4.10.0 --adapter specli-v0 --current-cli [filters]
+  bun run conformance:run --version 4.10.0 --adapter contract-v1 [filters] -- <command...>
 
 Run filters:
   --operation <operationId>  Restrict one operation

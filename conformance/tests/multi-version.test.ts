@@ -17,6 +17,7 @@ const CURRENT_CLI_UNSUPPORTED_OPERATIONS = new Set([
   "prompts_create",
   "scim_createUser",
   "score_create",
+  "scores_create",
   "trace_deleteMultiple",
   "unstable_dashboardWidgets_create",
   "unstable_dashboards_addPlacement",
