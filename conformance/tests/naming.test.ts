@@ -9,7 +9,7 @@ describe("stable CLI naming policy", () => {
     expect(pluralize("datasets")).toBe("datasets");
   });
 
-  test("uses tag resources and operationId actions", () => {
+  test("uses path resources and keeps tags as aliases", () => {
     expect(
       planCommandNames([
         {
@@ -29,32 +29,93 @@ describe("stable CLI naming policy", () => {
       {
         resource: "annotation-queues",
         action: "list",
-        canonicalAction: "list",
       },
       {
         resource: "traces",
         action: "delete",
-        canonicalAction: "delete",
+        aliases: [{ resource: "trace", action: "delete", source: "tag" }],
       },
     ]);
   });
 
-  test("disambiguates collisions deterministically", () => {
+  test("uses REST semantics instead of stuttered dashboard actions", () => {
     const names = planCommandNames([
       {
-        operationId: "comments_get",
-        method: "GET",
-        path: "/api/public/comments",
-        tags: ["Comments"],
+        operationId: "unstable_dashboards_create",
+        method: "POST",
+        path: "/api/public/unstable/dashboards",
+        tags: ["UnstableDashboards"],
       },
       {
-        operationId: "comments_get-by-id",
-        method: "GET",
-        path: "/api/public/comments/{commentId}",
-        tags: ["Comments"],
+        operationId: "unstable_dashboards_update",
+        method: "PATCH",
+        path: "/api/public/unstable/dashboards/{dashboardId}",
+        tags: ["UnstableDashboards"],
+      },
+      {
+        operationId: "unstable_dashboards_delete",
+        method: "DELETE",
+        path: "/api/public/unstable/dashboards/{dashboardId}",
+        tags: ["UnstableDashboards"],
+      },
+      {
+        operationId: "unstable_dashboards_addPlacement",
+        method: "POST",
+        path: "/api/public/unstable/dashboards/{dashboardId}/placements",
+        tags: ["UnstableDashboards"],
+      },
+      {
+        operationId: "unstable_dashboards_updatePlacement",
+        method: "PATCH",
+        path: "/api/public/unstable/dashboards/{dashboardId}/placements/{placementId}",
+        tags: ["UnstableDashboards"],
+      },
+      {
+        operationId: "unstable_dashboards_deletePlacement",
+        method: "DELETE",
+        path: "/api/public/unstable/dashboards/{dashboardId}/placements/{placementId}",
+        tags: ["UnstableDashboards"],
       },
     ]);
-    expect(new Set(names.map((name) => name.action)).size).toBe(2);
-    expect(names.every((name) => name.aliasOf === "comments get")).toBe(true);
+    expect(names.map(({ resource, action }) => `${resource} ${action}`)).toEqual([
+      "unstable-dashboards create",
+      "unstable-dashboards update",
+      "unstable-dashboards delete",
+      "unstable-dashboards add-placement",
+      "unstable-dashboards update-placement",
+      "unstable-dashboards delete-placement",
+    ]);
+  });
+
+  test("prefers the latest active route and exposes path and tag aliases", () => {
+    const names = planCommandNames([
+      {
+        operationId: "scores_get-many",
+        method: "GET",
+        path: "/api/public/v2/scores",
+        tags: ["Scores"],
+        deprecated: true,
+      },
+      {
+        operationId: "scoresV3_getManyV3",
+        method: "GET",
+        path: "/api/public/v3/scores",
+        tags: ["ScoresV3"],
+      },
+    ]);
+
+    expect(names).toEqual([
+      {
+        resource: "scores-v2",
+        action: "list",
+      },
+      {
+        resource: "scores",
+        action: "list",
+        aliases: [
+          { resource: "scores-v3", action: "list", source: "version" },
+        ],
+      },
+    ]);
   });
 });

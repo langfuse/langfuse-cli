@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   assertOperationCallable,
+  operationByCommand,
   parseOperationInput,
   run,
   schemaOutput,
@@ -88,7 +89,6 @@ describe("operation input parsing", () => {
     command: {
       resource: "prompts",
       action: "get",
-      canonicalAction: "get",
     },
     pathParameterOrder: ["promptName"],
     parameters: [
@@ -218,7 +218,6 @@ paths:
       command: {
         resource: "widgets",
         action: "update",
-        canonicalAction: "update",
       },
       pathParameterOrder: ["widgetId"],
       parameters: [
@@ -265,6 +264,59 @@ paths:
       path: { widgetId: "widget-123" },
       body: { chartConfig: { show_value_labels: true } },
     });
+  });
+
+  test("preserves an explicit null complete body", async () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      key: "POST /api/public/widgets",
+      operationId: "widgets_create",
+      method: "POST",
+      path: "/api/public/widgets",
+      command: {
+        resource: "widgets",
+        action: "create",
+      },
+      pathParameterOrder: [],
+      parameters: [],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        legacyFieldFlags: false,
+        fields: [],
+      },
+    };
+
+    expect(await parseOperationInput(operation, ["--body-json", "null"])).toEqual({
+      path: {},
+      query: {},
+      headers: {},
+      cookies: {},
+      body: null,
+    });
+  });
+
+  test("resolves tag and version command aliases", () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      operationId: "scoresV3_getManyV3",
+      path: "/api/public/v3/scores",
+      command: {
+        resource: "scores",
+        action: "list",
+        aliases: [
+          { resource: "scores-v3", action: "list", source: "tag" },
+        ],
+      },
+    };
+    const contract = {
+      schemaVersion: 1 as const,
+      apiVersion: "4.10.0",
+      sourceSha256: "test",
+      operations: [operation],
+    };
+
+    expect(operationByCommand(contract, "scores-v3", "list")).toBe(operation);
   });
 });
 

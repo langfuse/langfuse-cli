@@ -59,17 +59,17 @@ langfuse api help prompts create
 langfuse api schema --json
 langfuse api __schema --json
 
-# List traces
-langfuse api traces list --limit 10
+# List observations
+langfuse api observations list --limit 10
 
-# Get a specific trace
-langfuse api traces get <trace-id>
+# List observations for a specific trace
+langfuse api observations list --trace-id <trace-id>
 
 # JSON output (for piping/scripting)
-langfuse api traces list --limit 5 --json
+langfuse api observations list --limit 5 --json
 
 # Preview curl command
-langfuse api traces list --limit 5 --curl
+langfuse api observations list --limit 5 --curl
 
 # Prompts
 langfuse api prompts list
@@ -81,14 +81,20 @@ langfuse api datasets list
 langfuse api dataset-items list --dataset-name my-dataset
 
 # Scores
-langfuse api score-v2s get-scores --limit 20
+langfuse api scores list --limit 20
 
 # Use an API snapshot compatible with an older self-hosted deployment
 langfuse --api-version 3.150.0 api traces list
 
 # Detect the server version through /api/public/health
-langfuse --api-version auto api traces list
+langfuse --api-version auto api prompts list
 ```
+
+Canonical command resources come from API paths and use concise REST actions.
+OpenAPI tags and explicit route versions remain accepted aliases, for example
+`scores-v3 list` for the canonical `scores list`. Verbose OpenAPI `operationId`
+values remain available in `api schema --json` but are never required as CLI
+commands.
 
 ## Agent Usage
 

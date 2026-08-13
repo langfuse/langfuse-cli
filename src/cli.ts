@@ -194,11 +194,17 @@ Examples:
   langfuse api help
   langfuse api prompts list
   langfuse api prompts create --body-json '{"name":"my-prompt","type":"text","prompt":"Hello"}'
-  langfuse --api-version 3.150.0 api traces list
+  langfuse api observations list --limit 20
 `);
 }
 
-function resourceMap(contract: ApiContract): Map<string, ApiOperation[]> {
+interface CommandBinding {
+  operation: ApiOperation;
+  action: string;
+  alias: boolean;
+}
+
+function canonicalResourceMap(contract: ApiContract): Map<string, ApiOperation[]> {
   const resources = new Map<string, ApiOperation[]>();
   for (const operation of contract.operations) {
     const existing = resources.get(operation.command.resource) ?? [];
@@ -213,8 +219,31 @@ function resourceMap(contract: ApiContract): Map<string, ApiOperation[]> {
   return resources;
 }
 
+function resourceMap(contract: ApiContract): Map<string, CommandBinding[]> {
+  const resources = new Map<string, CommandBinding[]>();
+  const add = (resource: string, binding: CommandBinding) => {
+    const existing = resources.get(resource) ?? [];
+    existing.push(binding);
+    resources.set(resource, existing);
+  };
+  for (const operation of contract.operations) {
+    add(operation.command.resource, {
+      operation,
+      action: operation.command.action,
+      alias: false,
+    });
+    for (const alias of operation.command.aliases ?? []) {
+      add(alias.resource, { operation, action: alias.action, alias: true });
+    }
+  }
+  for (const bindings of resources.values()) {
+    bindings.sort((left, right) => left.action.localeCompare(right.action));
+  }
+  return resources;
+}
+
 function printApiHelp(contract: ApiContract): void {
-  const resources = [...resourceMap(contract)].sort(([left], [right]) =>
+  const resources = [...canonicalResourceMap(contract)].sort(([left], [right]) =>
     left.localeCompare(right),
   );
   process.stdout.write(`Usage: langfuse api <resource> <action> [options]
@@ -234,6 +263,7 @@ Discovery:
   api schema --json          Machine-readable command schema
   api __schema --json        Legacy command alias
   api versions list          Bundled historical snapshots
+  Path commands are canonical; OpenAPI tag and route-version aliases also work
 
 Action options:
   --body-json <json>         Lossless JSON request body
@@ -244,16 +274,16 @@ Action options:
 }
 
 function printResourceHelp(contract: ApiContract, resource: string): void {
-  const operations = resourceMap(contract).get(resource);
-  if (!operations) throw new CliError(`Unknown API resource: ${resource}`);
+  const bindings = resourceMap(contract).get(resource);
+  if (!bindings) throw new CliError(`Unknown API resource: ${resource}`);
   process.stdout.write(`Usage: langfuse api ${resource} <action> [options]
 
 Actions:
-${operations
+${bindings
   .map(
-    (operation) => {
-      const label = `${operation.command.action}${operation.deprecated ? " [deprecated]" : ""}`;
-      return `  ${label.padEnd(43)} ${operation.summary ?? operation.operationId}`;
+    (binding) => {
+      const label = `${binding.action}${binding.alias ? " [alias]" : ""}${binding.operation.deprecated ? " [deprecated]" : ""}`;
+      return `  ${label.padEnd(43)} ${binding.operation.method} ${binding.operation.path}`;
     },
   )
   .join("\n")}
@@ -334,14 +364,23 @@ ${lines.length ? lines.join("\n") : "  (no operation-specific options)"}
 `);
 }
 
-function operationByCommand(
+export function operationByCommand(
   contract: ApiContract,
   resource: string,
   action: string,
 ): ApiOperation {
   const operation = contract.operations.find(
-    (candidate) =>
-      candidate.command.resource === resource && candidate.command.action === action,
+    (candidate) => {
+      if (
+        candidate.command.resource === resource &&
+        candidate.command.action === action
+      ) {
+        return true;
+      }
+      return candidate.command.aliases?.some(
+        (alias) => alias.resource === resource && alias.action === action,
+      );
+    },
   );
   if (!operation) {
     if (!resourceMap(contract).has(resource)) {
@@ -581,7 +620,7 @@ export async function parseOperationInput(
       throw new CliError(`Missing required option --${parameter.cliName}`);
     }
   }
-  let body = completeBody ?? fieldBody;
+  let body = completeBody !== undefined ? completeBody : fieldBody;
   if (completeBody === undefined && operation.requestBody?.legacyFieldFlags) {
     const missing = operation.requestBody.fields
       .filter((field) => field.required && fieldBody?.[field.name] === undefined)
@@ -603,14 +642,11 @@ export function schemaOutput(contract: ApiContract) {
     schemaVersion: 1,
     apiVersion: contract.apiVersion,
     sourceSha256: contract.sourceSha256,
-    resources: [...resourceMap(contract)].map(([name, operations]) => ({
+    resources: [...canonicalResourceMap(contract)].map(([name, operations]) => ({
       name,
       actions: operations.map((operation) => ({
         name: operation.command.action,
-        canonicalName: operation.command.canonicalAction,
-        ...(operation.command.aliasOf
-          ? { aliasOf: operation.command.aliasOf }
-          : {}),
+        aliases: operation.command.aliases ?? [],
         operationId: operation.operationId,
         method: operation.method,
         path: operation.path,

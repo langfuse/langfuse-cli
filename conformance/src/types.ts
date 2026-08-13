@@ -34,8 +34,13 @@ export interface Catalog {
 export interface CommandName {
   resource: string;
   action: string;
-  canonicalAction: string;
-  aliasOf?: string;
+  aliases?: CommandAlias[];
+}
+
+export interface CommandAlias {
+  resource: string;
+  action: string;
+  source: "path" | "tag" | "version";
 }
 
 export interface ParameterContract {

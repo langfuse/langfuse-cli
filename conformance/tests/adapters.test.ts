@@ -17,7 +17,7 @@ const operation: OperationContract = {
   method: "POST",
   path: "/widgets/{id}",
   auth: { required: true, schemes: ["BasicAuth"] },
-  command: { resource: "widgets", action: "create", canonicalAction: "create" },
+  command: { resource: "widgets", action: "create" },
   pathParameterOrder: ["id"],
   parameters: [
     {
