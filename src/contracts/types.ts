@@ -60,6 +60,7 @@ export interface ApiOperation {
   operationId: string;
   method: HttpMethod;
   path: string;
+  deprecated?: true;
   auth: {
     required: boolean;
     schemes: string[];

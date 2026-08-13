@@ -263,6 +263,7 @@ export function compileApiContract(
     operationId: string;
     method: HttpMethod;
     path: string;
+    deprecated?: true;
     tags: string[];
     auth: ApiOperation["auth"];
     pathParameterOrder: string[];
@@ -289,6 +290,7 @@ export function compileApiContract(
         operationId,
         method: method.toUpperCase() as HttpMethod,
         path,
+        ...(operation.deprecated === true ? { deprecated: true as const } : {}),
         tags: (operation.tags ?? []).map(String),
         auth: normalizeAuth(document, operation),
         pathParameterOrder: [...path.matchAll(/\{([^}]+)\}/g)].map(

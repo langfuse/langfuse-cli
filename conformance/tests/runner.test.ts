@@ -76,4 +76,37 @@ process.exit(response.ok ? 0 : 1);
     expect(results[0].failures).toEqual([]);
     expect(results[0].passed).toBe(true);
   });
+
+  test("expects deprecated operations to fail before making a request", async () => {
+    directory = await mkdtemp(join(tmpdir(), "langfuse-cli-deprecated-"));
+    const script = resolve(directory, "fake-cli.ts");
+    await Bun.write(
+      script,
+      `console.error("Cannot call deprecated API operation");
+process.exit(2);
+`,
+    );
+    const entry = {
+      version: "fixture",
+      ref: "fixture",
+      commit: "0".repeat(40),
+      sha256: "0".repeat(64),
+    };
+    const compiled = compileOpenApi(
+      entry,
+      raw.replace("tags: [Widgets]", "tags: [Widgets]\n      deprecated: true"),
+    );
+    const vector = generateVectors(compiled)[0];
+    const results = await runConformance({
+      entry,
+      manifest: compiled.manifest,
+      vectors: [vector],
+      adapter: "contract-v1",
+      command: ["bun", script],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].failures).toEqual([]);
+    expect(results[0].passed).toBe(true);
+  });
 });

@@ -58,7 +58,9 @@
       "version": "4.10.0",
       "ref": "v4.10.0",
       "commit": "ddc198b49f1439f95ecf674c68863bfb0c2bd07f",
-      "sha256": "fa4d21a83c49bd0bc3d3f2f751e12fbfce96f72b422267726606ff67bfacf01f",
+      "sha256": "bcf95d11960571222d9ee47e4a0e5d2eba667d14802cf27539e4c0ff3d9352a4",
+      "upstreamSha256": "fa4d21a83c49bd0bc3d3f2f751e12fbfce96f72b422267726606ff67bfacf01f",
+      "modifications": ["deprecated-operation-markers"],
       "knownIssues": ["oas3.0-const-keyword"]
     }
   ]

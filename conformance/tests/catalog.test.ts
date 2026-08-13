@@ -28,7 +28,7 @@ describe("immutable OpenAPI catalog", () => {
     }
   });
 
-  test("each operation produces one supported endpoint call", async () => {
+  test("each operation produces one supported invocation", async () => {
     const catalog = await loadCatalog();
     for (const entry of catalog.versions) {
       const corpus = await generateCorpus(entry);
@@ -37,6 +37,32 @@ describe("immutable OpenAPI catalog", () => {
         corpus.compiled.manifest.operations.length,
       );
       expect(corpus.vectors.length).toBeGreaterThan(0);
+      if (entry.version === "4.10.0") {
+        expect(
+          corpus.compiled.manifest.operations
+            .filter((operation) => operation.deprecated)
+            .map((operation) => operation.operationId)
+            .sort(),
+        ).toEqual(
+          [
+            "datasetRunItems_create",
+            "datasetRunItems_list",
+            "datasets_deleteRun",
+            "datasets_getRun",
+            "datasets_getRuns",
+            "ingestion_batch",
+            "legacy_metricsV1_metrics",
+            "legacy_observationsV1_get",
+            "legacy_observationsV1_getMany",
+            "scores_get-by-id",
+            "scores_get-many",
+            "sessions_get",
+            "sessions_list",
+            "trace_get",
+            "trace_list",
+          ].sort(),
+        );
+      }
     }
   });
 });

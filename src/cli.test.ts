@@ -3,7 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { parseOperationInput, run, writeResult } from "./cli";
+import {
+  assertOperationCallable,
+  parseOperationInput,
+  run,
+  schemaOutput,
+  writeResult,
+} from "./cli";
 import { compileApiContract } from "./contracts/compiler";
 import type { ApiOperation } from "./contracts/types";
 
@@ -149,6 +155,7 @@ paths:
     put:
       operationId: models_put
       tags: [Models]
+      deprecated: true
       security: []
       requestBody:
         required: true
@@ -171,10 +178,34 @@ paths:
       (candidate) => candidate.name === "customModels",
     );
 
+    expect(operation.deprecated).toBe(true);
     expect(field?.itemKind).toBe("string");
     expect(
       await parseOperationInput(operation, ["--customModels", "123"]),
     ).toMatchObject({ body: { customModels: ["123"] } });
+  });
+
+  test("rejects deprecated operations with replacement guidance", () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      deprecated: true,
+      description: "**Deprecated.** Use `GET /api/public/v3/prompts` instead.",
+    };
+
+    expect(() => assertOperationCallable(operation, "4.10.0")).toThrow(
+      'Cannot call deprecated API operation "prompts get"',
+    );
+    expect(() => assertOperationCallable(operation, "4.10.0")).toThrow(
+      "Use `GET /api/public/v3/prompts` instead.",
+    );
+
+    const schema = schemaOutput({
+      schemaVersion: 1,
+      apiVersion: "4.10.0",
+      sourceSha256: "test",
+      operations: [operation],
+    });
+    expect(schema.resources[0].actions[0].deprecated).toBe(true);
   });
 
   test("rejects nested body flags without consuming a positional", async () => {

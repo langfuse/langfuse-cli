@@ -29,6 +29,7 @@ interface RawOperation {
   operationId: string;
   method: HttpMethod;
   path: string;
+  deprecated?: true;
   tags: string[];
   auth: {
     required: boolean;
@@ -213,6 +214,7 @@ export function compileOpenApi(
         operationId,
         method: method.toUpperCase() as HttpMethod,
         path,
+        ...(operation.deprecated === true ? { deprecated: true as const } : {}),
         tags: (operation.tags ?? []).map(String),
         auth: normalizeAuth(document, operation, unsupported),
         pathParameterOrder: pathParameterOrder(path),

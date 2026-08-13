@@ -60,12 +60,20 @@ export async function syncSpecs(entries?: CatalogEntry[]): Promise<void> {
     }
     const text = await response.text();
     const actual = await sha256(text);
-    if (actual !== entry.sha256) {
+    const expectedUpstream = entry.upstreamSha256 ?? entry.sha256;
+    if (actual !== expectedUpstream) {
       throw new Error(
-        `${entry.ref}: upstream bytes changed; expected ${entry.sha256}, got ${actual}`,
+        `${entry.ref}: upstream bytes changed; expected ${expectedUpstream}, got ${actual}`,
       );
     }
     const path = specPath(entry);
+    if (entry.modifications?.length) {
+      await readVerifiedSpec(entry);
+      process.stdout.write(
+        `verified ${entry.ref} (${entry.modifications.join(", ")})\n`,
+      );
+      continue;
+    }
     await mkdir(dirname(path), { recursive: true });
     if (!(await Bun.file(path).exists()) || (await Bun.file(path).text()) !== text) {
       await Bun.write(path, text);

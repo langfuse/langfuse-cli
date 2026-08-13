@@ -19,6 +19,8 @@ export interface CatalogEntry {
   ref: string;
   commit: string;
   sha256: string;
+  upstreamSha256?: string;
+  modifications?: string[];
   knownIssues?: string[];
 }
 
@@ -64,6 +66,7 @@ export interface OperationContract {
   operationId: string;
   method: HttpMethod;
   path: string;
+  deprecated?: true;
   auth: {
     required: boolean;
     schemes: string[];

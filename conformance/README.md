@@ -4,15 +4,17 @@ Language-neutral, version-pinned acceptance tests for the native TypeScript CLI.
 
 ## What is tested
 
-The primary test fake-calls every operation in every cataloged spec through the real CLI. For each operation it:
+The primary test invokes every operation in every cataloged spec through the real CLI. For active operations it:
 
-- generates one minimally valid invocation from the untouched OpenAPI source
+- generates one minimally valid invocation from the committed OpenAPI source
 - starts a local mock HTTP server with a response generated from that operation
 - runs the CLI as a subprocess against the mock host
 - compares the received method, path, query, headers, authentication, and JSON body
 - compares the CLI's response status, body, and exit status
 
-The black-box oracle does not share request-building code with the CLI. `bun test` currently attempts all 792 operations across 9 pinned snapshots using the historical field-flag adapter. Operations that require lossless JSON bodies remain an explicit compatibility baseline; any additional failure fails the test. The native `contract-v1` adapter passes all 792 operations through `--body-json`.
+For operations marked `deprecated: true`, it instead verifies exit code 2, a helpful error on stderr, and zero network requests.
+
+The black-box oracle does not share request-building code with the CLI. `bun test` currently attempts all 792 operations across 9 pinned snapshots using the historical field-flag adapter. Operations that require lossless JSON bodies remain an explicit compatibility baseline; any additional failure fails the test. The native `contract-v1` adapter checks all 792 operations through `--body-json`, including pre-network rejection for deprecated operations.
 
 Supporting unit tests verify immutable spec hashes, valid sampling, serialization, naming, adapters, and the capture runner itself.
 
@@ -41,7 +43,7 @@ Some pinned specs use the JSON Schema `const` keyword while declaring OpenAPI 3.
 ```text
 catalog.json                 immutable Git refs, commits, hashes, known source issues
 policy.json                  implementation adapters; not API truth
-specs/<version>/openapi.yml  untouched upstream snapshots
+specs/<version>/openapi.yml  committed source snapshots
 src/                         compiler, serializers, adapters, capture runner
 tests/                       compiler, validator, and runner tests
 ```
@@ -52,7 +54,7 @@ tests/                       compiler, validator, and runner tests
 # Generator, schema, serializer, capture, and compatibility tests
 bun test
 
-# Build and fake-call every endpoint through the lossless native CLI
+# Build and check every endpoint through the lossless native CLI
 bun run conformance:all
 
 # Re-download pinned bytes and verify their hashes
@@ -79,7 +81,7 @@ bun run conformance:run -- \
   --current-cli
 ```
 
-The adapter name is retained because it describes the old field-flag grammar. The runner builds the native current source and compiles the selected untouched spec into a temporary runtime contract.
+The adapter name is retained because it describes the old field-flag grammar. The runner builds the native current source and compiles the selected committed spec into a temporary runtime contract.
 
 Useful filters:
 

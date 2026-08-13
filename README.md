@@ -106,20 +106,20 @@ See the full [Langfuse API Reference](https://api.reference.langfuse.com/).
 
 ## OpenAPI conformance suite
 
-The version-pinned black-box suite lives in [`conformance/`](conformance/README.md). It makes one minimally valid mocked API call per operation through the real CLI across historical Langfuse specs.
+The version-pinned black-box suite lives in [`conformance/`](conformance/README.md). It invokes every operation through the real CLI across historical Langfuse specs. Active operations make one minimally valid mocked API call; operations marked `deprecated: true` must fail before any network request.
 
 ```sh
 bun test
 bun run conformance:all
 ```
 
-`bun test` verifies the generator, schemas, serialization, capture oracle, and legacy CLI compatibility. `bun run conformance:all` builds the package and fake-calls every operation through the native CLI using its lossless JSON input path. CI runs both.
+`bun test` verifies the generator, schemas, serialization, capture oracle, deprecation policy, and legacy CLI compatibility. `bun run conformance:all` builds the package and checks every operation through the native CLI using its lossless JSON input path. CI runs both.
 
 ## Native OpenAPI contracts
 
 The CLI is implemented in TypeScript and runs natively on Bun. It has zero external runtime dependencies and never parses OpenAPI during invocation.
 
-Builds compile the committed, byte-for-byte upstream OpenAPI snapshots into compact versioned contracts under ignored `dist/contracts/`. Generated contracts are packaged on npm but are not committed.
+Builds compile committed OpenAPI snapshots into compact versioned contracts under ignored `dist/contracts/`. Catalog entries record the exact committed hash; snapshots with explicit local annotations also record the upstream hash and modification name. Generated contracts are packaged on npm but are not committed.
 
 ```sh
 # Build the Bun CLI and all versioned contracts

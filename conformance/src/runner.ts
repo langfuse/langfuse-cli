@@ -178,16 +178,37 @@ export async function runConformance(options: RunOptions): Promise<CaseResult[]>
       });
       const execution = await spawn(command, args, options.timeoutMs ?? 10_000);
       const failures: string[] = [];
-      if (execution.exitCode !== 0) {
-        failures.push(`exit: expected zero, got ${execution.exitCode}`);
-      }
       const captured = capture.requests.slice(before);
-      if (captured.length !== 1) {
-        failures.push(`server: expected one request, got ${captured.length}`);
+      const operation = options.manifest.operations.find(
+        (candidate) => candidate.key === vector.operationKey,
+      );
+      if (!operation) {
+        failures.push("manifest: operation not found");
+      } else if (operation.deprecated) {
+        if (execution.exitCode !== 2) {
+          failures.push(
+            `exit: expected deprecated-operation exit 2, got ${execution.exitCode}`,
+          );
+        }
+        if (captured.length !== 0) {
+          failures.push(
+            `server: expected no request for deprecated operation, got ${captured.length}`,
+          );
+        }
+        if (!execution.stderr.includes("Cannot call deprecated API operation")) {
+          failures.push("stderr: expected a helpful deprecated-operation error");
+        }
       } else {
-        failures.push(...requestDiff(vector.expectedRequest, captured[0]));
+        if (execution.exitCode !== 0) {
+          failures.push(`exit: expected zero, got ${execution.exitCode}`);
+        }
+        if (captured.length !== 1) {
+          failures.push(`server: expected one request, got ${captured.length}`);
+        } else {
+          failures.push(...requestDiff(vector.expectedRequest, captured[0]));
+        }
       }
-      if (execution.exitCode === 0) {
+      if (!operation?.deprecated && execution.exitCode === 0) {
         const output = parseJson(execution.stdout);
         if (output?.status !== vector.response.status) {
           failures.push(

@@ -214,18 +214,25 @@ function resourceMap(contract: ApiContract): Map<string, ApiOperation[]> {
 }
 
 function printApiHelp(contract: ApiContract): void {
-  const resources = [...resourceMap(contract).keys()].sort();
+  const resources = [...resourceMap(contract)].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
   process.stdout.write(`Usage: langfuse api <resource> <action> [options]
 
 API snapshot: ${contract.apiVersion}
 
 Resources:
-${resources.map((resource) => `  ${resource}`).join("\n")}
+${resources
+  .map(
+    ([resource, operations]) =>
+      `  ${resource}${operations.some((operation) => operation.deprecated) ? " [contains deprecated actions]" : ""}`,
+  )
+  .join("\n")}
 
 Discovery:
   api help [resource] [action]
   api schema --json          Machine-readable command schema
-  api __schema --json        Backward-compatible alias
+  api __schema --json        Legacy command alias
   api versions list          Bundled historical snapshots
 
 Action options:
@@ -244,11 +251,39 @@ function printResourceHelp(contract: ApiContract, resource: string): void {
 Actions:
 ${operations
   .map(
-    (operation) =>
-      `  ${operation.command.action.padEnd(30)} ${operation.summary ?? operation.operationId}`,
+    (operation) => {
+      const label = `${operation.command.action}${operation.deprecated ? " [deprecated]" : ""}`;
+      return `  ${label.padEnd(43)} ${operation.summary ?? operation.operationId}`;
+    },
   )
   .join("\n")}
 `);
+}
+
+function explicitDeprecationNote(operation: ApiOperation): string | undefined {
+  const description = operation.description?.trim();
+  if (!description || !/^(?:\*\*)?deprecated\b/i.test(description)) {
+    return undefined;
+  }
+  return description
+    .split(/\n\s*\n/, 1)[0]
+    .replace(/^\*\*Deprecated\.\*\*\s*/i, "")
+    .replace(/^Deprecated\.?\s*/i, "")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
+}
+
+export function assertOperationCallable(
+  operation: ApiOperation,
+  apiVersion: string,
+): void {
+  if (!operation.deprecated) return;
+  const note = explicitDeprecationNote(operation);
+  throw new CliError(
+    `Cannot call deprecated API operation "${operation.command.resource} ${operation.command.action}" (${operation.method} ${operation.path}) in API ${apiVersion}.` +
+      (note ? ` ${note}` : " No replacement is declared in its OpenAPI description.") +
+      ` Use "langfuse api help ${operation.command.resource}" or "langfuse api schema --json" to find supported operations.`,
+  );
 }
 
 function kindLabel(kind: ValueKind): string {
@@ -287,6 +322,11 @@ function printOperationHelp(operation: ApiOperation): void {
 
 ${operation.summary ?? operation.operationId}
 ${operation.description ? `\n${operation.description}\n` : ""}
+${
+  operation.deprecated
+    ? `\nDEPRECATED\nThis operation is discoverable but cannot be called by this CLI.${explicitDeprecationNote(operation) ? ` ${explicitDeprecationNote(operation)}` : ""}\n`
+    : ""
+}
 Options:
 ${lines.length ? lines.join("\n") : "  (no operation-specific options)"}
   --json                         JSON response envelope
@@ -558,7 +598,7 @@ export async function parseOperationInput(
   return input;
 }
 
-function schemaOutput(contract: ApiContract) {
+export function schemaOutput(contract: ApiContract) {
   return {
     schemaVersion: 1,
     apiVersion: contract.apiVersion,
@@ -574,6 +614,7 @@ function schemaOutput(contract: ApiContract) {
         operationId: operation.operationId,
         method: operation.method,
         path: operation.path,
+        deprecated: Boolean(operation.deprecated),
         auth: operation.auth,
         pathParameterOrder: operation.pathParameterOrder,
         parameters: operation.parameters,
@@ -679,6 +720,7 @@ async function runApi(config: RuntimeConfig, args: string[]): Promise<void> {
     printOperationHelp(operation);
     return;
   }
+  assertOperationCallable(operation, contract.apiVersion);
   const input = await parseOperationInput(operation, args.slice(2));
   const client = createApiClient({
     host: config.host,
