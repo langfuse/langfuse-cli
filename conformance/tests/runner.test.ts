@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import packageJson from "../../package.json";
 import { generateVectors } from "../src/generator";
 import { compileOpenApi } from "../src/openapi";
 import { runConformance } from "../src/runner";
@@ -52,6 +53,7 @@ const api = args.indexOf("api");
 const id = args[api + 3];
 const response = await fetch(
   \`\${value("--host")}/widgets/\${encodeURIComponent(id)}?limit=\${value("--limit")}\`,
+  { headers: { "user-agent": ${JSON.stringify(`langfuse-cli/${packageJson.version}`)} } },
 );
 console.log(JSON.stringify({ status: response.status, body: await response.json() }));
 process.exit(response.ok ? 0 : 1);

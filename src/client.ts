@@ -1,3 +1,5 @@
+import packageJson from "../package.json";
+
 import type {
   ApiCallInput,
   ApiClientConfig,
@@ -12,6 +14,8 @@ export interface PreparedRequest {
   headers: Headers;
   body?: string;
 }
+
+const USER_AGENT = `langfuse-cli/${packageJson.version}`;
 
 function primitive(value: JsonValue): string {
   if (value === null) return "";
@@ -117,6 +121,7 @@ export function prepareRequest(
     body = JSON.stringify(input.body);
   }
   headers.set("accept", "application/json");
+  headers.set("user-agent", USER_AGENT);
   const host = config.host.endsWith("/") ? config.host : `${config.host}/`;
   const url = new URL(pathname.replace(/^\//, ""), host);
   for (const [name, value] of query) url.searchParams.append(name, value);
