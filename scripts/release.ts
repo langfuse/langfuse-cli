@@ -1,4 +1,12 @@
 import { createInterface } from "node:readline/promises";
+import { inc, valid } from "semver";
+
+import {
+  npmEnvironment,
+  parseReleaseArgs,
+  publishTagForVersion,
+  type ReleaseOptions,
+} from "./release-config";
 
 type PackageJson = {
   name: string;
@@ -8,8 +16,6 @@ type PackageJson = {
 
 const packageJsonPath = `${import.meta.dir}/../package.json`;
 const npmCache = `${process.env.TMPDIR ?? "/tmp"}/langfuse-cli-npm-cache`;
-const semverPattern =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)((?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$/;
 const exactReleaseFiles = new Set([
   ".npmrc",
   "LICENSE",
@@ -18,50 +24,34 @@ const exactReleaseFiles = new Set([
   "package.json",
 ]);
 const releasePathPrefixes = ["bin/", "conformance/", "scripts/", "src/"];
-const rawArgs = process.argv.slice(2);
-const isDryRun = rawArgs.includes("--dry-run");
-const allowDirty = rawArgs.includes("--allow-dirty");
-const shouldShowHelp = rawArgs.includes("--help") || rawArgs.includes("-h");
-const unknownArgs = rawArgs.filter(
-  (arg) => !["--dry-run", "--allow-dirty", "--help", "-h"].includes(arg),
-);
+let releaseOptions: ReleaseOptions;
+try {
+  releaseOptions = parseReleaseArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  printHelp();
+  process.exit(1);
+}
+const isDryRun = releaseOptions.dryRun;
+const allowDirty = releaseOptions.allowDirty;
 
 let originalPackageJsonText: string | null = null;
 let shouldRestorePackageJson = false;
 let publishStarted = false;
 
 function printHelp(): void {
-  console.log(`Usage: bun run release -- [options]
-
-Options:
-  --dry-run       Run checks, build, version bump, and npm pack dry-run, then restore package.json and skip publish
-  --allow-dirty   Allow release-relevant local changes; intended for testing the release script itself
-  -h, --help      Show this help`);
-}
-
-function bumpVersion(
-  version: string,
-  bump: "patch" | "minor" | "major",
-): string | null {
-  const match = semverPattern.exec(version);
-  if (!match) return null;
-
-  let major = Number(match[1]);
-  let minor = Number(match[2]);
-  let patch = Number(match[3]);
-
-  if (bump === "patch") patch++;
-  if (bump === "minor") {
-    minor++;
-    patch = 0;
-  }
-  if (bump === "major") {
-    major++;
-    minor = 0;
-    patch = 0;
-  }
-
-  return `${major}.${minor}.${patch}`;
+  const options = [
+    ["--version <semver>", "Release an explicit version without the version-selection prompt"],
+    ["--tag <tag>", "npm dist-tag; inferred from prerelease identifier or latest for stable versions"],
+    ["--dry-run", "Run checks, build, version bump, and npm pack dry-run, then restore package.json and skip publish"],
+    ["--allow-dirty", "Allow release-relevant local changes; intended for testing the release script itself"],
+    ["-h, --help", "Show this help"],
+  ] as const;
+  const optionWidth = Math.max(...options.map(([option]) => option.length));
+  const lines = options.map(
+    ([option, description]) => `  ${option.padEnd(optionWidth)}  ${description}`,
+  );
+  console.log(`Usage: bun run release -- [options]\n\nOptions:\n${lines.join("\n")}`);
 }
 
 async function readPackageJson(): Promise<PackageJson> {
@@ -84,11 +74,7 @@ async function restorePackageJsonIfNeeded(): Promise<void> {
 
 function envForCommand(command: string): Record<string, string | undefined> {
   if (command !== "npm") return process.env;
-
-  return {
-    ...process.env,
-    npm_config_cache: npmCache,
-  };
+  return npmEnvironment(process.env, npmCache);
 }
 
 function commandText(command: string, args: string[]): string {
@@ -277,9 +263,9 @@ async function selectVersion(
   rl: ReturnType<typeof createInterface>,
   currentVersion: string,
 ): Promise<string | null> {
-  const patch = bumpVersion(currentVersion, "patch");
-  const minor = bumpVersion(currentVersion, "minor");
-  const major = bumpVersion(currentVersion, "major");
+  const patch = inc(currentVersion, "patch");
+  const minor = inc(currentVersion, "minor");
+  const major = inc(currentVersion, "major");
 
   if (!patch || !minor || !major) {
     throw new Error(`Current package version is not valid semver: ${currentVersion}`);
@@ -314,7 +300,7 @@ async function selectVersion(
 
     if (choice === "4" || choice === "custom" || choice === "c") {
       const custom = (await rl.question("Version: ")).trim();
-      if (!semverPattern.test(custom)) {
+      if (!valid(custom)) {
         console.error(`Invalid semver: ${custom}`);
         continue;
       }
@@ -337,15 +323,9 @@ async function confirm(
   return answer === "y" || answer === "yes";
 }
 
-if (shouldShowHelp) {
+if (releaseOptions.showHelp) {
   printHelp();
   process.exit(0);
-}
-
-if (unknownArgs.length > 0) {
-  console.error(`Unknown release option(s): ${unknownArgs.join(", ")}`);
-  printHelp();
-  process.exit(1);
 }
 
 if (!process.stdin.isTTY) {
@@ -370,12 +350,16 @@ async function main(): Promise<void> {
   await assertNoReleaseRelevantChanges();
 
   const pkg = await readPackageJson();
-  const nextVersion = await selectVersion(rl, pkg.version);
+  const nextVersion = releaseOptions.version ?? (await selectVersion(rl, pkg.version));
 
   if (!nextVersion) {
     console.log("Release cancelled.");
     return;
   }
+  if (nextVersion === pkg.version) throw new Error("Version must change.");
+  const publishTag = publishTagForVersion(nextVersion, releaseOptions.tag);
+  console.log(`Release version: ${nextVersion}`);
+  console.log(`npm dist-tag: ${publishTag}`);
 
   await assertVersionNotPublished(pkg.name, nextVersion);
   await assertNpmPublishContext();
@@ -399,7 +383,7 @@ async function main(): Promise<void> {
 
   const shouldPublish = await confirm(
     rl,
-    `Publish ${pkg.name}@${nextVersion} to npm with the status above?`,
+    `Publish ${pkg.name}@${nextVersion} to npm with dist-tag "${publishTag}" and the status above?`,
   );
   if (!shouldPublish) {
     console.log("Publish skipped.");
@@ -410,10 +394,15 @@ async function main(): Promise<void> {
   // conformance:all already built above, and npm pack --dry-run showed the package
   // contents. Avoid a second lifecycle run producing a different publish.
   publishStarted = true;
-  await runCommand("npm", ["publish", "--ignore-scripts"], {
+  await runCommand("npm", [
+    "publish",
+    "--ignore-scripts",
+    "--tag",
+    publishTag,
+  ], {
     suspendPrompt: true,
   });
-  console.log(`Published ${pkg.name}@${nextVersion}.`);
+  console.log(`Published ${pkg.name}@${nextVersion} with npm dist-tag "${publishTag}".`);
   console.log(
     `Create a release commit/tag for ${pkg.name}@${nextVersion}; this script does not commit automatically.`,
   );
