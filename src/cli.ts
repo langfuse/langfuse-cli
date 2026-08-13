@@ -185,7 +185,7 @@ Options:
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
   --host <url>            Langfuse host (default: ${DEFAULT_HOST})
   --env <path>            Load env vars from a file
-  --api-version <version> Select a bundled historical API contract
+  --api-version <version> Exact/major version, latest, or auto
   --timeout <ms>          Request timeout (default: ${DEFAULT_TIMEOUT_MS})
   -h, --help              Show help
   --version               Show CLI version
@@ -701,7 +701,13 @@ async function runApi(config: RuntimeConfig, args: string[]): Promise<void> {
       return;
     }
     if (action === "current") {
-      process.stdout.write(`${config.apiVersion ?? catalog.latest}\n`);
+      const resolved = await resolveContractVersion({
+        requested: config.apiVersion,
+        host: config.host,
+        timeoutMs: config.timeoutMs,
+        catalog,
+      });
+      process.stdout.write(`${resolved.version}\n`);
       return;
     }
     if (action === "detect") {

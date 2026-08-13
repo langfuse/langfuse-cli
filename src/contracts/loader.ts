@@ -22,6 +22,20 @@ function compareVersion(left: string, right: string): number {
   return 0;
 }
 
+function requestedMajor(version: string): number | undefined {
+  const match = /^v?(\d+)(?:\.x)?$/i.exec(version);
+  return match ? Number(match[1]) : undefined;
+}
+
+function latestMajorEntry(
+  entries: ApiContractCatalogEntry[],
+  major: number,
+): ApiContractCatalogEntry | undefined {
+  return [...entries]
+    .filter((entry) => parseVersion(entry.version)?.[0] === major)
+    .sort((left, right) => compareVersion(right.version, left.version))[0];
+}
+
 export async function loadContractCatalog(): Promise<ApiContractCatalog> {
   const catalog = (await Bun.file(CATALOG_URL).json()) as ApiContractCatalog;
   if (catalog.schemaVersion !== 1 || !Array.isArray(catalog.versions)) {
@@ -81,14 +95,27 @@ export async function resolveContractVersion(params: {
     return { catalog, version: compatible.version, detected };
   }
   const exact = catalog.versions.find((entry) => entry.version === requested);
-  if (!exact) {
+  if (exact) return { catalog, version: exact.version };
+  const major = requestedMajor(requested);
+  if (major !== undefined) {
+    const latestInMajor = latestMajorEntry(catalog.versions, major);
+    if (latestInMajor) return { catalog, version: latestInMajor.version };
+    const availableMajors = [
+      ...new Set(
+        catalog.versions
+          .map((entry) => parseVersion(entry.version)?.[0])
+          .filter((value): value is number => value !== undefined),
+      ),
+    ].sort((left, right) => left - right);
     throw new Error(
-      `Unknown API version ${requested}. Available: ${catalog.versions
-        .map((entry) => entry.version)
-        .join(", ")}`,
+      `No bundled API contract for major version ${major}. Available majors: ${availableMajors.join(", ")}`,
     );
   }
-  return { catalog, version: exact.version };
+  throw new Error(
+    `Unknown API version ${requested}. Available: ${catalog.versions
+      .map((entry) => entry.version)
+      .join(", ")}`,
+  );
 }
 
 export async function loadApiContract(version: string): Promise<ApiContract> {
