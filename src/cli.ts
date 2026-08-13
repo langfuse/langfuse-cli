@@ -10,6 +10,7 @@ import type {
   ApiBodyField,
   ApiCallInput,
   ApiContract,
+  ApiContractCatalog,
   ApiOperation,
   ApiParameter,
   ApiResult,
@@ -465,10 +466,6 @@ function setBodyValue(
     if (Array.isArray(parsed)) body[field.name] = parsed;
     else if (Array.isArray(existing)) existing.push(parsed);
     else body[field.name] = [parsed];
-  } else if (existing !== undefined) {
-    body[field.name] = Array.isArray(existing)
-      ? [...existing, parsed]
-      : [existing, parsed];
   } else {
     body[field.name] = parsed;
   }
@@ -690,8 +687,12 @@ export async function writeResult(
   if (!result.ok) process.exitCode = 1;
 }
 
-async function runApi(config: RuntimeConfig, args: string[]): Promise<void> {
-  const catalog = await loadContractCatalog();
+export async function runApi(
+  config: RuntimeConfig,
+  args: string[],
+  providedCatalog?: ApiContractCatalog,
+): Promise<void> {
+  const catalog = providedCatalog ?? (await loadContractCatalog());
   if (args[0] === "versions") {
     const action = args[1] ?? "list";
     if (action === "list") {

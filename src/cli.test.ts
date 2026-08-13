@@ -8,6 +8,7 @@ import {
   operationByCommand,
   parseOperationInput,
   run,
+  runApi,
   schemaOutput,
   writeResult,
 } from "./cli";
@@ -296,6 +297,48 @@ paths:
     });
   });
 
+  test("uses last-wins for repeated scalar body flags and appends arrays", async () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      key: "POST /api/public/widgets",
+      operationId: "widgets_create",
+      method: "POST",
+      path: "/api/public/widgets",
+      command: { resource: "widgets", action: "create" },
+      pathParameterOrder: [],
+      parameters: [],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        legacyFieldFlags: true,
+        fields: [
+          { name: "content", required: true, kind: "string" },
+          {
+            name: "tags",
+            required: false,
+            kind: "array",
+            itemKind: "string",
+          },
+        ],
+      },
+    };
+
+    expect(
+      await parseOperationInput(operation, [
+        "--content",
+        "first",
+        "--content",
+        "second",
+        "--tags",
+        "one",
+        "--tags",
+        "two",
+      ]),
+    ).toMatchObject({
+      body: { content: "second", tags: ["one", "two"] },
+    });
+  });
+
   test("resolves tag and version command aliases", () => {
     const operation: ApiOperation = {
       ...promptGet,
@@ -317,6 +360,62 @@ paths:
     };
 
     expect(operationByCommand(contract, "scores-v3", "list")).toBe(operation);
+  });
+});
+
+describe("API version reporting", () => {
+  const catalog = {
+    schemaVersion: 1 as const,
+    latest: "4.10.0",
+    versions: [
+      { version: "3.150.0", sourceSha256: "old" },
+      { version: "3.216.0", sourceSha256: "new" },
+      { version: "4.10.0", sourceSha256: "latest" },
+    ],
+  };
+  const config = {
+    host: "http://localhost:3000",
+    timeoutMs: 1_000,
+    json: false,
+    curl: false,
+    showSecrets: false,
+  };
+
+  test("versions current prints the resolved major selection", async () => {
+    const output = await captureOutput(() =>
+      runApi({ ...config, apiVersion: "3" }, ["versions", "current"], catalog),
+    );
+
+    expect(output.stdout).toBe("3.216.0\n");
+    expect(output.stderr).toBe("");
+  });
+
+  test("versions current resolves auto instead of echoing it", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (): Promise<Response> =>
+      Response.json({ version: "3.216.1" })) as typeof fetch;
+    try {
+      const output = await captureOutput(() =>
+        runApi(
+          { ...config, apiVersion: "auto" },
+          ["versions", "current"],
+          catalog,
+        ),
+      );
+      expect(output.stdout).toBe("3.216.0\n");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("versions current rejects invalid selectors", async () => {
+    await expect(
+      runApi(
+        { ...config, apiVersion: "bogus" },
+        ["versions", "current"],
+        catalog,
+      ),
+    ).rejects.toThrow("Unknown API version bogus");
   });
 });
 

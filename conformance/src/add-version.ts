@@ -88,13 +88,17 @@ export function updateConformanceReadme(
   summaries: SpecSummary[],
 ): string {
   const total = summaries.reduce((sum, item) => sum + item.operations, 0);
-  let updated = content.replace(
+  let updated = replaceRequired(
+    content,
     /currently attempts all \d+ operations across .*? snapshots using/,
     `currently attempts all ${total} operations across ${summaries.length} pinned snapshots using`,
+    "historical adapter operation count",
   );
-  updated = updated.replace(
-    /passes all \d+ operations through/,
-    `passes all ${total} operations through`,
+  updated = replaceRequired(
+    updated,
+    /checks all \d+ operations through/,
+    `checks all ${total} operations through`,
+    "native adapter operation count",
   );
   const heading = "| Langfuse | Paths | Operations |";
   const tableStart = updated.indexOf(heading);
@@ -110,6 +114,18 @@ export function updateConformanceReadme(
     ),
   ].join("\n");
   return `${updated.slice(0, tableStart)}${table}${updated.slice(tableEnd)}`;
+}
+
+function replaceRequired(
+  content: string,
+  pattern: RegExp,
+  replacement: string,
+  label: string,
+): string {
+  if (!pattern.test(content)) {
+    throw new Error(`Could not find ${label} in conformance README`);
+  }
+  return content.replace(pattern, replacement);
 }
 
 function githubHeaders(): HeadersInit {
