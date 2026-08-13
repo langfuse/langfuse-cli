@@ -376,35 +376,22 @@ function addParameterValue(
 
 function setBodyValue(
   body: Record<string, JsonValue>,
-  path: string[],
   raw: string | undefined,
-  field?: ApiBodyField,
+  field: ApiBodyField,
 ): void {
-  let target = body;
-  for (const segment of path.slice(0, -1)) {
-    const existing = target[segment];
-    if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
-      target[segment] = {};
-    }
-    target = target[segment] as Record<string, JsonValue>;
-  }
-  const name = path.at(-1)!;
-  const kind =
-    path.length > 1
-      ? undefined
-      : field?.kind === "array"
-        ? field.itemKind
-        : field?.kind;
+  const kind = field.kind === "array" ? field.itemKind : field.kind;
   const parsed = parseJsonValue(raw ?? "true", kind);
-  const existing = target[name];
-  if (field?.kind === "array") {
-    if (Array.isArray(parsed)) target[name] = parsed;
+  const existing = body[field.name];
+  if (field.kind === "array") {
+    if (Array.isArray(parsed)) body[field.name] = parsed;
     else if (Array.isArray(existing)) existing.push(parsed);
-    else target[name] = [parsed];
+    else body[field.name] = [parsed];
   } else if (existing !== undefined) {
-    target[name] = Array.isArray(existing) ? [...existing, parsed] : [existing, parsed];
+    body[field.name] = Array.isArray(existing)
+      ? [...existing, parsed]
+      : [existing, parsed];
   } else {
-    target[name] = parsed;
+    body[field.name] = parsed;
   }
 }
 
@@ -467,6 +454,11 @@ export async function parseOperationInput(
           (candidate) => candidate.name === option.name.split(".")[0],
         )
       : undefined;
+    if (bodyField && option.name.includes(".")) {
+      throw new CliError(
+        `Nested body option --${option.name} is unsupported; pass --${bodyField.name} with a JSON object or use --body-json`,
+      );
+    }
     const isBoolean =
       parameter?.kind === "boolean" || bodyField?.kind === "boolean";
     let raw = option.inline;
@@ -509,7 +501,6 @@ export async function parseOperationInput(
         `${operation.operationId} requires --body-json or --body-file for request bodies`,
       );
     }
-    const path = option.name.split(".").filter(Boolean);
     const field = bodyField;
     if (!field) throw new CliError(`Unknown option --${option.name}`);
     if (option.negated && field.kind !== "boolean") {
@@ -519,7 +510,7 @@ export async function parseOperationInput(
       throw new CliError(`--${option.name} requires a value`);
     }
     fieldBody ??= {};
-    setBodyValue(fieldBody, path, option.negated ? "false" : raw, field);
+    setBodyValue(fieldBody, option.negated ? "false" : raw, field);
   }
   if (completeBody !== undefined && fieldBody !== undefined) {
     throw new CliError("Do not mix --body-json/--body-file with body field flags");

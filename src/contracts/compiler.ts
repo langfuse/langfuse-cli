@@ -1,6 +1,6 @@
 import { parse } from "yaml";
 
-import { planCommandNames } from "../../conformance/src/naming";
+import { kebabCase, planCommandNames } from "../../conformance/src/naming";
 import type {
   ApiBodyField,
   ApiContract,
@@ -48,17 +48,6 @@ const LEGACY_FIELD_FLAGS_UNSUPPORTED = new Set([
   "unstable_evaluationRules_create",
   "unstable_evaluators_create",
 ]);
-
-function kebabCase(input: string): string {
-  return input
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .replace(/[\s_.:/]+/g, "-")
-    .replace(/[^a-zA-Z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase();
-}
 
 function resolveLocalRef(
   document: Record<string, any>,

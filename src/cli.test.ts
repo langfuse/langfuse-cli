@@ -176,6 +176,65 @@ paths:
       await parseOperationInput(operation, ["--customModels", "123"]),
     ).toMatchObject({ body: { customModels: ["123"] } });
   });
+
+  test("rejects nested body flags without consuming a positional", async () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      key: "PATCH /api/public/widgets/{widgetId}",
+      operationId: "widgets_update",
+      method: "PATCH",
+      path: "/api/public/widgets/{widgetId}",
+      command: {
+        resource: "widgets",
+        action: "update",
+        canonicalAction: "update",
+      },
+      pathParameterOrder: ["widgetId"],
+      parameters: [
+        {
+          location: "path",
+          name: "widgetId",
+          cliName: "widget-id",
+          required: true,
+          style: "simple",
+          explode: false,
+          kind: "string",
+        },
+      ],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        legacyFieldFlags: true,
+        fields: [
+          {
+            name: "chartConfig",
+            required: false,
+            kind: "object",
+          },
+        ],
+      },
+    };
+
+    await expect(
+      parseOperationInput(operation, [
+        "--chartConfig.show_value_labels",
+        "widget-123",
+      ]),
+    ).rejects.toThrow(
+      "Nested body option --chartConfig.show_value_labels is unsupported; pass --chartConfig with a JSON object or use --body-json",
+    );
+
+    expect(
+      await parseOperationInput(operation, [
+        "widget-123",
+        "--chartConfig",
+        '{"show_value_labels":true}',
+      ]),
+    ).toMatchObject({
+      path: { widgetId: "widget-123" },
+      body: { chartConfig: { show_value_labels: true } },
+    });
+  });
 });
 
 describe("result output", () => {
