@@ -124,6 +124,11 @@ function applyParameterFlagAliases(
     for (const field of operation.requestBody.fields) taken.add(field.name);
   }
   for (const spec of aliases) {
+    if ((spec.location as string) === "path") {
+      throw new Error(
+        `${operation.operationId}: flag alias --${spec.flag} targets path parameter "${spec.parameter}"; path parameters are positional and cannot have flag aliases`,
+      );
+    }
     const parameter = operation.parameters.find(
       (candidate) =>
         candidate.location === spec.location && candidate.name === spec.parameter,

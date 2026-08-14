@@ -47,7 +47,10 @@ export interface ApiParameter {
 }
 
 export interface ParameterFlagAlias {
-  location: "path" | "query" | "header" | "cookie";
+  // Path parameters are positional at the CLI and can never carry flag
+  // aliases; the compiler also rejects "path" at runtime since overrides.json
+  // bypasses the type system.
+  location: "query" | "header" | "cookie";
   parameter: string;
   flag: string;
 }

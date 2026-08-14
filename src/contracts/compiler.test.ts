@@ -81,6 +81,35 @@ describe("contract overrides", () => {
     ).toThrow("collides with an existing option");
   });
 
+  test("rejects an alias targeting a path parameter", () => {
+    expect(() =>
+      compileApiContract(
+        SOURCE,
+        `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /widgets/{id}:
+    get:
+      operationId: widgets_get
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: ok }
+`,
+        overrides({
+          parameterFlagAliases: {
+            widgets_get: [
+              { location: "path", parameter: "id", flag: "widget-id" } as any,
+            ],
+          },
+        }),
+      ),
+    ).toThrow("path parameters are positional");
+  });
+
   test("rejects an alias colliding with a reserved or global flag", () => {
     for (const flag of ["json", "body-json", "output"]) {
       expect(() =>
