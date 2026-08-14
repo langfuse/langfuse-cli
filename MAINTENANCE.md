@@ -51,7 +51,11 @@ bun run goldens:update
 Hand-written naming exceptions (extra parameter flag spellings such as
 `--prompt-version`, and per-version command overrides) live in
 `src/contracts/overrides.json` and are applied by the contract compiler, never
-hardcoded in the runtime.
+hardcoded in the runtime. Alias flags are validated against every runtime flag
+namespace (parameters, body fields, reserved and global flags). A snapshot
+that lacks the referenced parameter skips the alias, but an entry applied in
+no snapshot at all fails the build, tests, and `goldens:update`, so stale
+overrides cannot rot silently.
 
 ## Releases
 

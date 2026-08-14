@@ -339,6 +339,24 @@
     "action": "update"
   },
   {
+    "operationId": "promptVersion_update",
+    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
+    "resource": "prompts",
+    "action": "update-version",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "update-version",
+        "source": "version"
+      },
+      {
+        "resource": "prompt-version",
+        "action": "update-version",
+        "source": "tag"
+      }
+    ]
+  },
+  {
     "operationId": "prompts_create",
     "key": "POST /api/public/v2/prompts",
     "resource": "prompts",
@@ -374,24 +392,6 @@
         "resource": "prompts-v2",
         "action": "list",
         "source": "version"
-      }
-    ]
-  },
-  {
-    "operationId": "promptVersion_update",
-    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
-    "resource": "prompts",
-    "action": "update-version",
-    "aliases": [
-      {
-        "resource": "prompts-v2",
-        "action": "update-version",
-        "source": "version"
-      },
-      {
-        "resource": "prompt-version",
-        "action": "update-version",
-        "source": "tag"
       }
     ]
   },
@@ -436,32 +436,6 @@
     "key": "GET /api/public/scim/Users",
     "resource": "scim",
     "action": "list-users"
-  },
-  {
-    "operationId": "score_create",
-    "key": "POST /api/public/scores",
-    "resource": "scores",
-    "action": "create",
-    "aliases": [
-      {
-        "resource": "score",
-        "action": "create",
-        "source": "tag"
-      }
-    ]
-  },
-  {
-    "operationId": "score_delete",
-    "key": "DELETE /api/public/scores/{scoreId}",
-    "resource": "scores",
-    "action": "delete",
-    "aliases": [
-      {
-        "resource": "score",
-        "action": "delete",
-        "source": "tag"
-      }
-    ]
   },
   {
     "operationId": "scoreConfigs_create",
@@ -513,6 +487,32 @@
       {
         "resource": "score-v2",
         "action": "get",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "score_create",
+    "key": "POST /api/public/scores",
+    "resource": "scores",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "score",
+        "action": "create",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "score_delete",
+    "key": "DELETE /api/public/scores/{scoreId}",
+    "resource": "scores",
+    "action": "delete",
+    "aliases": [
+      {
+        "resource": "score",
+        "action": "delete",
         "source": "tag"
       }
     ]

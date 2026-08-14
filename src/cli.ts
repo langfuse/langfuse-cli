@@ -4,6 +4,7 @@ import { text as streamText } from "node:stream/consumers";
 import packageJson from "../package.json";
 
 import { createApiClient, renderCurl } from "./client";
+import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
 import {
   loadApiContract,
   loadContractCatalog,
@@ -26,16 +27,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const LANGFUSE_SKILL_URL =
   "https://raw.githubusercontent.com/langfuse/skills/main/skills/langfuse/SKILL.md";
 const GET_SKILL_FETCH_TIMEOUT_MS = 5_000;
-const VALUE_FLAGS = new Set([
-  "--public-key",
-  "--secret-key",
-  "--host",
-  "--env",
-  "--api-version",
-  "--timeout",
-  "--output",
-]);
-const BOOLEAN_FLAGS = new Set(["--json", "--curl", "--show-secrets"]);
+const VALUE_FLAGS = new Set(GLOBAL_VALUE_FLAG_NAMES.map((name) => `--${name}`));
+const BOOLEAN_FLAGS = new Set(
+  GLOBAL_BOOLEAN_FLAG_NAMES.map((name) => `--${name}`),
+);
 
 interface ParsedGlobals {
   values: Record<string, string>;
@@ -435,6 +430,7 @@ function addParameterValue(
   input: ApiCallInput,
   parameter: ApiParameter,
   raw: string | undefined,
+  typedFlag: string,
 ): void {
   const target =
     parameter.location === "path"
@@ -445,7 +441,7 @@ function addParameterValue(
           ? input.headers
           : input.cookies;
   if (raw === undefined && parameter.kind !== "boolean") {
-    throw new CliError(`--${parameter.cliName} requires a value`);
+    throw new CliError(`--${typedFlag} requires a value`);
   }
   const parsed = parseJsonValue(raw ?? "true", parameter.itemKind ?? parameter.kind);
   if (parameter.kind === "array") {
@@ -567,7 +563,7 @@ export async function parseOperationInput(
       if (option.negated && parameter.kind !== "boolean") {
         throw new CliError(`--no-${option.name} is only valid for boolean options`);
       }
-      addParameterValue(input, parameter, option.negated ? "false" : raw);
+      addParameterValue(input, parameter, option.negated ? "false" : raw, option.name);
       continue;
     }
     if (!operation.requestBody) {

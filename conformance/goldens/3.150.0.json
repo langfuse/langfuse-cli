@@ -252,12 +252,6 @@
     "action": "update"
   },
   {
-    "operationId": "metrics_metrics",
-    "key": "GET /api/public/metrics",
-    "resource": "metrics",
-    "action": "get"
-  },
-  {
     "operationId": "metricsV2_metrics",
     "key": "GET /api/public/v2/metrics",
     "resource": "metrics",
@@ -269,6 +263,12 @@
         "source": "version"
       }
     ]
+  },
+  {
+    "operationId": "metrics_metrics",
+    "key": "GET /api/public/metrics",
+    "resource": "metrics",
+    "action": "get"
   },
   {
     "operationId": "models_create",
@@ -295,18 +295,6 @@
     "action": "list"
   },
   {
-    "operationId": "observations_get",
-    "key": "GET /api/public/observations/{observationId}",
-    "resource": "observations",
-    "action": "get"
-  },
-  {
-    "operationId": "observations_getMany",
-    "key": "GET /api/public/observations",
-    "resource": "observations",
-    "action": "list"
-  },
-  {
     "operationId": "observationsV2_getMany",
     "key": "GET /api/public/v2/observations",
     "resource": "observations",
@@ -318,6 +306,18 @@
         "source": "version"
       }
     ]
+  },
+  {
+    "operationId": "observations_get",
+    "key": "GET /api/public/observations/{observationId}",
+    "resource": "observations",
+    "action": "get"
+  },
+  {
+    "operationId": "observations_getMany",
+    "key": "GET /api/public/observations",
+    "resource": "observations",
+    "action": "list"
   },
   {
     "operationId": "opentelemetry_exportTraces",
@@ -428,6 +428,24 @@
     "action": "update"
   },
   {
+    "operationId": "promptVersion_update",
+    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
+    "resource": "prompts",
+    "action": "update-version",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "update-version",
+        "source": "version"
+      },
+      {
+        "resource": "prompt-version",
+        "action": "update-version",
+        "source": "tag"
+      }
+    ]
+  },
+  {
     "operationId": "prompts_create",
     "key": "POST /api/public/v2/prompts",
     "resource": "prompts",
@@ -480,24 +498,6 @@
     ]
   },
   {
-    "operationId": "promptVersion_update",
-    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
-    "resource": "prompts",
-    "action": "update-version",
-    "aliases": [
-      {
-        "resource": "prompts-v2",
-        "action": "update-version",
-        "source": "version"
-      },
-      {
-        "resource": "prompt-version",
-        "action": "update-version",
-        "source": "tag"
-      }
-    ]
-  },
-  {
     "operationId": "scim_createUser",
     "key": "POST /api/public/scim/Users",
     "resource": "scim",
@@ -538,32 +538,6 @@
     "key": "GET /api/public/scim/Users",
     "resource": "scim",
     "action": "list-users"
-  },
-  {
-    "operationId": "score_create",
-    "key": "POST /api/public/scores",
-    "resource": "scores",
-    "action": "create",
-    "aliases": [
-      {
-        "resource": "score",
-        "action": "create",
-        "source": "tag"
-      }
-    ]
-  },
-  {
-    "operationId": "score_delete",
-    "key": "DELETE /api/public/scores/{scoreId}",
-    "resource": "scores",
-    "action": "delete",
-    "aliases": [
-      {
-        "resource": "score",
-        "action": "delete",
-        "source": "tag"
-      }
-    ]
   },
   {
     "operationId": "scoreConfigs_create",
@@ -621,6 +595,32 @@
       {
         "resource": "score-v2",
         "action": "get",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "score_create",
+    "key": "POST /api/public/scores",
+    "resource": "scores",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "score",
+        "action": "create",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "score_delete",
+    "key": "DELETE /api/public/scores/{scoreId}",
+    "resource": "scores",
+    "action": "delete",
+    "aliases": [
+      {
+        "resource": "score",
+        "action": "delete",
         "source": "tag"
       }
     ]

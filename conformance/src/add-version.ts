@@ -18,8 +18,8 @@ import {
   goldenPath,
   loadGoldenSurface,
 } from "./goldens";
-import { compileOpenApi } from "./openapi";
-import type { Catalog, CatalogEntry, CommandName } from "./types";
+import { compileOpenApi, type CompiledSpec } from "./openapi";
+import type { Catalog, CatalogEntry } from "./types";
 
 const README_PATH = resolve(CONFORMANCE_ROOT, "README.md");
 const USER_AGENT = "langfuse-cli-conformance-suite";
@@ -213,17 +213,18 @@ async function knownIssues(raw: string): Promise<string[] | undefined> {
 async function specSummaries(
   catalog: Catalog,
   newEntry: CatalogEntry,
-  newRaw: string,
-  newCommands: Record<string, CommandName>,
+  newCompiled: CompiledSpec,
 ): Promise<SpecSummary[]> {
   return Promise.all(
     catalog.versions.map(async (entry) => {
-      const isNew = entry.version === newEntry.version;
-      const raw = isNew ? newRaw : await readVerifiedSpec(entry);
-      const commands = isNew
-        ? newCommands
-        : commandsByOperationId(await loadGoldenSurface(entry.version));
-      const compiled = compileOpenApi(entry, raw, commands);
+      const compiled =
+        entry.version === newEntry.version
+          ? newCompiled
+          : compileOpenApi(
+              entry,
+              await readVerifiedSpec(entry),
+              commandsByOperationId(await loadGoldenSurface(entry.version)),
+            );
       return {
         version: entry.version,
         paths: Object.keys(compiled.document.paths ?? {}).length,
@@ -275,7 +276,7 @@ async function addVersion(
     throw new Error(`Unsupported OpenAPI features: ${compiled.unsupported.join(", ")}`);
   }
   const updatedCatalog = withCatalogEntry(catalog, entry);
-  const summaries = await specSummaries(updatedCatalog, entry, raw, newCommands);
+  const summaries = await specSummaries(updatedCatalog, entry, compiled);
   const updatedReadme = updateConformanceReadme(originalReadme, summaries);
   process.stdout.write(
     `${tag} -> ${commit}\nSHA-256 ${entry.sha256}\n${compiled.manifest.operations.length} operations\n`,

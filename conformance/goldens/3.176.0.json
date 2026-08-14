@@ -73,19 +73,6 @@
     ]
   },
   {
-    "operationId": "blobStorageIntegrations_getBlobStorageIntegrations",
-    "key": "GET /api/public/integrations/blob-storage",
-    "resource": "integrations",
-    "action": "list-blob-storage",
-    "aliases": [
-      {
-        "resource": "blob-storage-integrations",
-        "action": "list-blob-storage",
-        "source": "tag"
-      }
-    ]
-  },
-  {
     "operationId": "blobStorageIntegrations_getBlobStorageIntegrationStatus",
     "key": "GET /api/public/integrations/blob-storage/{id}",
     "resource": "integrations",
@@ -94,6 +81,19 @@
       {
         "resource": "blob-storage-integrations",
         "action": "get-blob-storage-integration-status",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "blobStorageIntegrations_getBlobStorageIntegrations",
+    "key": "GET /api/public/integrations/blob-storage",
+    "resource": "integrations",
+    "action": "list-blob-storage",
+    "aliases": [
+      {
+        "resource": "blob-storage-integrations",
+        "action": "list-blob-storage",
         "source": "tag"
       }
     ]
@@ -494,6 +494,24 @@
     "action": "update"
   },
   {
+    "operationId": "promptVersion_update",
+    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
+    "resource": "prompts",
+    "action": "update-version",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "update-version",
+        "source": "version"
+      },
+      {
+        "resource": "prompt-version",
+        "action": "update-version",
+        "source": "tag"
+      }
+    ]
+  },
+  {
     "operationId": "prompts_create",
     "key": "POST /api/public/v2/prompts",
     "resource": "prompts",
@@ -542,24 +560,6 @@
         "resource": "prompts-v2",
         "action": "list",
         "source": "version"
-      }
-    ]
-  },
-  {
-    "operationId": "promptVersion_update",
-    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
-    "resource": "prompts",
-    "action": "update-version",
-    "aliases": [
-      {
-        "resource": "prompts-v2",
-        "action": "update-version",
-        "source": "version"
-      },
-      {
-        "resource": "prompt-version",
-        "action": "update-version",
-        "source": "tag"
       }
     ]
   },

@@ -1,0 +1,156 @@
+import { describe, expect, test } from "bun:test";
+
+import { assertOverridesApplied, compileApiContract } from "./compiler";
+import type { ContractOverrides } from "./types";
+
+const SOURCE = { version: "test", ref: "test", sha256: "test" };
+
+function overrides(partial: Partial<ContractOverrides>): ContractOverrides {
+  return {
+    schemaVersion: 1,
+    parameterFlagAliases: {},
+    commandOverrides: {},
+    ...partial,
+  };
+}
+
+const spec = `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /widgets:
+    get:
+      operationId: widgets_list
+      tags: [Widget]
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        '200': { description: ok }
+  /gadgets:
+    get:
+      operationId: gadgets_list
+      responses:
+        '200': { description: ok }
+  /things:
+    post:
+      operationId: things_create
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        '201': { description: created }
+`;
+
+describe("contract overrides", () => {
+  test("applies a parameter flag alias and verifies application", () => {
+    const withAlias = overrides({
+      parameterFlagAliases: {
+        widgets_list: [{ location: "query", parameter: "q", flag: "query" }],
+      },
+    });
+    const contract = compileApiContract(SOURCE, spec, withAlias);
+    const parameter = contract.operations
+      .find((operation) => operation.operationId === "widgets_list")!
+      .parameters.find((candidate) => candidate.name === "q")!;
+    expect(parameter.cliAliases).toEqual(["query"]);
+    expect(() => assertOverridesApplied([contract], withAlias)).not.toThrow();
+  });
+
+  test("rejects an alias colliding with a legacy body-field flag", () => {
+    expect(() =>
+      compileApiContract(
+        SOURCE,
+        spec,
+        overrides({
+          parameterFlagAliases: {
+            things_create: [{ location: "query", parameter: "q", flag: "name" }],
+          },
+        }),
+      ),
+    ).toThrow("collides with an existing option");
+  });
+
+  test("rejects an alias colliding with a reserved or global flag", () => {
+    for (const flag of ["json", "body-json", "output"]) {
+      expect(() =>
+        compileApiContract(
+          SOURCE,
+          spec,
+          overrides({
+            parameterFlagAliases: {
+              widgets_list: [{ location: "query", parameter: "q", flag }],
+            },
+          }),
+        ),
+      ).toThrow("collides with an existing option");
+    }
+  });
+
+  test("rejects a command override colliding with another operation's alias", () => {
+    // widgets_list carries the tag alias "widget list"; renaming gadgets_list
+    // onto that pair must fail instead of silently shadowing it at runtime.
+    expect(() =>
+      compileApiContract(
+        SOURCE,
+        spec,
+        overrides({
+          commandOverrides: {
+            test: { gadgets_list: { resource: "widget", action: "list" } },
+          },
+        }),
+      ),
+    ).toThrow("duplicate command widget list");
+  });
+
+  test("tolerates a missing parameter per version but rejects entries applied nowhere", () => {
+    const stale = overrides({
+      parameterFlagAliases: {
+        widgets_list: [
+          { location: "query", parameter: "missing", flag: "query" },
+        ],
+      },
+    });
+    const contract = compileApiContract(SOURCE, spec, stale);
+    expect(() => assertOverridesApplied([contract], stale)).toThrow(
+      "applied in no compiled contract",
+    );
+    const unknownOperation = overrides({
+      parameterFlagAliases: {
+        nonexistent_op: [{ location: "query", parameter: "q", flag: "query" }],
+      },
+    });
+    expect(() =>
+      assertOverridesApplied(
+        [compileApiContract(SOURCE, spec, unknownOperation)],
+        unknownOperation,
+      ),
+    ).toThrow("applied in no compiled contract");
+  });
+
+  test("rejects command overrides for unknown versions or operations", () => {
+    const contract = compileApiContract(SOURCE, spec);
+    expect(() =>
+      assertOverridesApplied(
+        [contract],
+        overrides({ commandOverrides: { "9.9.9": {} } }),
+      ),
+    ).toThrow("unknown version");
+    expect(() =>
+      assertOverridesApplied(
+        [contract],
+        overrides({ commandOverrides: { test: { nope: { action: "list" } } } }),
+      ),
+    ).toThrow("matches no operation");
+  });
+});

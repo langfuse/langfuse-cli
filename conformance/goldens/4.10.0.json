@@ -73,19 +73,6 @@
     ]
   },
   {
-    "operationId": "blobStorageIntegrations_getBlobStorageIntegrations",
-    "key": "GET /api/public/integrations/blob-storage",
-    "resource": "integrations",
-    "action": "list-blob-storage",
-    "aliases": [
-      {
-        "resource": "blob-storage-integrations",
-        "action": "list-blob-storage",
-        "source": "tag"
-      }
-    ]
-  },
-  {
     "operationId": "blobStorageIntegrations_getBlobStorageIntegrationStatus",
     "key": "GET /api/public/integrations/blob-storage/{id}",
     "resource": "integrations",
@@ -94,6 +81,19 @@
       {
         "resource": "blob-storage-integrations",
         "action": "get-blob-storage-integration-status",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "blobStorageIntegrations_getBlobStorageIntegrations",
+    "key": "GET /api/public/integrations/blob-storage",
+    "resource": "integrations",
+    "action": "list-blob-storage",
+    "aliases": [
+      {
+        "resource": "blob-storage-integrations",
+        "action": "list-blob-storage",
         "source": "tag"
       }
     ]
@@ -555,6 +555,24 @@
     "action": "update"
   },
   {
+    "operationId": "promptVersion_update",
+    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
+    "resource": "prompts",
+    "action": "update-version",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "update-version",
+        "source": "version"
+      },
+      {
+        "resource": "prompt-version",
+        "action": "update-version",
+        "source": "tag"
+      }
+    ]
+  },
+  {
     "operationId": "prompts_create",
     "key": "POST /api/public/v2/prompts",
     "resource": "prompts",
@@ -603,24 +621,6 @@
         "resource": "prompts-v2",
         "action": "list",
         "source": "version"
-      }
-    ]
-  },
-  {
-    "operationId": "promptVersion_update",
-    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
-    "resource": "prompts",
-    "action": "update-version",
-    "aliases": [
-      {
-        "resource": "prompts-v2",
-        "action": "update-version",
-        "source": "version"
-      },
-      {
-        "resource": "prompt-version",
-        "action": "update-version",
-        "source": "tag"
       }
     ]
   },
@@ -691,6 +691,19 @@
     "action": "update"
   },
   {
+    "operationId": "scoresV3_getManyV3",
+    "key": "GET /api/public/v3/scores",
+    "resource": "scores",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "scores-v3",
+        "action": "list",
+        "source": "version"
+      }
+    ]
+  },
+  {
     "operationId": "scores_create",
     "key": "POST /api/public/scores",
     "resource": "scores",
@@ -716,19 +729,6 @@
     "resource": "scores-v2",
     "action": "list",
     "deprecated": true
-  },
-  {
-    "operationId": "scoresV3_getManyV3",
-    "key": "GET /api/public/v3/scores",
-    "resource": "scores",
-    "action": "list",
-    "aliases": [
-      {
-        "resource": "scores-v3",
-        "action": "list",
-        "source": "version"
-      }
-    ]
   },
   {
     "operationId": "sessions_get",
@@ -823,6 +823,36 @@
     "deprecated": true
   },
   {
+    "operationId": "unstable_dashboardWidgets_create",
+    "key": "POST /api/public/unstable/dashboard-widgets",
+    "resource": "unstable-dashboard-widgets",
+    "action": "create"
+  },
+  {
+    "operationId": "unstable_dashboardWidgets_delete",
+    "key": "DELETE /api/public/unstable/dashboard-widgets/{widgetId}",
+    "resource": "unstable-dashboard-widgets",
+    "action": "delete"
+  },
+  {
+    "operationId": "unstable_dashboardWidgets_get",
+    "key": "GET /api/public/unstable/dashboard-widgets/{widgetId}",
+    "resource": "unstable-dashboard-widgets",
+    "action": "get"
+  },
+  {
+    "operationId": "unstable_dashboardWidgets_list",
+    "key": "GET /api/public/unstable/dashboard-widgets",
+    "resource": "unstable-dashboard-widgets",
+    "action": "list"
+  },
+  {
+    "operationId": "unstable_dashboardWidgets_update",
+    "key": "PATCH /api/public/unstable/dashboard-widgets/{widgetId}",
+    "resource": "unstable-dashboard-widgets",
+    "action": "update"
+  },
+  {
     "operationId": "unstable_dashboards_addPlacement",
     "key": "POST /api/public/unstable/dashboards/{dashboardId}/placements",
     "resource": "unstable-dashboards",
@@ -869,36 +899,6 @@
     "key": "PATCH /api/public/unstable/dashboards/{dashboardId}/placements/{placementId}",
     "resource": "unstable-dashboards",
     "action": "update-placement"
-  },
-  {
-    "operationId": "unstable_dashboardWidgets_create",
-    "key": "POST /api/public/unstable/dashboard-widgets",
-    "resource": "unstable-dashboard-widgets",
-    "action": "create"
-  },
-  {
-    "operationId": "unstable_dashboardWidgets_delete",
-    "key": "DELETE /api/public/unstable/dashboard-widgets/{widgetId}",
-    "resource": "unstable-dashboard-widgets",
-    "action": "delete"
-  },
-  {
-    "operationId": "unstable_dashboardWidgets_get",
-    "key": "GET /api/public/unstable/dashboard-widgets/{widgetId}",
-    "resource": "unstable-dashboard-widgets",
-    "action": "get"
-  },
-  {
-    "operationId": "unstable_dashboardWidgets_list",
-    "key": "GET /api/public/unstable/dashboard-widgets",
-    "resource": "unstable-dashboard-widgets",
-    "action": "list"
-  },
-  {
-    "operationId": "unstable_dashboardWidgets_update",
-    "key": "PATCH /api/public/unstable/dashboard-widgets/{widgetId}",
-    "resource": "unstable-dashboard-widgets",
-    "action": "update"
   },
   {
     "operationId": "unstable_evaluationRules_create",

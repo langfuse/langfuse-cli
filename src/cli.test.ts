@@ -168,6 +168,12 @@ describe("operation input parsing", () => {
     ]);
 
     expect(input.query.version).toBe(2);
+
+    // Missing-value errors must name the flag the user actually typed,
+    // not the canonical cliName the alias resolves to.
+    await expect(
+      parseOperationInput(operation, ["my-prompt-name", "--prompt-version"]),
+    ).rejects.toThrow("--prompt-version requires a value");
   });
 
   test("preserves the item type of array request-body flags", async () => {

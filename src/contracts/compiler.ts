@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 
+import { RESERVED_OPTION_NAMES } from "../flags";
 import { kebabCase, planCommandNames } from "./naming";
 import rawOverrides from "./overrides.json";
 import type {
@@ -101,34 +102,99 @@ function schemaKind(
 
 const OVERRIDES = rawOverrides as ContractOverrides;
 
+interface AliasTarget {
+  operationId: string;
+  parameters: ApiParameter[];
+  requestBody?: ApiOperation["requestBody"];
+}
+
 function applyParameterFlagAliases(
-  operationId: string,
-  parameters: ApiParameter[],
+  operation: AliasTarget,
+  overrides: ContractOverrides,
 ): void {
-  const aliases = OVERRIDES.parameterFlagAliases[operationId];
+  const aliases = overrides.parameterFlagAliases[operation.operationId];
   if (!aliases) return;
-  const taken = new Set(
-    parameters
-      .filter((parameter) => parameter.location !== "path")
-      .map((parameter) => parameter.cliName),
-  );
+  // Every flag namespace the runtime resolves before or alongside parameters:
+  // reserved/global flags, parameter cliNames, and legacy body-field flags.
+  const taken = new Set<string>(RESERVED_OPTION_NAMES);
+  for (const parameter of operation.parameters) {
+    if (parameter.location !== "path") taken.add(parameter.cliName);
+  }
+  if (operation.requestBody?.legacyFieldFlags) {
+    for (const field of operation.requestBody.fields) taken.add(field.name);
+  }
   for (const spec of aliases) {
-    const parameter = parameters.find(
+    const parameter = operation.parameters.find(
       (candidate) =>
         candidate.location === spec.location && candidate.name === spec.parameter,
     );
-    if (!parameter) {
-      throw new Error(
-        `${operationId}: flag alias --${spec.flag} references missing ${spec.location} parameter ${spec.parameter}`,
-      );
-    }
+    // A missing parameter is tolerated per version (specs evolve); an entry
+    // applied in no snapshot at all is rejected by assertOverridesApplied.
+    if (!parameter) continue;
     if (taken.has(spec.flag)) {
       throw new Error(
-        `${operationId}: flag alias --${spec.flag} collides with an existing option`,
+        `${operation.operationId}: flag alias --${spec.flag} collides with an existing option`,
       );
     }
     taken.add(spec.flag);
     parameter.cliAliases = [...(parameter.cliAliases ?? []), spec.flag];
+  }
+}
+
+export function assertOverridesApplied(
+  contracts: ApiContract[],
+  overrides: ContractOverrides = OVERRIDES,
+): void {
+  for (const [operationId, aliases] of Object.entries(
+    overrides.parameterFlagAliases,
+  )) {
+    for (const spec of aliases) {
+      const applied = contracts.some((contract) =>
+        contract.operations.some(
+          (operation) =>
+            operation.operationId === operationId &&
+            operation.parameters.some(
+              (parameter) =>
+                parameter.location === spec.location &&
+                parameter.name === spec.parameter &&
+                parameter.cliAliases?.includes(spec.flag),
+            ),
+        ),
+      );
+      if (!applied) {
+        throw new Error(
+          `overrides.json: flag alias --${spec.flag} for ${operationId} ${spec.location} parameter "${spec.parameter}" is applied in no compiled contract; fix or remove the entry`,
+        );
+      }
+    }
+  }
+  for (const [version, byOperation] of Object.entries(overrides.commandOverrides)) {
+    const contract = contracts.find(
+      (candidate) => candidate.apiVersion === version,
+    );
+    if (!contract) {
+      throw new Error(
+        `overrides.json: commandOverrides references unknown version ${version}`,
+      );
+    }
+    for (const [operationId, override] of Object.entries(byOperation)) {
+      const operation = contract.operations.find(
+        (candidate) => candidate.operationId === operationId,
+      );
+      if (!operation) {
+        throw new Error(
+          `overrides.json: commandOverrides ${version}/${operationId} matches no operation`,
+        );
+      }
+      if (
+        (override.resource && operation.command.resource !== override.resource) ||
+        (override.action && operation.command.action !== override.action)
+      ) {
+        throw new Error(
+          `overrides.json: commandOverrides ${version}/${operationId} was not applied`,
+        );
+      }
+    }
   }
 }
 
@@ -285,6 +351,7 @@ function normalizeRequestBody(
 export function compileApiContract(
   source: ContractSource,
   raw: string,
+  overrides: ContractOverrides = OVERRIDES,
 ): ApiContract {
   const document = parse(raw, {
     maxAliasCount: 100_000,
@@ -353,21 +420,26 @@ export function compileApiContract(
     return left.method.localeCompare(right.method);
   });
   for (const operation of pending) {
-    applyParameterFlagAliases(operation.operationId, operation.parameters);
+    applyParameterFlagAliases(operation, overrides);
   }
   const names = planCommandNames(pending);
-  const commandOverrides = OVERRIDES.commandOverrides[source.version] ?? {};
+  const commandOverrides = overrides.commandOverrides[source.version] ?? {};
   pending.forEach((operation, index) => {
     const override = commandOverrides[operation.operationId];
     if (override) names[index] = { ...names[index], ...override };
   });
   const seenCommands = new Set<string>();
   for (const name of names) {
-    const command = `${name.resource} ${name.action}`;
-    if (seenCommands.has(command)) {
-      throw new Error(`${source.ref}: duplicate command ${command}`);
+    const commands = [
+      `${name.resource} ${name.action}`,
+      ...(name.aliases ?? []).map((alias) => `${alias.resource} ${alias.action}`),
+    ];
+    for (const command of commands) {
+      if (seenCommands.has(command)) {
+        throw new Error(`${source.ref}: duplicate command ${command}`);
+      }
+      seenCommands.add(command);
     }
-    seenCommands.add(command);
   }
   const operations: ApiOperation[] = pending.map(
     ({ tags: _tags, ...operation }, index) => ({
