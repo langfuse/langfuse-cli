@@ -1,11 +1,13 @@
 import { parse } from "yaml";
 
-import { kebabCase, planCommandNames } from "../../conformance/src/naming";
+import { kebabCase, planCommandNames } from "./naming";
+import rawOverrides from "./overrides.json";
 import type {
   ApiBodyField,
   ApiContract,
   ApiOperation,
   ApiParameter,
+  ContractOverrides,
   HttpMethod,
   ValueKind,
 } from "./types";
@@ -95,6 +97,39 @@ function schemaKind(
     return kinds.size === 1 ? [...kinds][0] : "object";
   }
   return "string";
+}
+
+const OVERRIDES = rawOverrides as ContractOverrides;
+
+function applyParameterFlagAliases(
+  operationId: string,
+  parameters: ApiParameter[],
+): void {
+  const aliases = OVERRIDES.parameterFlagAliases[operationId];
+  if (!aliases) return;
+  const taken = new Set(
+    parameters
+      .filter((parameter) => parameter.location !== "path")
+      .map((parameter) => parameter.cliName),
+  );
+  for (const spec of aliases) {
+    const parameter = parameters.find(
+      (candidate) =>
+        candidate.location === spec.location && candidate.name === spec.parameter,
+    );
+    if (!parameter) {
+      throw new Error(
+        `${operationId}: flag alias --${spec.flag} references missing ${spec.location} parameter ${spec.parameter}`,
+      );
+    }
+    if (taken.has(spec.flag)) {
+      throw new Error(
+        `${operationId}: flag alias --${spec.flag} collides with an existing option`,
+      );
+    }
+    taken.add(spec.flag);
+    parameter.cliAliases = [...(parameter.cliAliases ?? []), spec.flag];
+  }
 }
 
 function parameterDefaults(location: string): { style: string; explode: boolean } {
@@ -317,7 +352,23 @@ export function compileApiContract(
     if (left.path !== right.path) return left.path.localeCompare(right.path);
     return left.method.localeCompare(right.method);
   });
+  for (const operation of pending) {
+    applyParameterFlagAliases(operation.operationId, operation.parameters);
+  }
   const names = planCommandNames(pending);
+  const commandOverrides = OVERRIDES.commandOverrides[source.version] ?? {};
+  pending.forEach((operation, index) => {
+    const override = commandOverrides[operation.operationId];
+    if (override) names[index] = { ...names[index], ...override };
+  });
+  const seenCommands = new Set<string>();
+  for (const name of names) {
+    const command = `${name.resource} ${name.action}`;
+    if (seenCommands.has(command)) {
+      throw new Error(`${source.ref}: duplicate command ${command}`);
+    }
+    seenCommands.add(command);
+  }
   const operations: ApiOperation[] = pending.map(
     ({ tags: _tags, ...operation }, index) => ({
       ...operation,

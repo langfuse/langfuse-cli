@@ -1,9 +1,9 @@
 import { parse } from "yaml";
 
-import { kebabCase, planCommandNames } from "./naming";
 import { resolveLocalRef, sampleFromSchema } from "./schema";
 import type {
   CatalogEntry,
+  CommandName,
   HttpMethod,
   JsonSchema,
   Manifest,
@@ -12,6 +12,20 @@ import type {
   RequestBodyContract,
   ResponseContract,
 } from "./types";
+
+// Deliberate copy of the CLI's flag normalization. The oracle must not share
+// naming code with the implementation under test; command names come from the
+// reviewed goldens, and this local copy only derives parameter flag spellings.
+function kebabCase(input: string): string {
+  return input
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/[\s_.:/]+/g, "-")
+    .replace(/[^a-zA-Z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
 
 const HTTP_METHODS = [
   "get",
@@ -191,6 +205,7 @@ function normalizeResponses(
 export function compileOpenApi(
   entry: CatalogEntry,
   raw: string,
+  commands: Record<string, CommandName>,
 ): CompiledSpec {
   const document = parse(raw, {
     maxAliasCount: 100_000,
@@ -240,12 +255,21 @@ export function compileOpenApi(
     if (left.path !== right.path) return left.path.localeCompare(right.path);
     return left.method.localeCompare(right.method);
   });
-  const names = planCommandNames(operations);
+  if (Object.keys(commands).length !== operations.length) {
+    throw new Error(
+      `${entry.version}: golden lists ${Object.keys(commands).length} commands but the spec has ${operations.length} operations; run bun run goldens:update`,
+    );
+  }
   const normalized: OperationContract[] = operations.map(
-    ({ tags: _tags, ...operation }, index) => ({
-      ...operation,
-      command: names[index],
-    }),
+    ({ tags: _tags, ...operation }) => {
+      const command = commands[operation.operationId];
+      if (!command) {
+        throw new Error(
+          `${entry.version}: no command name for ${operation.operationId}; run bun run goldens:update`,
+        );
+      }
+      return { ...operation, command };
+    },
   );
   for (const operation of normalized) {
     for (const parameter of operation.parameters) {

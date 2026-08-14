@@ -36,6 +36,23 @@ deprecation policy, and legacy CLI compatibility. `bun run conformance:all`
 builds the package and checks every operation through the native CLI using its
 lossless JSON input path. CI runs both.
 
+## Command goldens and overrides
+
+The user-facing command surface (resource, action, aliases, deprecation) of
+every snapshot is pinned in reviewed goldens under `conformance/goldens/`.
+Tests and the build fail when compiled names differ from the goldens, so a
+change to the naming heuristics cannot silently rename commands. After an
+intentional naming change, regenerate and review the diff:
+
+```sh
+bun run goldens:update
+```
+
+Hand-written naming exceptions (extra parameter flag spellings such as
+`--prompt-version`, and per-version command overrides) live in
+`src/contracts/overrides.json` and are applied by the contract compiler, never
+hardcoded in the runtime.
+
 ## Releases
 
 ```sh

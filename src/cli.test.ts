@@ -144,6 +144,32 @@ describe("operation input parsing", () => {
     expect(input.query.resolve).toBe(false);
   });
 
+  test("resolves contract-declared parameter flag aliases", async () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      parameters: [
+        ...promptGet.parameters,
+        {
+          location: "query",
+          name: "version",
+          cliName: "version",
+          cliAliases: ["prompt-version"],
+          required: false,
+          style: "form",
+          explode: true,
+          kind: "number",
+        },
+      ],
+    };
+    const input = await parseOperationInput(operation, [
+      "my-prompt-name",
+      "--prompt-version",
+      "2",
+    ]);
+
+    expect(input.query.version).toBe(2);
+  });
+
   test("preserves the item type of array request-body flags", async () => {
     const contract = compileApiContract(
       { version: "test", ref: "test", sha256: "test" },

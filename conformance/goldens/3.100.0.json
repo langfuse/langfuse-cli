@@ -1,0 +1,584 @@
+[
+  {
+    "operationId": "annotationQueues_createQueue",
+    "key": "POST /api/public/annotation-queues",
+    "resource": "annotation-queues",
+    "action": "create"
+  },
+  {
+    "operationId": "annotationQueues_createQueueAssignment",
+    "key": "POST /api/public/annotation-queues/{queueId}/assignments",
+    "resource": "annotation-queues",
+    "action": "create-assignment"
+  },
+  {
+    "operationId": "annotationQueues_createQueueItem",
+    "key": "POST /api/public/annotation-queues/{queueId}/items",
+    "resource": "annotation-queues",
+    "action": "create-item"
+  },
+  {
+    "operationId": "annotationQueues_deleteQueueAssignment",
+    "key": "DELETE /api/public/annotation-queues/{queueId}/assignments",
+    "resource": "annotation-queues",
+    "action": "delete-assignment"
+  },
+  {
+    "operationId": "annotationQueues_deleteQueueItem",
+    "key": "DELETE /api/public/annotation-queues/{queueId}/items/{itemId}",
+    "resource": "annotation-queues",
+    "action": "delete-item"
+  },
+  {
+    "operationId": "annotationQueues_getQueue",
+    "key": "GET /api/public/annotation-queues/{queueId}",
+    "resource": "annotation-queues",
+    "action": "get"
+  },
+  {
+    "operationId": "annotationQueues_getQueueItem",
+    "key": "GET /api/public/annotation-queues/{queueId}/items/{itemId}",
+    "resource": "annotation-queues",
+    "action": "get-item"
+  },
+  {
+    "operationId": "annotationQueues_listQueueItems",
+    "key": "GET /api/public/annotation-queues/{queueId}/items",
+    "resource": "annotation-queues",
+    "action": "list-items"
+  },
+  {
+    "operationId": "annotationQueues_listQueues",
+    "key": "GET /api/public/annotation-queues",
+    "resource": "annotation-queues",
+    "action": "list"
+  },
+  {
+    "operationId": "annotationQueues_updateQueueItem",
+    "key": "PATCH /api/public/annotation-queues/{queueId}/items/{itemId}",
+    "resource": "annotation-queues",
+    "action": "update-item"
+  },
+  {
+    "operationId": "comments_create",
+    "key": "POST /api/public/comments",
+    "resource": "comments",
+    "action": "create"
+  },
+  {
+    "operationId": "comments_get",
+    "key": "GET /api/public/comments",
+    "resource": "comments",
+    "action": "list"
+  },
+  {
+    "operationId": "comments_get-by-id",
+    "key": "GET /api/public/comments/{commentId}",
+    "resource": "comments",
+    "action": "get"
+  },
+  {
+    "operationId": "datasetItems_create",
+    "key": "POST /api/public/dataset-items",
+    "resource": "dataset-items",
+    "action": "create"
+  },
+  {
+    "operationId": "datasetItems_delete",
+    "key": "DELETE /api/public/dataset-items/{id}",
+    "resource": "dataset-items",
+    "action": "delete"
+  },
+  {
+    "operationId": "datasetItems_get",
+    "key": "GET /api/public/dataset-items/{id}",
+    "resource": "dataset-items",
+    "action": "get"
+  },
+  {
+    "operationId": "datasetItems_list",
+    "key": "GET /api/public/dataset-items",
+    "resource": "dataset-items",
+    "action": "list"
+  },
+  {
+    "operationId": "datasetRunItems_create",
+    "key": "POST /api/public/dataset-run-items",
+    "resource": "dataset-run-items",
+    "action": "create"
+  },
+  {
+    "operationId": "datasetRunItems_list",
+    "key": "GET /api/public/dataset-run-items",
+    "resource": "dataset-run-items",
+    "action": "list"
+  },
+  {
+    "operationId": "datasets_create",
+    "key": "POST /api/public/v2/datasets",
+    "resource": "datasets",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "datasets-v2",
+        "action": "create",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "datasets_deleteRun",
+    "key": "DELETE /api/public/datasets/{datasetName}/runs/{runName}",
+    "resource": "datasets",
+    "action": "delete-run"
+  },
+  {
+    "operationId": "datasets_get",
+    "key": "GET /api/public/v2/datasets/{datasetName}",
+    "resource": "datasets",
+    "action": "get",
+    "aliases": [
+      {
+        "resource": "datasets-v2",
+        "action": "get",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "datasets_getRun",
+    "key": "GET /api/public/datasets/{datasetName}/runs/{runName}",
+    "resource": "datasets",
+    "action": "get-run"
+  },
+  {
+    "operationId": "datasets_getRuns",
+    "key": "GET /api/public/datasets/{datasetName}/runs",
+    "resource": "datasets",
+    "action": "list-runs"
+  },
+  {
+    "operationId": "datasets_list",
+    "key": "GET /api/public/v2/datasets",
+    "resource": "datasets",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "datasets-v2",
+        "action": "list",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "health_health",
+    "key": "GET /api/public/health",
+    "resource": "health",
+    "action": "get"
+  },
+  {
+    "operationId": "ingestion_batch",
+    "key": "POST /api/public/ingestion",
+    "resource": "ingestion",
+    "action": "batch"
+  },
+  {
+    "operationId": "llmConnections_list",
+    "key": "GET /api/public/llm-connections",
+    "resource": "llm-connections",
+    "action": "list"
+  },
+  {
+    "operationId": "llmConnections_upsert",
+    "key": "PUT /api/public/llm-connections",
+    "resource": "llm-connections",
+    "action": "upsert"
+  },
+  {
+    "operationId": "media_get",
+    "key": "GET /api/public/media/{mediaId}",
+    "resource": "media",
+    "action": "get"
+  },
+  {
+    "operationId": "media_getUploadUrl",
+    "key": "POST /api/public/media",
+    "resource": "media",
+    "action": "get-upload-url"
+  },
+  {
+    "operationId": "media_patch",
+    "key": "PATCH /api/public/media/{mediaId}",
+    "resource": "media",
+    "action": "update"
+  },
+  {
+    "operationId": "metrics_metrics",
+    "key": "GET /api/public/metrics",
+    "resource": "metrics",
+    "action": "get"
+  },
+  {
+    "operationId": "models_create",
+    "key": "POST /api/public/models",
+    "resource": "models",
+    "action": "create"
+  },
+  {
+    "operationId": "models_delete",
+    "key": "DELETE /api/public/models/{id}",
+    "resource": "models",
+    "action": "delete"
+  },
+  {
+    "operationId": "models_get",
+    "key": "GET /api/public/models/{id}",
+    "resource": "models",
+    "action": "get"
+  },
+  {
+    "operationId": "models_list",
+    "key": "GET /api/public/models",
+    "resource": "models",
+    "action": "list"
+  },
+  {
+    "operationId": "observations_get",
+    "key": "GET /api/public/observations/{observationId}",
+    "resource": "observations",
+    "action": "get"
+  },
+  {
+    "operationId": "observations_getMany",
+    "key": "GET /api/public/observations",
+    "resource": "observations",
+    "action": "list"
+  },
+  {
+    "operationId": "organizations_deleteOrganizationMembership",
+    "key": "DELETE /api/public/organizations/memberships",
+    "resource": "organizations",
+    "action": "delete-membership"
+  },
+  {
+    "operationId": "organizations_deleteProjectMembership",
+    "key": "DELETE /api/public/projects/{projectId}/memberships",
+    "resource": "projects",
+    "action": "delete-membership"
+  },
+  {
+    "operationId": "organizations_getOrganizationMemberships",
+    "key": "GET /api/public/organizations/memberships",
+    "resource": "organizations",
+    "action": "list-memberships"
+  },
+  {
+    "operationId": "organizations_getOrganizationProjects",
+    "key": "GET /api/public/organizations/projects",
+    "resource": "organizations",
+    "action": "list-projects"
+  },
+  {
+    "operationId": "organizations_getProjectMemberships",
+    "key": "GET /api/public/projects/{projectId}/memberships",
+    "resource": "projects",
+    "action": "list-memberships"
+  },
+  {
+    "operationId": "organizations_updateOrganizationMembership",
+    "key": "PUT /api/public/organizations/memberships",
+    "resource": "organizations",
+    "action": "update-membership"
+  },
+  {
+    "operationId": "organizations_updateProjectMembership",
+    "key": "PUT /api/public/projects/{projectId}/memberships",
+    "resource": "projects",
+    "action": "update-membership"
+  },
+  {
+    "operationId": "projects_create",
+    "key": "POST /api/public/projects",
+    "resource": "projects",
+    "action": "create"
+  },
+  {
+    "operationId": "projects_createApiKey",
+    "key": "POST /api/public/projects/{projectId}/apiKeys",
+    "resource": "projects",
+    "action": "create-api-key"
+  },
+  {
+    "operationId": "projects_delete",
+    "key": "DELETE /api/public/projects/{projectId}",
+    "resource": "projects",
+    "action": "delete"
+  },
+  {
+    "operationId": "projects_deleteApiKey",
+    "key": "DELETE /api/public/projects/{projectId}/apiKeys/{apiKeyId}",
+    "resource": "projects",
+    "action": "delete-api-key"
+  },
+  {
+    "operationId": "projects_get",
+    "key": "GET /api/public/projects",
+    "resource": "projects",
+    "action": "list"
+  },
+  {
+    "operationId": "projects_getApiKeys",
+    "key": "GET /api/public/projects/{projectId}/apiKeys",
+    "resource": "projects",
+    "action": "list-api-keys"
+  },
+  {
+    "operationId": "projects_update",
+    "key": "PUT /api/public/projects/{projectId}",
+    "resource": "projects",
+    "action": "update"
+  },
+  {
+    "operationId": "prompts_create",
+    "key": "POST /api/public/v2/prompts",
+    "resource": "prompts",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "create",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "prompts_get",
+    "key": "GET /api/public/v2/prompts/{promptName}",
+    "resource": "prompts",
+    "action": "get",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "get",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "prompts_list",
+    "key": "GET /api/public/v2/prompts",
+    "resource": "prompts",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "list",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "promptVersion_update",
+    "key": "PATCH /api/public/v2/prompts/{name}/versions/{version}",
+    "resource": "prompts",
+    "action": "update-version",
+    "aliases": [
+      {
+        "resource": "prompts-v2",
+        "action": "update-version",
+        "source": "version"
+      },
+      {
+        "resource": "prompt-version",
+        "action": "update-version",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "scim_createUser",
+    "key": "POST /api/public/scim/Users",
+    "resource": "scim",
+    "action": "create-user"
+  },
+  {
+    "operationId": "scim_deleteUser",
+    "key": "DELETE /api/public/scim/Users/{userId}",
+    "resource": "scim",
+    "action": "delete-user"
+  },
+  {
+    "operationId": "scim_getResourceTypes",
+    "key": "GET /api/public/scim/ResourceTypes",
+    "resource": "scim",
+    "action": "list-resource-types"
+  },
+  {
+    "operationId": "scim_getSchemas",
+    "key": "GET /api/public/scim/Schemas",
+    "resource": "scim",
+    "action": "list-schemas"
+  },
+  {
+    "operationId": "scim_getServiceProviderConfig",
+    "key": "GET /api/public/scim/ServiceProviderConfig",
+    "resource": "scim",
+    "action": "get-service-provider-config"
+  },
+  {
+    "operationId": "scim_getUser",
+    "key": "GET /api/public/scim/Users/{userId}",
+    "resource": "scim",
+    "action": "get-user"
+  },
+  {
+    "operationId": "scim_listUsers",
+    "key": "GET /api/public/scim/Users",
+    "resource": "scim",
+    "action": "list-users"
+  },
+  {
+    "operationId": "score_create",
+    "key": "POST /api/public/scores",
+    "resource": "scores",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "score",
+        "action": "create",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "score_delete",
+    "key": "DELETE /api/public/scores/{scoreId}",
+    "resource": "scores",
+    "action": "delete",
+    "aliases": [
+      {
+        "resource": "score",
+        "action": "delete",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "scoreConfigs_create",
+    "key": "POST /api/public/score-configs",
+    "resource": "score-configs",
+    "action": "create"
+  },
+  {
+    "operationId": "scoreConfigs_get",
+    "key": "GET /api/public/score-configs",
+    "resource": "score-configs",
+    "action": "list"
+  },
+  {
+    "operationId": "scoreConfigs_get-by-id",
+    "key": "GET /api/public/score-configs/{configId}",
+    "resource": "score-configs",
+    "action": "get"
+  },
+  {
+    "operationId": "scoreV2_get",
+    "key": "GET /api/public/v2/scores",
+    "resource": "scores",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "scores-v2",
+        "action": "list",
+        "source": "version"
+      },
+      {
+        "resource": "score-v2",
+        "action": "list",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "scoreV2_get-by-id",
+    "key": "GET /api/public/v2/scores/{scoreId}",
+    "resource": "scores",
+    "action": "get",
+    "aliases": [
+      {
+        "resource": "scores-v2",
+        "action": "get",
+        "source": "version"
+      },
+      {
+        "resource": "score-v2",
+        "action": "get",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "sessions_get",
+    "key": "GET /api/public/sessions/{sessionId}",
+    "resource": "sessions",
+    "action": "get"
+  },
+  {
+    "operationId": "sessions_list",
+    "key": "GET /api/public/sessions",
+    "resource": "sessions",
+    "action": "list"
+  },
+  {
+    "operationId": "trace_delete",
+    "key": "DELETE /api/public/traces/{traceId}",
+    "resource": "traces",
+    "action": "delete",
+    "aliases": [
+      {
+        "resource": "trace",
+        "action": "delete",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "trace_deleteMultiple",
+    "key": "DELETE /api/public/traces",
+    "resource": "traces",
+    "action": "delete-many",
+    "aliases": [
+      {
+        "resource": "trace",
+        "action": "delete-many",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "trace_get",
+    "key": "GET /api/public/traces/{traceId}",
+    "resource": "traces",
+    "action": "get",
+    "aliases": [
+      {
+        "resource": "trace",
+        "action": "get",
+        "source": "tag"
+      }
+    ]
+  },
+  {
+    "operationId": "trace_list",
+    "key": "GET /api/public/traces",
+    "resource": "traces",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "trace",
+        "action": "list",
+        "source": "tag"
+      }
+    ]
+  }
+]

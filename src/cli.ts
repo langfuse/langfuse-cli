@@ -510,13 +510,10 @@ export async function parseOperationInput(
   for (const parameter of operation.parameters) {
     if (parameter.location !== "path") {
       parameterByFlag.set(parameter.cliName, parameter);
+      for (const alias of parameter.cliAliases ?? []) {
+        parameterByFlag.set(alias, parameter);
+      }
     }
-  }
-  if (operation.operationId === "prompts_get") {
-    const version = operation.parameters.find(
-      (parameter) => parameter.location === "query" && parameter.name === "version",
-    );
-    if (version) parameterByFlag.set("prompt-version", version);
   }
   const positionals: string[] = [];
   let fieldBody: Record<string, JsonValue> | undefined;

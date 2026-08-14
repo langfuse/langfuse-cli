@@ -43,9 +43,15 @@ Some pinned specs use the JSON Schema `const` keyword while declaring OpenAPI 3.
 ```text
 catalog.json                 immutable Git refs, commits, hashes, known source issues
 specs/<version>/openapi.yml  committed source snapshots
+goldens/<version>.json       reviewed command-name goldens (resource, action, aliases)
 src/                         compiler, serializers, invocation, capture runner
 tests/                       compiler, validator, and runner tests
 ```
+
+Command names are not derived by the oracle: it reads the committed goldens,
+so a regression in the CLI's naming heuristics fails the suite instead of
+moving both sides at once. Regenerate goldens with `bun run goldens:update`
+after an intentional naming change and review the diff.
 
 ## Commands
 

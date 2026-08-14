@@ -11,8 +11,15 @@ import {
   readVerifiedSpec,
   sha256,
 } from "./catalog";
+import {
+  commandSurface,
+  commandsByOperationId,
+  formatGolden,
+  goldenPath,
+  loadGoldenSurface,
+} from "./goldens";
 import { compileOpenApi } from "./openapi";
-import type { Catalog, CatalogEntry } from "./types";
+import type { Catalog, CatalogEntry, CommandName } from "./types";
 
 const README_PATH = resolve(CONFORMANCE_ROOT, "README.md");
 const USER_AGENT = "langfuse-cli-conformance-suite";
@@ -207,13 +214,16 @@ async function specSummaries(
   catalog: Catalog,
   newEntry: CatalogEntry,
   newRaw: string,
+  newCommands: Record<string, CommandName>,
 ): Promise<SpecSummary[]> {
   return Promise.all(
     catalog.versions.map(async (entry) => {
-      const raw = entry.version === newEntry.version
-        ? newRaw
-        : await readVerifiedSpec(entry);
-      const compiled = compileOpenApi(entry, raw);
+      const isNew = entry.version === newEntry.version;
+      const raw = isNew ? newRaw : await readVerifiedSpec(entry);
+      const commands = isNew
+        ? newCommands
+        : commandsByOperationId(await loadGoldenSurface(entry.version));
+      const compiled = compileOpenApi(entry, raw, commands);
       return {
         version: entry.version,
         paths: Object.keys(compiled.document.paths ?? {}).length,
@@ -257,16 +267,15 @@ async function addVersion(
     sha256: await sha256(raw),
     ...(issues ? { knownIssues: issues } : {}),
   };
-  const compiled = compileOpenApi(entry, raw);
   const contract = compileApiContract(entry, raw);
+  const surface = commandSurface(contract.operations);
+  const newCommands = commandsByOperationId(surface);
+  const compiled = compileOpenApi(entry, raw, newCommands);
   if (compiled.unsupported.length > 0) {
     throw new Error(`Unsupported OpenAPI features: ${compiled.unsupported.join(", ")}`);
   }
-  if (compiled.manifest.operations.length !== contract.operations.length) {
-    throw new Error("Conformance and runtime compilers disagree on operation count");
-  }
   const updatedCatalog = withCatalogEntry(catalog, entry);
-  const summaries = await specSummaries(updatedCatalog, entry, raw);
+  const summaries = await specSummaries(updatedCatalog, entry, raw, newCommands);
   const updatedReadme = updateConformanceReadme(originalReadme, summaries);
   process.stdout.write(
     `${tag} -> ${commit}\nSHA-256 ${entry.sha256}\n${compiled.manifest.operations.length} operations\n`,
@@ -283,6 +292,7 @@ async function addVersion(
   await mkdir(dirname(path), { recursive: true });
   try {
     await Bun.write(path, raw);
+    await Bun.write(goldenPath(version), formatGolden(surface));
     await Bun.write(CATALOG_PATH, formatCatalog(updatedCatalog));
     await Bun.write(README_PATH, updatedReadme);
     if (options.runChecks) {
@@ -313,6 +323,7 @@ async function addVersion(
       recursive: true,
       force: true,
     });
+    await rm(goldenPath(version), { force: true });
     throw error;
   }
   process.stdout.write(`\nAdded ${tag}. Review and live-test changed endpoints before commit.\n`);

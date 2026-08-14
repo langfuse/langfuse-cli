@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "parameterFlagAliases": {
+    "prompts_get": [
+      { "location": "query", "parameter": "version", "flag": "prompt-version" }
+    ]
+  },
+  "commandOverrides": {}
+}

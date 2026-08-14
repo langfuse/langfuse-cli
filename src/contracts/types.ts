@@ -38,11 +38,27 @@ export interface ApiParameter {
   location: "path" | "query" | "header" | "cookie";
   name: string;
   cliName: string;
+  cliAliases?: string[];
   required: boolean;
   style: string;
   explode: boolean;
   kind: ValueKind;
   itemKind?: ValueKind;
+}
+
+export interface ParameterFlagAlias {
+  location: "path" | "query" | "header" | "cookie";
+  parameter: string;
+  flag: string;
+}
+
+export interface ContractOverrides {
+  schemaVersion: 1;
+  parameterFlagAliases: Record<string, ParameterFlagAlias[]>;
+  commandOverrides: Record<
+    string,
+    Record<string, { resource?: string; action?: string }>
+  >;
 }
 
 export interface ApiBodyField {

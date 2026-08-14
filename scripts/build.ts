@@ -2,6 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { loadCatalog, readVerifiedSpec } from "../conformance/src/catalog";
+import { commandSurface, loadGoldenSurface } from "../conformance/src/goldens";
 import { compileApiContract } from "../src/contracts/compiler";
 import type { ApiContractCatalog } from "../src/contracts/types";
 
@@ -26,6 +27,14 @@ let totalOperations = 0;
 for (const entry of sourceCatalog.versions) {
   const raw = await readVerifiedSpec(entry);
   const contract = compileApiContract(entry, raw);
+  const surface = commandSurface(contract.operations);
+  const golden = await loadGoldenSurface(entry.version);
+  if (JSON.stringify(surface) !== JSON.stringify(golden)) {
+    process.stderr.write(
+      `${entry.version}: compiled command surface differs from conformance/goldens/${entry.version}.json; run bun run goldens:update and review the diff\n`,
+    );
+    process.exit(1);
+  }
   totalOperations += contract.operations.length;
   await Bun.write(
     resolve(contractsDirectory, `${entry.version}.json`),
