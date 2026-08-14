@@ -2,7 +2,11 @@
   "schemaVersion": 1,
   "parameterFlagAliases": {
     "prompts_get": [
-      { "location": "query", "parameter": "version", "flag": "prompt-version" }
+      {
+        "location": "query",
+        "parameter": "version",
+        "flag": "prompt-version"
+      }
     ]
   },
   "bodyFieldFlags": {
@@ -10,8 +14,8 @@
       "secretKey": "provider-secret-key"
     },
     "projects_createApiKey": {
-      "publicKey": "custom-public-key",
-      "secretKey": "custom-secret-key"
+      "publicKey": "predefined-public-key",
+      "secretKey": "predefined-secret-key"
     }
   },
   "commandOverrides": {}
