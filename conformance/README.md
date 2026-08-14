@@ -14,7 +14,7 @@ The primary test invokes every operation in every cataloged spec through the rea
 
 For operations marked `deprecated: true`, it instead verifies exit code 2, a helpful error on stderr, and zero network requests.
 
-The black-box oracle does not share request-building code with the CLI. `bun run conformance:all` checks all 792 operations across 9 pinned snapshots through the actual CLI using lossless `--body-json` input, including pre-network rejection for deprecated operations.
+The black-box oracle does not share request-building code with the CLI. `bun run conformance:all` checks all 479 operations across 5 pinned snapshots through the actual CLI using lossless `--body-json` input, including pre-network rejection for deprecated operations.
 
 Supporting unit tests verify immutable spec hashes, valid sampling, serialization, naming, invocation generation, and the capture runner itself.
 
@@ -24,14 +24,10 @@ OpenAPI cannot describe database setup, generated IDs, cross-request bindings, c
 
 | Langfuse | Paths | Operations |
 |---|---:|---:|
-| 3.0.0 | 29 | 39 |
 | 3.50.0 | 44 | 68 |
-| 3.100.0 | 49 | 77 |
 | 3.150.0 | 55 | 86 |
-| 3.176.0 | 60 | 96 |
 | 3.200.0 | 61 | 98 |
-| 3.212.0 | 64 | 101 |
-| 3.216.0 | 69 | 113 |
+| 3.225.3 | 69 | 113 |
 | 4.10.0 | 70 | 114 |
 
 Each source file is downloaded by immutable commit and verified against the SHA-256 in `catalog.json`. Tests are network-free after sync.
@@ -81,9 +77,9 @@ The required check name is **Test and verify OpenAPI conformance**. The interact
 
 ```sh
 bun run conformance:run -- \
-  --version 3.212.0 \
+  --version 3.225.3 \
   --operation prompts_create \
-  -- bun bin/langfuse.mjs --api-version 3.212.0
+  -- bun bin/langfuse.mjs --api-version 3.225.3
 ```
 
 Useful filters:
