@@ -90,6 +90,7 @@ export interface ApiOperation {
   method: HttpMethod;
   path: string;
   deprecated?: true;
+  pagination?: "page" | "cursor";
   auth: {
     required: boolean;
     schemes: string[];

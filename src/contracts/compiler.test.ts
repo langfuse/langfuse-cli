@@ -53,6 +53,44 @@ paths:
         '201': { description: created }
 `;
 
+describe("pagination detection", () => {
+  test("classifies page, cursor, and unpaginated operations", () => {
+    const paged = `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /widgets:
+    get:
+      operationId: widgets_list
+      parameters:
+        - { in: query, name: page, schema: { type: integer } }
+        - { in: query, name: limit, schema: { type: integer } }
+      responses:
+        '200': { description: ok }
+  /events:
+    get:
+      operationId: events_list
+      parameters:
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer } }
+      responses:
+        '200': { description: ok }
+  /health:
+    get:
+      operationId: health_get
+      responses:
+        '200': { description: ok }
+`;
+    const contract = compileApiContract(SOURCE, paged);
+    const byId = new Map(
+      contract.operations.map((operation) => [operation.operationId, operation]),
+    );
+    expect(byId.get("widgets_list")?.pagination).toBe("page");
+    // cursor wins when both parameters exist
+    expect(byId.get("events_list")?.pagination).toBe("cursor");
+    expect(byId.get("health_get")?.pagination).toBeUndefined();
+  });
+});
+
 describe("contract overrides", () => {
   test("applies a parameter flag alias and verifies application", () => {
     const withAlias = overrides({

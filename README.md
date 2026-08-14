@@ -65,6 +65,12 @@ langfuse api observations list --limit 10
 # List observations for a specific trace
 langfuse api observations list --trace-id <trace-id>
 
+# Fetch every page of a paginated list (works for page- and cursor-based endpoints)
+# Bounded by --max-items (default 1000) and a 100-request cap; a stderr notice
+# plus meta.truncated=true tell you when more data is available.
+langfuse api prompts list --all
+langfuse api observations list --limit 100 --all --max-items 5000
+
 # JSON output (for piping/scripting)
 langfuse api observations list --limit 5 --json
 

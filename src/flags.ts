@@ -15,8 +15,11 @@ export const GLOBAL_BOOLEAN_FLAG_NAMES = ["json", "curl", "show-secrets"] as con
 
 export const BODY_CHANNEL_FLAG_NAMES = ["body-json", "body-file"] as const;
 
+export const PAGINATION_FLAG_NAMES = ["all", "max-items"] as const;
+
 export const RESERVED_OPTION_NAMES: ReadonlySet<string> = new Set<string>([
   ...GLOBAL_VALUE_FLAG_NAMES,
   ...GLOBAL_BOOLEAN_FLAG_NAMES,
   ...BODY_CHANNEL_FLAG_NAMES,
+  ...PAGINATION_FLAG_NAMES,
 ]);

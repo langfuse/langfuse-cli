@@ -426,6 +426,7 @@ export function compileApiContract(
     method: HttpMethod;
     path: string;
     deprecated?: true;
+    pagination?: "page" | "cursor";
     tags: string[];
     auth: ApiOperation["auth"];
     pathParameterOrder: string[];
@@ -447,22 +448,34 @@ export function compileApiContract(
       const operationId = String(
         operation.operationId ?? `${method.toUpperCase()}:${path}`,
       );
+      const parameters = mergeParameters(
+        document,
+        pathItem.parameters,
+        operation.parameters,
+      );
+      const queryNames = new Set(
+        parameters
+          .filter((parameter) => parameter.location === "query")
+          .map((parameter) => parameter.name),
+      );
+      const pagination = queryNames.has("cursor")
+        ? ("cursor" as const)
+        : queryNames.has("page")
+          ? ("page" as const)
+          : undefined;
       pending.push({
         key: `${method.toUpperCase()} ${path}`,
         operationId,
         method: method.toUpperCase() as HttpMethod,
         path,
         ...(operation.deprecated === true ? { deprecated: true as const } : {}),
+        ...(pagination ? { pagination } : {}),
         tags: (operation.tags ?? []).map(String),
         auth: normalizeAuth(document, operation),
         pathParameterOrder: [...path.matchAll(/\{([^}]+)\}/g)].map(
           (match) => match[1],
         ),
-        parameters: mergeParameters(
-          document,
-          pathItem.parameters,
-          operation.parameters,
-        ),
+        parameters,
         requestBody: normalizeRequestBody(
           document,
           operationId,

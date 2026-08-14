@@ -279,6 +279,7 @@ Discovery:
 Action options:
   --body-json <json>         Lossless JSON request body
   --body-file <path|->       Read JSON body from file or stdin
+  --all                      Fetch every page of a paginated list (--max-items caps it)
   --json                     Stable JSON response envelope
   --curl                     Print curl without executing
 `);
@@ -358,6 +359,14 @@ function printOperationHelp(operation: ApiOperation): void {
   if (operation.requestBody) {
     lines.push("  --body-json <json>             Lossless JSON body");
     lines.push("  --body-file <path|->          JSON body from file or stdin");
+  }
+  if (operation.pagination) {
+    lines.push(
+      `  --all                          Fetch every ${operation.pagination === "cursor" ? "cursor page" : "page"} (bounded by --max-items)`,
+    );
+    lines.push(
+      `  --max-items <number>           Item cap for --all (default ${DEFAULT_MAX_ITEMS})`,
+    );
   }
   process.stdout.write(`Usage: langfuse api ${operation.command.resource} ${operation.command.action}${positionals ? ` ${positionals}` : ""} [options]
 
@@ -652,6 +661,165 @@ export async function parseOperationInput(
   return input;
 }
 
+const DEFAULT_MAX_ITEMS = 1000;
+// Bounds the number of requests one --all run may issue, independently of
+// --max-items: a small --limit must not turn an item cap into a request
+// storm against the server.
+const MAX_PAGES = 100;
+
+export interface PaginationFlags {
+  tokens: string[];
+  all: boolean;
+  maxItems?: number;
+}
+
+export function extractPaginationFlags(tokens: string[]): PaginationFlags {
+  const rest: string[] = [];
+  let all = false;
+  let maxItems: number | undefined;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const equals = token.indexOf("=");
+    const name = equals === -1 ? token : token.slice(0, equals);
+    if (name === "--all") {
+      all = true;
+      continue;
+    }
+    if (name === "--max-items") {
+      const value = equals === -1 ? tokens[++index] : token.slice(equals + 1);
+      if (value === undefined || value.startsWith("--")) {
+        throw new CliError("--max-items requires a value");
+      }
+      maxItems = Number(value);
+      if (!Number.isInteger(maxItems) || maxItems <= 0) {
+        throw new CliError("--max-items must be a positive integer");
+      }
+      continue;
+    }
+    rest.push(token);
+  }
+  return { tokens: rest, all, maxItems };
+}
+
+export function assertPaginationUsage(
+  operation: ApiOperation,
+  flags: PaginationFlags,
+  curl: boolean,
+): void {
+  if (!flags.all) {
+    if (flags.maxItems !== undefined) {
+      throw new CliError("--max-items requires --all");
+    }
+    return;
+  }
+  if (!operation.pagination) {
+    throw new CliError(
+      `${operation.command.resource} ${operation.command.action} is not a paginated list operation; --all is unsupported`,
+    );
+  }
+  if (curl) {
+    throw new CliError("--all cannot be combined with --curl");
+  }
+}
+
+interface PageClient {
+  call(operation: ApiOperation, input: ApiCallInput): Promise<ApiResult>;
+}
+
+export async function callAllPages(
+  client: PageClient,
+  operation: ApiOperation,
+  input: ApiCallInput,
+  maxItems = DEFAULT_MAX_ITEMS,
+): Promise<ApiResult> {
+  const items: JsonValue[] = [];
+  let pages = 0;
+  let truncated = false;
+  let totalItems: number | undefined;
+  let last: ApiResult;
+  if (operation.pagination === "page" && input.query.page === undefined) {
+    input.query.page = 1;
+  }
+  for (;;) {
+    const result = await client.call(operation, input);
+    if (!result.ok) {
+      if (pages > 0) {
+        process.stderr.write(
+          `--all aborted after ${pages} page(s) and ${items.length} item(s): HTTP ${result.status}\n`,
+        );
+      }
+      return result;
+    }
+    last = result;
+    pages++;
+    const record =
+      result.body && typeof result.body === "object" && !Array.isArray(result.body)
+        ? (result.body as Record<string, JsonValue>)
+        : undefined;
+    const data =
+      record && Array.isArray(record.data) ? (record.data as JsonValue[]) : undefined;
+    // Not a data-list response shape: behave like a plain single call.
+    if (data === undefined) {
+      if (pages === 1) return result;
+      break;
+    }
+    items.push(...data);
+    const meta = (record?.meta ?? record?.pagination) as
+      | Record<string, JsonValue>
+      | undefined;
+    let hasMore = false;
+    let nextCursor: string | undefined;
+    if (operation.pagination === "cursor") {
+      nextCursor =
+        typeof meta?.cursor === "string" && meta.cursor.length > 0
+          ? meta.cursor
+          : undefined;
+      hasMore = nextCursor !== undefined;
+    } else {
+      const page = Number(meta?.page ?? input.query.page);
+      const totalPages = Number(meta?.totalPages);
+      if (Number.isFinite(Number(meta?.totalItems))) {
+        totalItems = Number(meta?.totalItems);
+      }
+      hasMore = Number.isFinite(totalPages) && page < totalPages;
+      if (hasMore) input.query.page = page + 1;
+    }
+    if (items.length >= maxItems) {
+      truncated = hasMore || items.length > maxItems;
+      items.length = Math.min(items.length, maxItems);
+      if (truncated) {
+        process.stderr.write(
+          `--all stopped at ${items.length} item(s) (--max-items ${maxItems}); more data is available\n`,
+        );
+      }
+      break;
+    }
+    if (!hasMore) break;
+    if (pages >= MAX_PAGES) {
+      truncated = true;
+      process.stderr.write(
+        `--all stopped after ${MAX_PAGES} requests with ${items.length} item(s); raise --limit for larger pages or --max-items to continue\n`,
+      );
+      break;
+    }
+    if (operation.pagination === "cursor") input.query.cursor = nextCursor!;
+  }
+  return {
+    status: last.status,
+    headers: last.headers,
+    ok: true,
+    body: {
+      data: items,
+      meta: {
+        pages,
+        fetchedItems: items.length,
+        ...(totalItems !== undefined ? { totalItems } : {}),
+        truncated,
+      },
+    },
+  };
+}
+
 export function schemaOutput(contract: ApiContract) {
   return {
     schemaVersion: 1,
@@ -666,6 +834,7 @@ export function schemaOutput(contract: ApiContract) {
         method: operation.method,
         path: operation.path,
         deprecated: Boolean(operation.deprecated),
+        ...(operation.pagination ? { pagination: operation.pagination } : {}),
         auth: operation.auth,
         pathParameterOrder: operation.pathParameterOrder,
         parameters: operation.parameters,
@@ -789,7 +958,9 @@ export async function runApi(
     return;
   }
   assertOperationCallable(operation, contract.apiVersion);
-  const input = await parseOperationInput(operation, args.slice(2));
+  const pagination = extractPaginationFlags(args.slice(2));
+  assertPaginationUsage(operation, pagination, config.curl);
+  const input = await parseOperationInput(operation, pagination.tokens);
   const client = createApiClient({
     host: config.host,
     publicKey: config.publicKey,
@@ -802,7 +973,10 @@ export async function runApi(
     );
     return;
   }
-  await writeResult(await client.call(operation, input), config);
+  const result = pagination.all
+    ? await callAllPages(client, operation, input, pagination.maxItems)
+    : await client.call(operation, input);
+  await writeResult(result, config);
 }
 
 export async function run(argv: string[]): Promise<void> {

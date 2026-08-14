@@ -5,6 +5,9 @@ import { join } from "node:path";
 
 import {
   assertOperationCallable,
+  assertPaginationUsage,
+  callAllPages,
+  extractPaginationFlags,
   operationByCommand,
   parseOperationInput,
   run,
@@ -453,6 +456,138 @@ describe("API version reporting", () => {
         catalog,
       ),
     ).rejects.toThrow("Unknown API version bogus");
+  });
+});
+
+describe("pagination with --all", () => {
+  const listOperation = (pagination: "page" | "cursor"): ApiOperation => ({
+    key: "GET /api/public/widgets",
+    operationId: "widgets_list",
+    method: "GET",
+    path: "/api/public/widgets",
+    pagination,
+    auth: { required: false, schemes: [] },
+    command: { resource: "widgets", action: "list" },
+    pathParameterOrder: [],
+    parameters: [],
+  });
+
+  const stubClient = (responses: Array<Record<string, unknown>>) => {
+    const calls: Record<string, unknown>[] = [];
+    let index = 0;
+    return {
+      calls,
+      call: async (_operation: ApiOperation, input: { query: Record<string, unknown> }) => {
+        calls.push(structuredClone(input.query));
+        const body = responses[Math.min(index++, responses.length - 1)];
+        return { status: 200, headers: {}, body, ok: true } as const;
+      },
+    };
+  };
+
+  test("extracts --all and --max-items and validates usage", () => {
+    const flags = extractPaginationFlags(["--limit", "5", "--all", "--max-items", "20"]);
+    expect(flags).toEqual({ tokens: ["--limit", "5"], all: true, maxItems: 20 });
+    expect(() =>
+      assertPaginationUsage(listOperation("page"), { tokens: [], all: false, maxItems: 5 }, false),
+    ).toThrow("--max-items requires --all");
+    expect(() =>
+      assertPaginationUsage(
+        { ...listOperation("page"), pagination: undefined },
+        { tokens: [], all: true },
+        false,
+      ),
+    ).toThrow("not a paginated list operation");
+    expect(() =>
+      assertPaginationUsage(listOperation("page"), { tokens: [], all: true }, true),
+    ).toThrow("--all cannot be combined with --curl");
+  });
+
+  test("follows page-based pagination to the last page", async () => {
+    const client = stubClient([
+      { data: [1, 2], meta: { page: 1, totalPages: 3, totalItems: 5 } },
+      { data: [3, 4], meta: { page: 2, totalPages: 3, totalItems: 5 } },
+      { data: [5], meta: { page: 3, totalPages: 3, totalItems: 5 } },
+    ]);
+    const input = { path: {}, query: {}, headers: {}, cookies: {} };
+    const result = await callAllPages(client, listOperation("page"), input);
+    expect(result.body).toEqual({
+      data: [1, 2, 3, 4, 5],
+      meta: { pages: 3, fetchedItems: 5, totalItems: 5, truncated: false },
+    });
+    expect(client.calls.map((query) => query.page)).toEqual([1, 2, 3]);
+  });
+
+  test("follows cursors until the server stops returning one", async () => {
+    const client = stubClient([
+      { data: ["a"], meta: { cursor: "next-1" } },
+      { data: ["b"], meta: { cursor: "next-2" } },
+      { data: ["c"], meta: {} },
+    ]);
+    const input = { path: {}, query: {}, headers: {}, cookies: {} };
+    const result = await callAllPages(client, listOperation("cursor"), input);
+    expect(result.body).toEqual({
+      data: ["a", "b", "c"],
+      meta: { pages: 3, fetchedItems: 3, truncated: false },
+    });
+    expect(client.calls.map((query) => query.cursor)).toEqual([
+      undefined,
+      "next-1",
+      "next-2",
+    ]);
+  });
+
+  test("caps items at --max-items and reports truncation", async () => {
+    const client = stubClient([
+      { data: [1, 2, 3], meta: { page: 1, totalPages: 9, totalItems: 27 } },
+    ]);
+    const input = { path: {}, query: {}, headers: {}, cookies: {} };
+    const result = await callAllPages(client, listOperation("page"), input, 2);
+    expect(result.body).toEqual({
+      data: [1, 2],
+      meta: { pages: 1, fetchedItems: 2, totalItems: 27, truncated: true },
+    });
+  });
+
+  test("caps requests at 100 pages regardless of --max-items", async () => {
+    let calls = 0;
+    const endless = {
+      call: async () => {
+        calls++;
+        return {
+          status: 200,
+          headers: {},
+          body: { data: [calls], meta: { cursor: `next-${calls}` } },
+          ok: true,
+        } as const;
+      },
+    };
+    const result = await callAllPages(
+      endless,
+      listOperation("cursor"),
+      { path: {}, query: {}, headers: {}, cookies: {} },
+      100_000,
+    );
+    expect(calls).toBe(100);
+    expect((result.body as any).meta).toMatchObject({
+      pages: 100,
+      fetchedItems: 100,
+      truncated: true,
+    });
+  });
+
+  test("returns a failing page unchanged", async () => {
+    const failing = {
+      call: async () =>
+        ({ status: 500, headers: {}, body: { message: "boom" }, ok: false }) as const,
+    };
+    const result = await callAllPages(
+      failing,
+      listOperation("page"),
+      { path: {}, query: {}, headers: {}, cookies: {} },
+    );
+    expect(result.status).toBe(500);
+    expect(result.ok).toBe(false);
   });
 });
 
