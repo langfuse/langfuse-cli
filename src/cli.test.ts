@@ -12,6 +12,8 @@ import {
   schemaOutput,
   writeResult,
 } from "./cli";
+import { createApiClient, prepareRequest } from "./client";
+import { CliError } from "./errors";
 import { compileApiContract } from "./contracts/compiler";
 import type { ApiOperation } from "./contracts/types";
 
@@ -72,7 +74,7 @@ describe("langfuse get-skill", () => {
         "https://raw.githubusercontent.com/langfuse/skills/main/skills/langfuse/SKILL.md",
       );
       expect(output.stderr).toContain("network blocked");
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(4);
     } finally {
       globalThis.fetch = originalFetch;
       process.exitCode = originalExitCode ?? 0;
@@ -451,6 +453,116 @@ describe("API version reporting", () => {
         catalog,
       ),
     ).rejects.toThrow("Unknown API version bogus");
+  });
+});
+
+describe("exit code taxonomy", () => {
+  const getOperation: ApiOperation = {
+    key: "GET /api/public/v2/prompts/{promptName}",
+    operationId: "prompts_get",
+    method: "GET",
+    path: "/api/public/v2/prompts/{promptName}",
+    auth: { required: false, schemes: [] },
+    command: { resource: "prompts", action: "get" },
+    pathParameterOrder: ["promptName"],
+    parameters: [
+      {
+        location: "path",
+        name: "promptName",
+        cliName: "prompt-name",
+        required: true,
+        style: "simple",
+        explode: false,
+        kind: "string",
+      },
+    ],
+  };
+
+  test("missing credentials fail with the configuration exit code", () => {
+    const operation: ApiOperation = {
+      ...getOperation,
+      auth: { required: true, schemes: ["BasicAuth"] },
+    };
+    try {
+      prepareRequest(
+        { host: "https://example.com", timeoutMs: 1000 },
+        operation,
+        { path: { promptName: "x" }, query: {}, headers: {}, cookies: {} },
+      );
+      throw new Error("expected a configuration error");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).exitCode).toBe(3);
+    }
+  });
+
+  test("network failures carry exit code 4 and name the request", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused");
+    }) as typeof fetch;
+    try {
+      await createApiClient({ host: "https://example.com", timeoutMs: 50 }).call(
+        getOperation,
+        { path: { promptName: "x" }, query: {}, headers: {}, cookies: {} },
+      );
+      throw new Error("expected a network error");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).exitCode).toBe(4);
+      expect((error as CliError).message).toContain(
+        "GET https://example.com/api/public/v2/prompts/x",
+      );
+      expect((error as CliError).message).toContain("connection refused");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("unreadable body files carry the local-failure exit code", async () => {
+    const operation: ApiOperation = {
+      ...getOperation,
+      pathParameterOrder: [],
+      parameters: [],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        legacyFieldFlags: false,
+        fields: [],
+      },
+    };
+    try {
+      await parseOperationInput(operation, [
+        "--body-file",
+        "/nonexistent/cli-test-body.json",
+      ]);
+      throw new Error("expected a local file error");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).exitCode).toBe(6);
+    }
+  });
+
+  test("HTTP failures set exit code 5", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await captureOutput(() =>
+        writeResult(
+          { status: 404, headers: {}, body: { message: "nope" }, ok: false },
+          {
+            host: "https://example.com",
+            timeoutMs: 1000,
+            json: true,
+            curl: false,
+            showSecrets: false,
+          },
+        ),
+      );
+      expect(process.exitCode).toBe(5);
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
+    }
   });
 });
 

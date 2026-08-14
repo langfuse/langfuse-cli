@@ -102,6 +102,18 @@ get generated kebab-case flags (for example `--object-id` for the `objectId`
 field) consistent with query-parameter flags; wire names in the request are
 never affected.
 
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Successful API response or local command |
+| 1 | Unexpected internal failure |
+| 2 | Invalid command or input (usage); no request sent |
+| 3 | Missing or invalid configuration/credentials; no request sent |
+| 4 | Network, DNS, TLS, or timeout failure reaching the host |
+| 5 | The API responded with a non-success HTTP status (response is still printed) |
+| 6 | Local file or bundled-contract failure |
+
 ## Agent Usage
 
 The latest Langfuse skill lives in [`langfuse/skills`](https://github.com/langfuse/skills). Print the current version with:

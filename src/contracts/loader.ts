@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 
+import { CliError, EXIT_CONFIG, EXIT_LOCAL, EXIT_NETWORK } from "../errors";
 import type {
   ApiContract,
   ApiContractCatalog,
@@ -43,21 +44,35 @@ export async function loadContractCatalog(): Promise<ApiContractCatalog> {
     await readFile(CATALOG_URL, "utf8"),
   ) as ApiContractCatalog;
   if (catalog.schemaVersion !== 1 || !Array.isArray(catalog.versions)) {
-    throw new Error("Invalid bundled API contract catalog");
+    throw new CliError("Invalid bundled API contract catalog", EXIT_LOCAL);
   }
   return catalog;
 }
 
 async function detectServerVersion(host: string, timeoutMs: number): Promise<string> {
-  const response = await fetch(`${host}/api/public/health`, {
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const url = `${host}/api/public/health`;
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new CliError(
+      `API version detection failed: GET ${url}: ${cause}`,
+      EXIT_NETWORK,
+    );
+  }
   if (!response.ok) {
-    throw new Error(`API version detection failed: HTTP ${response.status}`);
+    throw new CliError(
+      `API version detection failed: GET ${url} returned HTTP ${response.status}`,
+      EXIT_NETWORK,
+    );
   }
   const body = (await response.json()) as { version?: unknown };
   if (typeof body.version !== "string" || !parseVersion(body.version)) {
-    throw new Error("API version detection returned no semantic version");
+    throw new CliError(
+      `API version detection failed: GET ${url} returned no semantic version`,
+      EXIT_NETWORK,
+    );
   }
   return body.version.replace(/^v/, "");
 }
@@ -92,8 +107,9 @@ export async function resolveContractVersion(params: {
     const exact = catalog.versions.find((entry) => entry.version === detected);
     const compatible = exact ?? compatibleEntry(catalog.versions, detected);
     if (!compatible) {
-      throw new Error(
+      throw new CliError(
         `No bundled API contract is compatible with detected server ${detected}`,
+        EXIT_CONFIG,
       );
     }
     return { catalog, version: compatible.version, detected };
@@ -111,14 +127,16 @@ export async function resolveContractVersion(params: {
           .filter((value): value is number => value !== undefined),
       ),
     ].sort((left, right) => left - right);
-    throw new Error(
+    throw new CliError(
       `No bundled API contract for major version ${major}. Available majors: ${availableMajors.join(", ")}`,
+      EXIT_CONFIG,
     );
   }
-  throw new Error(
+  throw new CliError(
     `Unknown API version ${requested}. Available: ${catalog.versions
       .map((entry) => entry.version)
       .join(", ")}`,
+    EXIT_CONFIG,
   );
 }
 
@@ -126,7 +144,7 @@ export async function loadApiContract(version: string): Promise<ApiContract> {
   const url = new URL(`./contracts/${encodeURIComponent(version)}.json`, import.meta.url);
   const contract = JSON.parse(await readFile(url, "utf8")) as ApiContract;
   if (contract.schemaVersion !== 1 || contract.apiVersion !== version) {
-    throw new Error(`Invalid bundled API contract for ${version}`);
+    throw new CliError(`Invalid bundled API contract for ${version}`, EXIT_LOCAL);
   }
   return contract;
 }

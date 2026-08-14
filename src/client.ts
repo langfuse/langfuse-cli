@@ -1,5 +1,6 @@
 import packageJson from "../package.json";
 
+import { CliError, EXIT_CONFIG, EXIT_NETWORK } from "./errors";
 import type {
   ApiCallInput,
   ApiClientConfig,
@@ -103,8 +104,9 @@ export function prepareRequest(
   if (cookies.length > 0) headers.set("cookie", cookies.join("; "));
   if (operation.auth.required && operation.auth.schemes.includes("BasicAuth")) {
     if (!config.publicKey || !config.secretKey) {
-      throw new Error(
+      throw new CliError(
         "This operation requires LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY",
+        EXIT_CONFIG,
       );
     }
     headers.set(
@@ -156,12 +158,21 @@ export function createApiClient(config: ApiClientConfig) {
 
     async call(operation: ApiOperation, input: ApiCallInput): Promise<ApiResult> {
       const prepared = prepareRequest(config, operation, input);
-      const response = await fetch(prepared.url, {
-        method: prepared.method,
-        headers: prepared.headers,
-        body: prepared.body,
-        signal: AbortSignal.timeout(config.timeoutMs),
-      });
+      let response: Response;
+      try {
+        response = await fetch(prepared.url, {
+          method: prepared.method,
+          headers: prepared.headers,
+          body: prepared.body,
+          signal: AbortSignal.timeout(config.timeoutMs),
+        });
+      } catch (error) {
+        const cause = error instanceof Error ? error.message : String(error);
+        throw new CliError(
+          `${prepared.method} ${prepared.url.href} failed: ${cause}`,
+          EXIT_NETWORK,
+        );
+      }
       return {
         status: response.status,
         headers: Object.fromEntries(response.headers.entries()),

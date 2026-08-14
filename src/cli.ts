@@ -4,6 +4,13 @@ import { text as streamText } from "node:stream/consumers";
 import packageJson from "../package.json";
 
 import { createApiClient, renderCurl } from "./client";
+import {
+  CliError,
+  EXIT_CONFIG,
+  EXIT_HTTP,
+  EXIT_LOCAL,
+  EXIT_NETWORK,
+} from "./errors";
 import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
 import {
   loadApiContract,
@@ -48,12 +55,6 @@ interface RuntimeConfig {
   curl: boolean;
   showSecrets: boolean;
   output?: string;
-}
-
-class CliError extends Error {
-  constructor(message: string, readonly exitCode = 2) {
-    super(message);
-  }
 }
 
 function flagKey(flag: string): string {
@@ -107,9 +108,17 @@ function parseEnv(content: string): Record<string, string> {
 }
 
 async function runtimeConfig(globals: ParsedGlobals): Promise<RuntimeConfig> {
-  const fileEnv = globals.values.env
-    ? parseEnv(await readFile(globals.values.env, "utf8"))
-    : {};
+  let fileEnv: Record<string, string> = {};
+  if (globals.values.env) {
+    try {
+      fileEnv = parseEnv(await readFile(globals.values.env, "utf8"));
+    } catch (error) {
+      throw new CliError(
+        `Cannot read --env file ${globals.values.env}: ${error instanceof Error ? error.message : String(error)}`,
+        EXIT_CONFIG,
+      );
+    }
+  }
   const env = { ...process.env, ...fileEnv };
   const timeoutMs = Number(globals.values.timeout ?? DEFAULT_TIMEOUT_MS);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -166,7 +175,7 @@ Then add the downloaded SKILL.md to your agent context manually.
 
 Original error: ${reason}
 `);
-    process.exitCode = 1;
+    process.exitCode = EXIT_NETWORK;
   }
 }
 
@@ -188,6 +197,9 @@ Options:
   --timeout <ms>          Request timeout (default: ${DEFAULT_TIMEOUT_MS})
   -h, --help              Show help
   --version               Show CLI version
+
+Exit codes:
+  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file
 
 Examples:
   langfuse api help
@@ -481,13 +493,22 @@ function splitOption(token: string): { name: string; inline?: string; negated: b
 }
 
 async function readBodyFile(path: string): Promise<JsonValue> {
-  const text =
-    path === "-" ? await streamText(process.stdin) : await readFile(path, "utf8");
+  let text: string;
+  try {
+    text =
+      path === "-" ? await streamText(process.stdin) : await readFile(path, "utf8");
+  } catch (error) {
+    throw new CliError(
+      `Cannot read body file ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      EXIT_LOCAL,
+    );
+  }
   try {
     return JSON.parse(text) as JsonValue;
   } catch (error) {
     throw new CliError(
       `Invalid JSON in ${path === "-" ? "stdin" : path}: ${error instanceof Error ? error.message : String(error)}`,
+      EXIT_LOCAL,
     );
   }
 }
@@ -671,7 +692,14 @@ export async function writeResult(
         : typeof result.body === "string"
         ? result.body
         : JSON.stringify(result.body, null, 2);
-    await writeFile(config.output, content ?? "");
+    try {
+      await writeFile(config.output, content ?? "");
+    } catch (error) {
+      throw new CliError(
+        `Cannot write --output file ${config.output}: ${error instanceof Error ? error.message : String(error)}`,
+        EXIT_LOCAL,
+      );
+    }
   } else if (config.json) {
     process.stdout.write(
       `${JSON.stringify({ status: result.status, headers: result.headers, body: result.body })}\n`,
@@ -681,7 +709,7 @@ export async function writeResult(
   } else if (result.body !== null) {
     process.stdout.write(`${JSON.stringify(result.body, null, 2)}\n`);
   }
-  if (!result.ok) process.exitCode = 1;
+  if (!result.ok) process.exitCode = EXIT_HTTP;
 }
 
 export async function runApi(
