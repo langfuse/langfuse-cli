@@ -339,7 +339,7 @@ function printOperationHelp(operation: ApiOperation): void {
   if (operation.requestBody?.legacyFieldFlags) {
     for (const field of operation.requestBody.fields) {
       lines.push(
-        `  ${flagUsage(field.name, field.kind)}${field.required ? " (required)" : ""}`,
+        `  ${flagUsage(field.cliName, field.kind)}${field.required ? " (required)" : ""}`,
       );
     }
   }
@@ -524,12 +524,12 @@ export async function parseOperationInput(
     const parameter = parameterByFlag.get(option.name);
     const bodyField = operation.requestBody?.legacyFieldFlags
       ? operation.requestBody.fields.find(
-          (candidate) => candidate.name === option.name.split(".")[0],
+          (candidate) => candidate.cliName === option.name.split(".")[0],
         )
       : undefined;
     if (bodyField && option.name.includes(".")) {
       throw new CliError(
-        `Nested body option --${option.name} is unsupported; pass --${bodyField.name} with a JSON object or use --body-json`,
+        `Nested body option --${option.name} is unsupported; pass --${bodyField.cliName} with a JSON object or use --body-json`,
       );
     }
     const isBoolean =
@@ -618,7 +618,7 @@ export async function parseOperationInput(
   if (completeBody === undefined && operation.requestBody?.legacyFieldFlags) {
     const missing = operation.requestBody.fields
       .filter((field) => field.required && fieldBody?.[field.name] === undefined)
-      .map((field) => `--${field.name}`);
+      .map((field) => `--${field.cliName}`);
     if (missing.length > 0) {
       throw new CliError(`Missing required body option(s): ${missing.join(", ")}`);
     }

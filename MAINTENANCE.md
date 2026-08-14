@@ -48,14 +48,23 @@ intentional naming change, regenerate and review the diff:
 bun run goldens:update
 ```
 
-Hand-written naming exceptions (extra parameter flag spellings such as
-`--prompt-version`, and per-version command overrides) live in
-`src/contracts/overrides.json` and are applied by the contract compiler, never
-hardcoded in the runtime. Alias flags are validated against every runtime flag
-namespace (parameters, body fields, reserved and global flags). A snapshot
-that lacks the referenced parameter skips the alias, but an entry applied in
-no snapshot at all fails the build, tests, and `goldens:update`, so stale
-overrides cannot rot silently.
+All option flags are derived mechanically: query/header parameters and
+request-body fields kebab-case their wire names (`objectId` -> `--object-id`),
+so new spec versions get flags without per-parameter maintenance. The
+compiler validates each operation's full flag namespace (parameters, aliases,
+body fields, reserved and global flags) and fails the build when a new
+snapshot introduces a collision, instead of silently shipping a dead or
+hijacked flag.
+
+Hand-written naming exceptions live in `src/contracts/overrides.json` and are
+applied by the contract compiler, never hardcoded in the runtime: extra
+parameter flag spellings (`parameterFlagAliases`, e.g. `--prompt-version`),
+body-field flag renames for collisions (`bodyFieldFlags`, e.g.
+`llmConnections_upsert.secretKey` -> `--provider-secret-key` because
+`--secret-key` is the global auth flag), and per-version command overrides.
+A snapshot that lacks the referenced parameter or field skips the entry, but
+an entry applied in no snapshot at all fails the build, tests, and
+`goldens:update`, so stale overrides cannot rot silently.
 
 ## Releases
 

@@ -97,8 +97,10 @@ values remain available in `api schema --json` but are never required as CLI
 commands.
 
 `--body-json` and `--body-file` provide a lossless input path for nested
-objects, arrays, unions, and free-form JSON. Simple historical field flags
-remain supported where they were previously expressible.
+objects, arrays, unions, and free-form JSON. Simple request-body fields also
+get generated kebab-case flags (for example `--object-id` for the `objectId`
+field) consistent with query-parameter flags; wire names in the request are
+never affected.
 
 ## Agent Usage
 

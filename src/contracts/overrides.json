@@ -5,5 +5,14 @@
       { "location": "query", "parameter": "version", "flag": "prompt-version" }
     ]
   },
+  "bodyFieldFlags": {
+    "llmConnections_upsert": {
+      "secretKey": "provider-secret-key"
+    },
+    "projects_createApiKey": {
+      "publicKey": "custom-public-key",
+      "secretKey": "custom-secret-key"
+    }
+  },
   "commandOverrides": {}
 }

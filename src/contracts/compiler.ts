@@ -114,15 +114,6 @@ function applyParameterFlagAliases(
 ): void {
   const aliases = overrides.parameterFlagAliases[operation.operationId];
   if (!aliases) return;
-  // Every flag namespace the runtime resolves before or alongside parameters:
-  // reserved/global flags, parameter cliNames, and legacy body-field flags.
-  const taken = new Set<string>(RESERVED_OPTION_NAMES);
-  for (const parameter of operation.parameters) {
-    if (parameter.location !== "path") taken.add(parameter.cliName);
-  }
-  if (operation.requestBody?.legacyFieldFlags) {
-    for (const field of operation.requestBody.fields) taken.add(field.name);
-  }
   for (const spec of aliases) {
     if ((spec.location as string) === "path") {
       throw new Error(
@@ -136,13 +127,58 @@ function applyParameterFlagAliases(
     // A missing parameter is tolerated per version (specs evolve); an entry
     // applied in no snapshot at all is rejected by assertOverridesApplied.
     if (!parameter) continue;
-    if (taken.has(spec.flag)) {
+    parameter.cliAliases = [...(parameter.cliAliases ?? []), spec.flag];
+  }
+}
+
+function applyBodyFieldFlagOverrides(
+  operation: AliasTarget,
+  overrides: ContractOverrides,
+): void {
+  const renames = overrides.bodyFieldFlags[operation.operationId];
+  if (!renames || !operation.requestBody) return;
+  for (const [fieldName, flag] of Object.entries(renames)) {
+    const field = operation.requestBody.fields.find(
+      (candidate) => candidate.name === fieldName,
+    );
+    // Missing fields are tolerated per version; assertOverridesApplied
+    // rejects entries that apply in no snapshot.
+    if (!field) continue;
+    field.cliName = flag;
+  }
+}
+
+// Single fail-closed gate over every flag namespace an operation exposes.
+// A new spec version that introduces a colliding parameter or body field
+// breaks the build here instead of silently shipping a dead or hijacked
+// flag; collisions are resolved with a reviewed rename in overrides.json.
+function validateFlagNamespace(operation: AliasTarget): void {
+  const owners = new Map<string, string>();
+  const claim = (flag: string, owner: string) => {
+    if (RESERVED_OPTION_NAMES.has(flag)) {
       throw new Error(
-        `${operation.operationId}: flag alias --${spec.flag} collides with an existing option`,
+        `${operation.operationId}: --${flag} (${owner}) collides with a reserved or global flag; rename it in overrides.json bodyFieldFlags/parameterFlagAliases`,
       );
     }
-    taken.add(spec.flag);
-    parameter.cliAliases = [...(parameter.cliAliases ?? []), spec.flag];
+    const existing = owners.get(flag);
+    if (existing) {
+      throw new Error(
+        `${operation.operationId}: --${flag} (${owner}) collides with an existing option (${existing}); rename it in overrides.json`,
+      );
+    }
+    owners.set(flag, owner);
+  };
+  for (const parameter of operation.parameters) {
+    if (parameter.location === "path") continue;
+    claim(parameter.cliName, `${parameter.location} parameter ${parameter.name}`);
+    for (const alias of parameter.cliAliases ?? []) {
+      claim(alias, `flag alias of parameter ${parameter.name}`);
+    }
+  }
+  if (operation.requestBody?.legacyFieldFlags) {
+    for (const field of operation.requestBody.fields) {
+      claim(field.cliName, `body field ${field.name}`);
+    }
   }
 }
 
@@ -169,6 +205,24 @@ export function assertOverridesApplied(
       if (!applied) {
         throw new Error(
           `overrides.json: flag alias --${spec.flag} for ${operationId} ${spec.location} parameter "${spec.parameter}" is applied in no compiled contract; fix or remove the entry`,
+        );
+      }
+    }
+  }
+  for (const [operationId, renames] of Object.entries(overrides.bodyFieldFlags)) {
+    for (const [fieldName, flag] of Object.entries(renames)) {
+      const applied = contracts.some((contract) =>
+        contract.operations.some(
+          (operation) =>
+            operation.operationId === operationId &&
+            operation.requestBody?.fields.some(
+              (field) => field.name === fieldName && field.cliName === flag,
+            ),
+        ),
+      );
+      if (!applied) {
+        throw new Error(
+          `overrides.json: body field flag --${flag} for ${operationId} field "${fieldName}" is applied in no compiled contract; fix or remove the entry`,
         );
       }
     }
@@ -272,6 +326,7 @@ function collectBodyFields(
       const kind = existing?.kind ?? schemaKind(document, property);
       fields.set(name, {
         name,
+        cliName: kebabCase(name),
         required: Boolean(existing?.required || required.has(name)),
         kind,
         ...(kind === "array"
@@ -426,6 +481,8 @@ export function compileApiContract(
   });
   for (const operation of pending) {
     applyParameterFlagAliases(operation, overrides);
+    applyBodyFieldFlagOverrides(operation, overrides);
+    validateFlagNamespace(operation);
   }
   const names = planCommandNames(pending);
   const commandOverrides = overrides.commandOverrides[source.version] ?? {};

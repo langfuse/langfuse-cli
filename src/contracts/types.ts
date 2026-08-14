@@ -58,6 +58,10 @@ export interface ParameterFlagAlias {
 export interface ContractOverrides {
   schemaVersion: 1;
   parameterFlagAliases: Record<string, ParameterFlagAlias[]>;
+  // operationId -> body field wire name -> CLI flag. Used to resolve flag
+  // collisions the compiler rejects (e.g. a field kebab-casing onto a
+  // reserved/global flag). Wire names in the request are never affected.
+  bodyFieldFlags: Record<string, Record<string, string>>;
   commandOverrides: Record<
     string,
     Record<string, { resource?: string; action?: string }>
@@ -66,6 +70,7 @@ export interface ContractOverrides {
 
 export interface ApiBodyField {
   name: string;
+  cliName: string;
   required: boolean;
   kind: ValueKind;
   itemKind?: ValueKind;

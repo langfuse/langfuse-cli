@@ -9,6 +9,7 @@ function overrides(partial: Partial<ContractOverrides>): ContractOverrides {
   return {
     schemaVersion: 1,
     parameterFlagAliases: {},
+    bodyFieldFlags: {},
     commandOverrides: {},
     ...partial,
   };
@@ -122,8 +123,65 @@ paths:
             },
           }),
         ),
-      ).toThrow("collides with an existing option");
+      ).toThrow("collides with a reserved or global flag");
     }
+  });
+
+  test("derives kebab-case body-field flags and fails closed on collisions", () => {
+    const contract = compileApiContract(SOURCE, spec);
+    const fields = contract.operations.find(
+      (operation) => operation.operationId === "things_create",
+    )!.requestBody!.fields;
+    expect(fields[0].cliName).toBe("name");
+
+    // body field kebab-casing onto a reserved/global flag
+    const reservedSpec = spec
+      .replace("name: { type: string }", "bodyJson: { type: string }")
+      .replace("required: [name]", "required: [bodyJson]");
+    expect(() => compileApiContract(SOURCE, reservedSpec)).toThrow(
+      "collides with a reserved or global flag",
+    );
+
+    // two wire names kebab-casing onto the same flag
+    const dupSpec = spec
+      .replace(
+        "name: { type: string }",
+        "userId: { type: string }\n                user_id: { type: string }",
+      )
+      .replace("required: [name]", "required: [userId]");
+    expect(() => compileApiContract(SOURCE, dupSpec)).toThrow(
+      "collides with an existing option",
+    );
+
+    // body field colliding with a query parameter's flag
+    const paramClash = spec
+      .replace("name: { type: string }", "q: { type: string }")
+      .replace("required: [name]", "required: [q]");
+    expect(() => compileApiContract(SOURCE, paramClash)).toThrow(
+      "collides with an existing option",
+    );
+  });
+
+  test("renames colliding body-field flags via overrides and verifies application", () => {
+    const reservedSpec = spec
+      .replace("name: { type: string }", "secretKey: { type: string }")
+      .replace("required: [name]", "required: [secretKey]");
+    const withRename = overrides({
+      bodyFieldFlags: { things_create: { secretKey: "provider-secret-key" } },
+    });
+    const contract = compileApiContract(SOURCE, reservedSpec, withRename);
+    const field = contract.operations
+      .find((operation) => operation.operationId === "things_create")!
+      .requestBody!.fields.find((candidate) => candidate.name === "secretKey")!;
+    expect(field.cliName).toBe("provider-secret-key");
+    expect(() => assertOverridesApplied([contract], withRename)).not.toThrow();
+
+    const stale = overrides({
+      bodyFieldFlags: { things_create: { nonexistent: "x-flag" } },
+    });
+    expect(() =>
+      assertOverridesApplied([compileApiContract(SOURCE, spec, stale)], stale),
+    ).toThrow("applied in no compiled contract");
   });
 
   test("rejects a command override colliding with another operation's alias", () => {
