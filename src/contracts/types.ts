@@ -44,6 +44,8 @@ export interface ApiParameter {
   explode: boolean;
   kind: ValueKind;
   itemKind?: ValueKind;
+  enum?: Array<string | number>;
+  description?: string;
 }
 
 export interface ParameterFlagAlias {
@@ -74,6 +76,7 @@ export interface ApiBodyField {
   required: boolean;
   kind: ValueKind;
   itemKind?: ValueKind;
+  enum?: Array<string | number>;
   description?: string;
 }
 
@@ -81,6 +84,8 @@ export interface ApiRequestBody {
   required: boolean;
   contentType: string;
   legacyFieldFlags: boolean;
+  // Top-level oneOf/anyOf body: fields are merged across the union variants.
+  union?: true;
   fields: ApiBodyField[];
 }
 

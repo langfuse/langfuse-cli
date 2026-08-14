@@ -9,30 +9,33 @@ Interact with the [Langfuse](https://langfuse.com) API from the command line.
 ```sh
 # Run directly
 npx langfuse-cli api <resource> <action>
-# or
+# via bun:
 bunx --bun langfuse-cli api <resource> <action>
 
 # Or install globally
 npm i -g langfuse-cli
-# or
+# via bun:
 bun add --global langfuse-cli
+
+# then run
 langfuse api <resource> <action>
+langfuse --env .env api <resource> <action>
 ```
 
-## Configuration
+## Authentication
 
-Use an `.env` file (recommended, takes precedence):
-
-```sh
-langfuse --env .env api prompts list
-```
-
-You can get the values from your project settings. The `.env` file should contain:
+The CLI needs the following parameters to work:
 
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default (LANGFUSE_BASE_URL also supported)
+```
+
+You can provide them via an `.env` file (takes precedence):
+
+```sh
+langfuse --env .env api prompts list
 ```
 
 Alternatively, export env vars or pass inline flags:
@@ -52,24 +55,26 @@ langfuse --public-key pk-lf-... --secret-key sk-lf-... api prompts list
 ```sh
 # Discover resources naturally
 langfuse api help
+langfuse api prompts help
+# or
 langfuse api help prompts
-langfuse api help prompts create
 
-# Machine-readable discovery (legacy command alias)
+langfuse api prompts create help
+
+# Machine-readable discovery
 langfuse api schema --json
-langfuse api __schema --json
+
+# Create a prompt
+langfuse api prompts create --json-body '{"name":"my-prompt","type":"text","prompt":"Hello {{name}}"}'
 
 # List observations
 langfuse api observations list --limit 10
+# Fetch every page of a paginated list (works for page- and cursor-based endpoints), max 1000 items
+langfuse api observations list --all
+langfuse api observations list --limit 100 --all --max-items 5000
 
 # List observations for a specific trace
 langfuse api observations list --trace-id <trace-id>
-
-# Fetch every page of a paginated list (works for page- and cursor-based endpoints)
-# Bounded by --max-items (default 1000) and a 100-request cap; a stderr notice
-# plus meta.truncated=true tell you when more data is available.
-langfuse api prompts list --all
-langfuse api observations list --limit 100 --all --max-items 5000
 
 # JSON output (for piping/scripting)
 langfuse api observations list --limit 5 --json
@@ -90,13 +95,13 @@ langfuse api dataset-items list --dataset-name my-dataset
 langfuse api scores list --limit 20
 
 # Use an API snapshot compatible with an older self-hosted deployment
+langfuse --api-version 3 api traces list
 langfuse --api-version 3.150.0 api traces list
 
 # Detect the server version through /api/public/health
 langfuse --api-version auto api prompts list
 ```
 
-Canonical command resources come from API paths and use concise REST actions.
 OpenAPI tags and explicit route versions remain accepted aliases, for example
 `scores-v3 list` for the canonical `scores list`. Verbose OpenAPI `operationId`
 values remain available in `api schema --json` but are never required as CLI
@@ -110,6 +115,7 @@ never affected.
 
 ## Exit codes
 
+(Useful for agents)
 | Code | Meaning |
 |---|---|
 | 0 | Successful API response or local command |
@@ -134,7 +140,7 @@ This fetches the latest skill from GitHub, so it stays up to date. Pipe it into 
 
 See the full [Langfuse API Reference](https://api.reference.langfuse.com/).
 
-## Implementation
+## Contributing
 
 The CLI is implemented in TypeScript and runs on Node.js 20+ or Bun. It has zero external runtime dependencies and never parses OpenAPI during invocation.
 

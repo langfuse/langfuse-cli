@@ -264,6 +264,26 @@ function parameterDefaults(location: string): { style: string; explode: boolean 
   return { style: "simple", explode: false };
 }
 
+// Descriptions can be multi-kilobyte markdown documents in the spec; contracts
+// carry a single collapsed line capped for help output.
+function summarizeDescription(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  if (!collapsed) return undefined;
+  return collapsed.length > 200 ? `${collapsed.slice(0, 199)}…` : collapsed;
+}
+
+function enumValues(schema: Record<string, any>): Array<string | number> | undefined {
+  const source =
+    schema.const !== undefined ? [schema.const] : (schema.enum as unknown[] | undefined);
+  if (!Array.isArray(source) || source.length === 0) return undefined;
+  const values = source.filter(
+    (value): value is string | number =>
+      typeof value === "string" || typeof value === "number",
+  );
+  return values.length === source.length ? values : undefined;
+}
+
 function mergeParameters(
   document: Record<string, any>,
   pathParameters: any[] = [],
@@ -279,6 +299,11 @@ function mergeParameters(
     const schema = resolveLocalRef(document, parameter.schema ?? { type: "string" });
     const defaults = parameterDefaults(location);
     const kind = schemaKind(document, schema);
+    const values =
+      kind === "array"
+        ? enumValues(resolveLocalRef(document, schema.items ?? {}))
+        : enumValues(schema);
+    const description = summarizeDescription(parameter.description);
     merged.set(`${location}:${parameter.name}`, {
       location,
       name: String(parameter.name),
@@ -290,6 +315,8 @@ function mergeParameters(
       ...(kind === "array"
         ? { itemKind: schemaKind(document, schema.items ?? { type: "string" }) }
         : {}),
+      ...(values ? { enum: values } : {}),
+      ...(description ? { description } : {}),
     });
   }
   return [...merged.values()].sort((left, right) => {
@@ -305,6 +332,9 @@ function collectBodyFields(
   rawSchema: Record<string, any>,
 ): ApiBodyField[] {
   const fields = new Map<string, ApiBodyField>();
+  // Enum values are unioned across union branches; a field that is not
+  // enum-constrained in every branch carries no enum (null locks it out).
+  const enums = new Map<string, Set<string | number> | null>();
   const visit = (raw: Record<string, any>, inheritedRequired = new Set<string>()) => {
     const schema = resolveLocalRef(document, raw);
     const required = new Set<string>([
@@ -324,6 +354,15 @@ function collectBodyFields(
       const property = resolveLocalRef(document, rawProperty);
       const existing = fields.get(name);
       const kind = existing?.kind ?? schemaKind(document, property);
+      const values = enumValues(property);
+      const seen = enums.get(name);
+      if (values === undefined || seen === null) {
+        enums.set(name, null);
+      } else {
+        enums.set(name, new Set([...(seen ?? []), ...values]));
+      }
+      const description =
+        summarizeDescription(property.description) ?? existing?.description;
       fields.set(name, {
         name,
         cliName: kebabCase(name),
@@ -336,18 +375,17 @@ function collectBodyFields(
                 schemaKind(document, property.items ?? { type: "string" }),
             }
           : {}),
-        ...(property.description
-          ? { description: String(property.description) }
-          : existing?.description
-            ? { description: existing.description }
-            : {}),
+        ...(description ? { description } : {}),
       });
     }
   };
   visit(rawSchema);
-  return [...fields.values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
+  return [...fields.values()]
+    .map((field) => {
+      const values = enums.get(field.name);
+      return values ? { ...field, enum: [...values] } : field;
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function normalizeAuth(
@@ -400,10 +438,13 @@ function normalizeRequestBody(
   }
   const rawSchema = body.content?.[contentType]?.schema;
   if (!rawSchema) throw new Error(`${operationId}: request body has no schema`);
+  const resolved = resolveLocalRef(document, rawSchema);
+  const union = Array.isArray(resolved.oneOf) || Array.isArray(resolved.anyOf);
   return {
     required: Boolean(body.required),
     contentType,
     legacyFieldFlags: !LEGACY_FIELD_FLAGS_UNSUPPORTED.has(operationId),
+    ...(union ? { union: true as const } : {}),
     fields: collectBodyFields(document, rawSchema),
   };
 }

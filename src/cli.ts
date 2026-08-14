@@ -338,6 +338,43 @@ function flagUsage(name: string, kind: ValueKind): string {
     : `--${name} <${kindLabel(kind)}>`;
 }
 
+function clip(text: string, max = 100): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function annotate(
+  base: string,
+  values?: Array<string | number>,
+  description?: string,
+): string {
+  const notes = [
+    ...(values?.length ? [`one of: ${values.join(", ")}`] : []),
+    ...(description ? [clip(description)] : []),
+  ];
+  if (notes.length === 0) return `  ${base}`;
+  return `  ${base.padEnd(38)} ${notes.join(" — ")}`;
+}
+
+function kindText(kind: ValueKind, itemKind?: ValueKind): string {
+  return kind === "array" ? `array<${itemKind ?? "string"}>` : kind;
+}
+
+function bodyFieldsSection(operation: ApiOperation): string {
+  const body = operation.requestBody;
+  if (!body || body.legacyFieldFlags || body.fields.length === 0) return "";
+  const lines = body.fields.map((field) =>
+    annotate(
+      `${field.name.padEnd(18)} ${kindText(field.kind, field.itemKind)}${field.required ? " (required)" : ""}`,
+      field.enum,
+      field.description,
+    ),
+  );
+  const unionNote = body.union
+    ? "\n  This body is a union of shapes; fields are merged across variants. See the API reference for exact shapes.\n"
+    : "";
+  return `\nRequest body fields (pass with --body-json or --body-file):\n${lines.join("\n")}\n${unionNote}`;
+}
+
 function printOperationHelp(operation: ApiOperation): void {
   const positionals = operation.pathParameterOrder
     .map((name) => `<${name}>`)
@@ -346,13 +383,21 @@ function printOperationHelp(operation: ApiOperation): void {
   for (const parameter of operation.parameters) {
     if (parameter.location === "path") continue;
     lines.push(
-      `  ${flagUsage(parameter.cliName, parameter.kind)}${parameter.required ? " (required)" : ""}`,
+      annotate(
+        `${flagUsage(parameter.cliName, parameter.kind)}${parameter.required ? " (required)" : ""}`,
+        parameter.enum,
+        parameter.description,
+      ),
     );
   }
   if (operation.requestBody?.legacyFieldFlags) {
     for (const field of operation.requestBody.fields) {
       lines.push(
-        `  ${flagUsage(field.cliName, field.kind)}${field.required ? " (required)" : ""}`,
+        annotate(
+          `${flagUsage(field.cliName, field.kind)}${field.required ? " (required)" : ""}`,
+          field.enum,
+          field.description,
+        ),
       );
     }
   }
@@ -376,7 +421,7 @@ ${
   operation.deprecated
     ? `\nDEPRECATED\nThis operation is discoverable but cannot be called by this CLI.${explicitDeprecationNote(operation) ? ` ${explicitDeprecationNote(operation)}` : ""}\n`
     : ""
-}
+}${bodyFieldsSection(operation)}
 Options:
 ${lines.length ? lines.join("\n") : "  (no operation-specific options)"}
   --json                         JSON response envelope
@@ -501,6 +546,33 @@ function splitOption(token: string): { name: string; inline?: string; negated: b
   };
 }
 
+function bodyPlaceholder(field: ApiBodyField): string {
+  if (field.enum?.length) return `"${field.enum.join("|")}"`;
+  if (field.kind === "number") return "0";
+  if (field.kind === "boolean") return "true";
+  if (field.kind === "array") return "[…]";
+  if (field.kind === "object") return "{…}";
+  if (field.kind === "null") return "null";
+  return `"…"`;
+}
+
+// Shape sketch for body-channel usage errors, derived from the contract's
+// required fields. The … placeholders make it read as a shape, not as a
+// valid payload (union bodies merge required fields across variants).
+function bodyHint(operation: ApiOperation): string {
+  const body = operation.requestBody;
+  if (!body) return "";
+  const required = body.fields.filter((field) => field.required);
+  if (required.length === 0) return "";
+  const sketch = required
+    .map((field) => `"${field.name}":${bodyPlaceholder(field)}`)
+    .join(",");
+  const unionNote = body.union
+    ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${operation.command.resource} ${operation.command.action}\`)`
+    : "";
+  return `, e.g.\n\n  --body-json '{${sketch}}'\n${unionNote}`;
+}
+
 async function readBodyFile(path: string): Promise<JsonValue> {
   let text: string;
   try {
@@ -601,7 +673,7 @@ export async function parseOperationInput(
     }
     if (!operation.requestBody.legacyFieldFlags) {
       throw new CliError(
-        `${operation.operationId} requires --body-json or --body-file for request bodies`,
+        `${operation.operationId} requires --body-json or --body-file for request bodies${bodyHint(operation)}`,
       );
     }
     const field = bodyField;
@@ -655,7 +727,9 @@ export async function parseOperationInput(
     if (body === undefined && operation.requestBody.required) body = {};
   }
   if (operation.requestBody?.required && body === undefined) {
-    throw new CliError(`${operation.operationId} requires a request body`);
+    throw new CliError(
+      `${operation.operationId} requires a request body${bodyHint(operation)}`,
+    );
   }
   if (body !== undefined) input.body = body;
   return input;

@@ -91,6 +91,59 @@ paths:
   });
 });
 
+describe("help metadata extraction", () => {
+  test("captures enums, descriptions, and union bodies", () => {
+    const contract = compileApiContract(
+      SOURCE,
+      `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /prompts:
+    post:
+      operationId: prompts_create
+      parameters:
+        - in: query
+          name: level
+          description: |
+            Filter by level.
+            Long second line that should be collapsed into one.
+          schema: { type: string, enum: [DEBUG, WARNING] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    type: { type: string, enum: [chat] }
+                    prompt: { type: array, items: { type: object } }
+                  required: [type, prompt]
+                - type: object
+                  properties:
+                    type: { type: string, enum: [text] }
+                    prompt: { type: string, description: "The prompt text." }
+                  required: [type, prompt]
+      responses:
+        '200': { description: ok }
+`,
+    );
+    const operation = contract.operations[0];
+    const level = operation.parameters.find((p) => p.name === "level")!;
+    expect(level.enum).toEqual(["DEBUG", "WARNING"]);
+    expect(level.description).toBe(
+      "Filter by level. Long second line that should be collapsed into one.",
+    );
+    expect(operation.requestBody?.union).toBe(true);
+    const type = operation.requestBody!.fields.find((f) => f.name === "type")!;
+    expect(type.enum).toEqual(["chat", "text"]);
+    const prompt = operation.requestBody!.fields.find((f) => f.name === "prompt")!;
+    // one branch is not enum-constrained, so no enum is claimed
+    expect(prompt.enum).toBeUndefined();
+    expect(prompt.description).toBe("The prompt text.");
+  });
+});
+
 describe("contract overrides", () => {
   test("applies a parameter flag alias and verifies application", () => {
     const withAlias = overrides({

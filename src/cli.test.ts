@@ -379,6 +379,67 @@ paths:
     });
   });
 
+  test("body-channel usage errors include a shape hint", async () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      key: "POST /api/public/v2/prompts",
+      operationId: "prompts_create",
+      method: "POST",
+      path: "/api/public/v2/prompts",
+      command: { resource: "prompts", action: "create" },
+      pathParameterOrder: [],
+      parameters: [],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        legacyFieldFlags: false,
+        union: true,
+        fields: [
+          { name: "name", cliName: "name", required: true, kind: "string" },
+          {
+            name: "prompt",
+            cliName: "prompt",
+            required: true,
+            kind: "array",
+            itemKind: "object",
+          },
+          {
+            name: "type",
+            cliName: "type",
+            required: true,
+            kind: "string",
+            enum: ["chat", "text"],
+          },
+          {
+            name: "labels",
+            cliName: "labels",
+            required: false,
+            kind: "array",
+            itemKind: "string",
+          },
+        ],
+      },
+    };
+    const hint = `--body-json '{"name":"…","prompt":[…],"type":"chat|text"}'`;
+    try {
+      await parseOperationInput(operation, ["--type", "text"]);
+      throw new Error("expected a usage error");
+    } catch (error) {
+      expect((error as Error).message).toContain(
+        "requires --body-json or --body-file",
+      );
+      expect((error as Error).message).toContain(hint);
+      expect((error as Error).message).toContain("union body");
+    }
+    try {
+      await parseOperationInput(operation, []);
+      throw new Error("expected a usage error");
+    } catch (error) {
+      expect((error as Error).message).toContain("requires a request body");
+      expect((error as Error).message).toContain(hint);
+    }
+  });
+
   test("resolves tag and version command aliases", () => {
     const operation: ApiOperation = {
       ...promptGet,
