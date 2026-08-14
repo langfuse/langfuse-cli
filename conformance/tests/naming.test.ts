@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { kebabCase, planCommandNames, pluralize } from "../src/naming";
 
 describe("stable CLI naming policy", () => {
-  test("normalizes Langfuse tags without importing specli", () => {
+  test("normalizes tags and pluralizes resources", () => {
     expect(kebabCase("AnnotationQueues")).toBe("annotation-queues");
     expect(pluralize("trace")).toBe("traces");
     expect(pluralize("datasets")).toBe("datasets");

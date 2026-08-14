@@ -88,17 +88,11 @@ export function updateConformanceReadme(
   summaries: SpecSummary[],
 ): string {
   const total = summaries.reduce((sum, item) => sum + item.operations, 0);
-  let updated = replaceRequired(
+  const updated = replaceRequired(
     content,
-    /currently attempts all \d+ operations across .*? snapshots using/,
-    `currently attempts all ${total} operations across ${summaries.length} pinned snapshots using`,
-    "historical adapter operation count",
-  );
-  updated = replaceRequired(
-    updated,
-    /checks all \d+ operations through/,
-    `checks all ${total} operations through`,
-    "native adapter operation count",
+    /checks all \d+ operations across \d+ pinned snapshots through/,
+    `checks all ${total} operations across ${summaries.length} pinned snapshots through`,
+    "operation count",
   );
   const heading = "| Langfuse | Paths | Operations |";
   const tableStart = updated.indexOf(heading);
@@ -303,8 +297,6 @@ async function addVersion(
           "--",
           "--version",
           version,
-          "--adapter",
-          "contract-v1",
           "--",
           "bun",
           "bin/langfuse.mjs",

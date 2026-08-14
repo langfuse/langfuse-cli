@@ -14,9 +14,9 @@ The primary test invokes every operation in every cataloged spec through the rea
 
 For operations marked `deprecated: true`, it instead verifies exit code 2, a helpful error on stderr, and zero network requests.
 
-The black-box oracle does not share request-building code with the CLI. `bun test` currently attempts all 792 operations across 9 pinned snapshots using the historical field-flag adapter. Operations that require lossless JSON bodies remain an explicit compatibility baseline; any additional failure fails the test. The native `contract-v1` adapter checks all 792 operations through `--body-json`, including pre-network rejection for deprecated operations.
+The black-box oracle does not share request-building code with the CLI. `bun run conformance:all` checks all 792 operations across 9 pinned snapshots through the actual CLI using lossless `--body-json` input, including pre-network rejection for deprecated operations.
 
-Supporting unit tests verify immutable spec hashes, valid sampling, serialization, naming, adapters, and the capture runner itself.
+Supporting unit tests verify immutable spec hashes, valid sampling, serialization, naming, invocation generation, and the capture runner itself.
 
 OpenAPI cannot describe database setup, generated IDs, cross-request bindings, cleanup, licenses, or feature flags. Those stateful live workflows require a small reviewed scenario overlay; they are not silently invented by this generator.
 
@@ -42,16 +42,15 @@ Some pinned specs use the JSON Schema `const` keyword while declaring OpenAPI 3.
 
 ```text
 catalog.json                 immutable Git refs, commits, hashes, known source issues
-policy.json                  implementation adapters; not API truth
 specs/<version>/openapi.yml  committed source snapshots
-src/                         compiler, serializers, adapters, capture runner
+src/                         compiler, serializers, invocation, capture runner
 tests/                       compiler, validator, and runner tests
 ```
 
 ## Commands
 
 ```sh
-# Generator, schema, serializer, capture, and compatibility tests
+# Generator, schema, serializer, capture, and invocation tests
 bun test
 
 # Build and check every endpoint through the lossless native CLI
@@ -72,16 +71,14 @@ bun run conformance:all
 
 The required check name is **Test and verify OpenAPI conformance**. The interactive release script repeats the checks before building or publishing.
 
-## Run a focused current-CLI check
+## Run a focused check
 
 ```sh
 bun run conformance:run -- \
   --version 3.212.0 \
-  --adapter specli-v0 \
-  --current-cli
+  --operation prompts_create \
+  -- bun bin/langfuse.mjs --api-version 3.212.0
 ```
-
-The adapter name is retained because it describes the old field-flag grammar. The runner builds the native current source and compiles the selected committed spec into a temporary runtime contract.
 
 Useful filters:
 
@@ -89,19 +86,6 @@ Useful filters:
 --operation prompts_create
 --max 20
 --fail-fast
-```
-
-Failures identify current limitations inline: raw union bodies, complex body flags, response exit codes, naming mismatches, or missing version selection.
-
-## Run the lossless native contract
-
-The native adapter uses lossless JSON body input via `--body-json`:
-
-```sh
-bun run conformance:run -- \
-  --version 4.10.0 \
-  --adapter contract-v1 \
-  -- bun bin/langfuse.mjs --api-version 4.10.0
 ```
 
 The command after the second `--` is treated as an external black-box executable.

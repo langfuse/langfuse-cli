@@ -6,7 +6,6 @@ import type { Catalog, CatalogEntry } from "./types";
 export const CONFORMANCE_ROOT = resolve(import.meta.dir, "..");
 export const REPOSITORY_ROOT = resolve(CONFORMANCE_ROOT, "..");
 export const CATALOG_PATH = resolve(CONFORMANCE_ROOT, "catalog.json");
-export const POLICY_PATH = resolve(CONFORMANCE_ROOT, "policy.json");
 
 export async function loadCatalog(): Promise<Catalog> {
   const catalog = (await Bun.file(CATALOG_PATH).json()) as Catalog;

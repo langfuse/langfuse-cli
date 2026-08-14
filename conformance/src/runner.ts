@@ -1,20 +1,7 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-
-import {
-  invocationArgs,
-  loadPolicy,
-  type AdapterName,
-} from "./adapters";
+import { invocationArgs } from "./invocation";
 import { CaptureServer, requestDiff, sameJson } from "./capture";
-import { POLICY_PATH, REPOSITORY_ROOT, readVerifiedSpec } from "./catalog";
-import { compileApiContract } from "../../src/contracts/compiler";
-import type {
-  CatalogEntry,
-  ConformanceVector,
-  Manifest,
-} from "./types";
+import { REPOSITORY_ROOT } from "./catalog";
+import type { ConformanceVector, Manifest } from "./types";
 
 interface ProcessResult {
   exitCode: number;
@@ -23,12 +10,9 @@ interface ProcessResult {
 }
 
 export interface RunOptions {
-  entry: CatalogEntry;
   manifest: Manifest;
   vectors: ConformanceVector[];
-  adapter: AdapterName;
-  command?: string[];
-  currentCli?: boolean;
+  command: string[];
   timeoutMs?: number;
   failFast?: boolean;
   quiet?: boolean;
@@ -49,10 +33,10 @@ async function spawn(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const process = Bun.spawn([...command, ...args], {
+    const child = Bun.spawn([...command, ...args], {
       cwd: REPOSITORY_ROOT,
       env: {
-        ...processEnv(),
+        ...process.env,
         LANGFUSE_PUBLIC_KEY: undefined,
         LANGFUSE_SECRET_KEY: undefined,
         LANGFUSE_HOST: undefined,
@@ -62,10 +46,10 @@ async function spawn(
       stderr: "pipe",
       signal: controller.signal,
     });
-    const stdoutPromise = new Response(process.stdout).text();
-    const stderrPromise = new Response(process.stderr).text();
+    const stdoutPromise = new Response(child.stdout).text();
+    const stderrPromise = new Response(child.stderr).text();
     const [exitCode, stdout, stderr] = await Promise.all([
-      process.exited,
+      child.exited,
       stdoutPromise,
       stderrPromise,
     ]);
@@ -81,71 +65,6 @@ async function spawn(
   }
 }
 
-function processEnv(): Record<string, string | undefined> {
-  return Object.fromEntries(
-    Object.entries(process.env).map(([key, value]) => [key, value]),
-  );
-}
-
-async function currentCliCommand(entry: CatalogEntry): Promise<{
-  command: string[];
-  cleanup: () => Promise<void>;
-}> {
-  const directory = await mkdtemp(join(tmpdir(), "langfuse-cli-conformance-"));
-  const dist = resolve(directory, "dist");
-  const bin = resolve(directory, "bin");
-  await mkdir(dist, { recursive: true });
-  await mkdir(bin, { recursive: true });
-  const build = Bun.spawn(
-    [
-      "bun",
-      "build",
-      resolve(REPOSITORY_ROOT, "src/cli.ts"),
-      "--outfile",
-      resolve(dist, "cli.js"),
-      "--target",
-      "bun",
-      "--format",
-      "esm",
-    ],
-    { cwd: REPOSITORY_ROOT, stdout: "pipe", stderr: "pipe" },
-  );
-  const buildOut = new Response(build.stdout).text();
-  const buildErr = new Response(build.stderr).text();
-  const [code, stdout, stderr] = await Promise.all([
-    build.exited,
-    buildOut,
-    buildErr,
-  ]);
-  if (code !== 0) {
-    await rm(directory, { recursive: true, force: true });
-    throw new Error(`Current CLI build failed:\n${stdout}${stderr}`);
-  }
-  const raw = await readVerifiedSpec(entry);
-  const contracts = resolve(dist, "contracts");
-  await mkdir(contracts, { recursive: true });
-  await Bun.write(
-    resolve(contracts, `${entry.version}.json`),
-    `${JSON.stringify(compileApiContract(entry, raw))}\n`,
-  );
-  await Bun.write(
-    resolve(contracts, "catalog.json"),
-    `${JSON.stringify({
-      schemaVersion: 1,
-      latest: entry.version,
-      versions: [{ version: entry.version, sourceSha256: entry.sha256 }],
-    })}\n`,
-  );
-  await Bun.write(
-    resolve(bin, "langfuse.mjs"),
-    await Bun.file(resolve(REPOSITORY_ROOT, "bin/langfuse.mjs")).text(),
-  );
-  return {
-    command: ["bun", resolve(bin, "langfuse.mjs")],
-    cleanup: () => rm(directory, { recursive: true, force: true }),
-  };
-}
-
 function parseJson(stdout: string): any | undefined {
   try {
     return JSON.parse(stdout);
@@ -155,28 +74,24 @@ function parseJson(stdout: string): any | undefined {
 }
 
 export async function runConformance(options: RunOptions): Promise<CaseResult[]> {
-  if (options.currentCli && options.adapter !== "specli-v0") {
-    throw new Error("The current CLI must use the specli-v0 adapter");
+  if (options.command.length === 0) {
+    throw new Error("Missing implementation command after --");
   }
-  const materialized = options.currentCli
-    ? await currentCliCommand(options.entry)
-    : undefined;
-  const command = materialized?.command ?? options.command;
-  if (!command?.length) throw new Error("Missing implementation command after --");
-  const policy = await loadPolicy(POLICY_PATH);
   const capture = new CaptureServer();
   const results: CaseResult[] = [];
   try {
     for (const vector of options.vectors) {
       const before = capture.arm(vector.response);
       const args = invocationArgs({
-        adapter: options.adapter,
-        policy,
         vector,
         manifest: options.manifest,
         host: capture.url,
       });
-      const execution = await spawn(command, args, options.timeoutMs ?? 10_000);
+      const execution = await spawn(
+        options.command,
+        args,
+        options.timeoutMs ?? 10_000,
+      );
       const failures: string[] = [];
       const captured = capture.requests.slice(before);
       const operation = options.manifest.operations.find(
@@ -244,7 +159,6 @@ export async function runConformance(options: RunOptions): Promise<CaseResult[]>
     }
   } finally {
     capture.stop();
-    await materialized?.cleanup();
   }
   return results;
 }

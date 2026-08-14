@@ -68,10 +68,8 @@ process.exit(response.ok ? 0 : 1);
     const compiled = compileOpenApi(entry, raw);
     const vector = generateVectors(compiled)[0];
     const results = await runConformance({
-      entry,
       manifest: compiled.manifest,
       vectors: [vector],
-      adapter: "contract-v1",
       command: ["bun", script],
     });
     expect(results).toHaveLength(1);
@@ -100,10 +98,8 @@ process.exit(2);
     );
     const vector = generateVectors(compiled)[0];
     const results = await runConformance({
-      entry,
       manifest: compiled.manifest,
       vectors: [vector],
-      adapter: "contract-v1",
       command: ["bun", script],
     });
 

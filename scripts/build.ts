@@ -40,7 +40,7 @@ await Bun.write(
 const result = await Bun.build({
   entrypoints: [resolve(root, "src/cli.ts")],
   outdir: dist,
-  target: "bun",
+  target: "node",
   format: "esm",
   minify: true,
 });

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import type {
   ApiContract,
   ApiContractCatalog,
@@ -37,7 +39,9 @@ function latestMajorEntry(
 }
 
 export async function loadContractCatalog(): Promise<ApiContractCatalog> {
-  const catalog = (await Bun.file(CATALOG_URL).json()) as ApiContractCatalog;
+  const catalog = JSON.parse(
+    await readFile(CATALOG_URL, "utf8"),
+  ) as ApiContractCatalog;
   if (catalog.schemaVersion !== 1 || !Array.isArray(catalog.versions)) {
     throw new Error("Invalid bundled API contract catalog");
   }
@@ -120,7 +124,7 @@ export async function resolveContractVersion(params: {
 
 export async function loadApiContract(version: string): Promise<ApiContract> {
   const url = new URL(`./contracts/${encodeURIComponent(version)}.json`, import.meta.url);
-  const contract = (await Bun.file(url).json()) as ApiContract;
+  const contract = JSON.parse(await readFile(url, "utf8")) as ApiContract;
   if (contract.schemaVersion !== 1 || contract.apiVersion !== version) {
     throw new Error(`Invalid bundled API contract for ${version}`);
   }

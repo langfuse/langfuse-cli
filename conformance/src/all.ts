@@ -17,10 +17,8 @@ let failed = false;
 for (const entry of catalog.versions) {
   const corpus = await generateCorpus(entry);
   const results = await runConformance({
-    entry,
     manifest: corpus.compiled.manifest,
     vectors: corpus.vectors,
-    adapter: "contract-v1",
     command: ["bun", "bin/langfuse.mjs", "--api-version", entry.version],
     quiet: true,
   });

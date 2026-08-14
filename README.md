@@ -10,7 +10,7 @@ Interact with the [Langfuse](https://langfuse.com) API from the command line.
 # Run directly
 npx langfuse-cli api <resource> <action>
 # or
-bunx langfuse-cli api <resource> <action>
+bunx --bun langfuse-cli api <resource> <action>
 
 # Or install globally
 npm i -g langfuse-cli
@@ -116,7 +116,7 @@ See the full [Langfuse API Reference](https://api.reference.langfuse.com/).
 
 ## Implementation
 
-The CLI is implemented in TypeScript and runs natively on Bun. It has zero external runtime dependencies and never parses OpenAPI during invocation.
+The CLI is implemented in TypeScript and runs on Node.js 20+ or Bun. It has zero external runtime dependencies and never parses OpenAPI during invocation.
 
 See [MAINTENANCE.md](MAINTENANCE.md) for build, API snapshot, testing, and
 release workflows. The version-pinned black-box suite is documented separately

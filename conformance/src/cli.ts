@@ -1,7 +1,6 @@
 import { loadCatalog, selectEntries, syncSpecs } from "./catalog";
 import { generateCorpus } from "./generator";
 import { runConformance } from "./runner";
-import type { AdapterName } from "./adapters";
 
 function optionValues(args: string[], name: string): string[] {
   const values: string[] = [];
@@ -18,8 +17,7 @@ function option(args: string[], name: string): string | undefined {
 function usage(): never {
   process.stderr.write(`Usage:
   bun run conformance:sync [--version 4.10.0]
-  bun run conformance:run --version 4.10.0 --adapter specli-v0 --current-cli [filters]
-  bun run conformance:run --version 4.10.0 --adapter contract-v1 [filters] -- <command...>
+  bun run conformance:run --version 4.10.0 [filters] -- <command...>
 
 Run filters:
   --operation <operationId>  Restrict one operation
@@ -45,10 +43,6 @@ async function main(): Promise<void> {
   if (selected.length !== 1) {
     throw new Error("conformance:run requires exactly one --version");
   }
-  const adapter = (option(controlArgs, "--adapter") ?? "contract-v1") as AdapterName;
-  if (!(["specli-v0", "contract-v1"] as string[]).includes(adapter)) {
-    throw new Error(`Unknown adapter: ${adapter}`);
-  }
   const corpus = await generateCorpus(selected[0]);
   if (corpus.compiled.unsupported.length > 0) {
     throw new Error(
@@ -61,14 +55,11 @@ async function main(): Promise<void> {
     (vector) => !operationId || vector.operationId === operationId,
   );
   if (Number.isFinite(max)) vectors = vectors.slice(0, max);
-  const implementationCommand = separator === -1 ? undefined : args.slice(separator + 1);
+  const implementationCommand = separator === -1 ? [] : args.slice(separator + 1);
   const results = await runConformance({
-    entry: selected[0],
     manifest: corpus.compiled.manifest,
     vectors,
-    adapter,
     command: implementationCommand,
-    currentCli: controlArgs.includes("--current-cli"),
     failFast: controlArgs.includes("--fail-fast"),
   });
   const failed = results.filter((result) => !result.passed);

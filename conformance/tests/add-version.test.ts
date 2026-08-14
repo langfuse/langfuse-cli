@@ -55,8 +55,7 @@ describe("add-version workflow", () => {
   });
 
   test("regenerates both operation totals and the pinned-spec table", () => {
-    const input = `The suite currently attempts all 10 operations across 2 snapshots using X.
-The native adapter checks all 10 operations through JSON.
+    const input = `The suite checks all 10 operations across 2 pinned snapshots through JSON.
 
 | Langfuse | Paths | Operations |
 |---|---:|---:|
@@ -70,16 +69,16 @@ After table.
         { version: "2.0.0", paths: 2, operations: 6 },
         { version: "3.0.0", paths: 3, operations: 8 },
       ]);
-    expect(updated).toContain("all 18 operations across 3 pinned snapshots");
-    expect(updated).toContain("checks all 18 operations through");
+    expect(updated).toContain(
+      "checks all 18 operations across 3 pinned snapshots through",
+    );
     expect(updateConformanceReadme(input, [
       { version: "3.0.0", paths: 3, operations: 8 },
     ])).toContain("| 3.0.0 | 3 | 8 |");
   });
 
   test("fails loudly when tracked README wording drifts", () => {
-    const input = `The suite currently attempts all 10 operations across 1 snapshots using X.
-The native adapter runs every operation through JSON.
+    const input = `The suite runs every operation through JSON.
 
 | Langfuse | Paths | Operations |
 |---|---:|---:|
@@ -91,6 +90,6 @@ After table.
       updateConformanceReadme(input, [
         { version: "1.0.0", paths: 1, operations: 10 },
       ]),
-    ).toThrow("Could not find native adapter operation count");
+    ).toThrow("Could not find operation count");
   });
 });

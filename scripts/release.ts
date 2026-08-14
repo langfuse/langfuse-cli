@@ -19,6 +19,7 @@ const npmCache = `${process.env.TMPDIR ?? "/tmp"}/langfuse-cli-npm-cache`;
 const exactReleaseFiles = new Set([
   ".npmrc",
   "LICENSE",
+  "MAINTENANCE.md",
   "README.md",
   "bun.lock",
   "package.json",
@@ -40,18 +41,14 @@ let shouldRestorePackageJson = false;
 let publishStarted = false;
 
 function printHelp(): void {
-  const options = [
-    ["--version <semver>", "Release an explicit version without the version-selection prompt"],
-    ["--tag <tag>", "npm dist-tag; inferred from prerelease identifier or latest for stable versions"],
-    ["--dry-run", "Run checks, build, version bump, and npm pack dry-run, then restore package.json and skip publish"],
-    ["--allow-dirty", "Allow release-relevant local changes; intended for testing the release script itself"],
-    ["-h, --help", "Show this help"],
-  ] as const;
-  const optionWidth = Math.max(...options.map(([option]) => option.length));
-  const lines = options.map(
-    ([option, description]) => `  ${option.padEnd(optionWidth)}  ${description}`,
-  );
-  console.log(`Usage: bun run release -- [options]\n\nOptions:\n${lines.join("\n")}`);
+  console.log(`Usage: bun run release -- [options]
+
+Options:
+  --version <semver>  Release an explicit version without the version-selection prompt
+  --tag <tag>         npm dist-tag; inferred from prerelease identifier or latest for stable versions
+  --dry-run           Run all checks and packaging without publishing
+  --allow-dirty       Allow release-relevant local changes for script testing
+  -h, --help          Show this help`);
 }
 
 async function readPackageJson(): Promise<PackageJson> {

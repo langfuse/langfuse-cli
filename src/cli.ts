@@ -1,3 +1,6 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { text as streamText } from "node:stream/consumers";
+
 import packageJson from "../package.json";
 
 import { createApiClient, renderCurl } from "./client";
@@ -110,7 +113,7 @@ function parseEnv(content: string): Record<string, string> {
 
 async function runtimeConfig(globals: ParsedGlobals): Promise<RuntimeConfig> {
   const fileEnv = globals.values.env
-    ? parseEnv(await Bun.file(globals.values.env).text())
+    ? parseEnv(await readFile(globals.values.env, "utf8"))
     : {};
   const env = { ...process.env, ...fileEnv };
   const timeoutMs = Number(globals.values.timeout ?? DEFAULT_TIMEOUT_MS);
@@ -482,7 +485,8 @@ function splitOption(token: string): { name: string; inline?: string; negated: b
 }
 
 async function readBodyFile(path: string): Promise<JsonValue> {
-  const text = path === "-" ? await Bun.stdin.text() : await Bun.file(path).text();
+  const text =
+    path === "-" ? await streamText(process.stdin) : await readFile(path, "utf8");
   try {
     return JSON.parse(text) as JsonValue;
   } catch (error) {
@@ -674,7 +678,7 @@ export async function writeResult(
         : typeof result.body === "string"
         ? result.body
         : JSON.stringify(result.body, null, 2);
-    await Bun.write(config.output, content ?? "");
+    await writeFile(config.output, content ?? "");
   } else if (config.json) {
     process.stdout.write(
       `${JSON.stringify({ status: result.status, headers: result.headers, body: result.body })}\n`,
