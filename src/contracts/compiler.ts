@@ -1,11 +1,14 @@
 import { parse } from "yaml";
 
-import { kebabCase, planCommandNames } from "../../conformance/src/naming";
+import { RESERVED_OPTION_NAMES } from "../flags";
+import { kebabCase, planCommandNames } from "./naming";
+import rawOverrides from "./overrides.json";
 import type {
   ApiBodyField,
   ApiContract,
   ApiOperation,
   ApiParameter,
+  ContractOverrides,
   HttpMethod,
   ValueKind,
 } from "./types";
@@ -97,6 +100,163 @@ function schemaKind(
   return "string";
 }
 
+const OVERRIDES = rawOverrides as ContractOverrides;
+
+interface AliasTarget {
+  operationId: string;
+  parameters: ApiParameter[];
+  requestBody?: ApiOperation["requestBody"];
+}
+
+function applyParameterFlagAliases(
+  operation: AliasTarget,
+  overrides: ContractOverrides,
+): void {
+  const aliases = overrides.parameterFlagAliases[operation.operationId];
+  if (!aliases) return;
+  for (const spec of aliases) {
+    if ((spec.location as string) === "path") {
+      throw new Error(
+        `${operation.operationId}: flag alias --${spec.flag} targets path parameter "${spec.parameter}"; path parameters are positional and cannot have flag aliases`,
+      );
+    }
+    const parameter = operation.parameters.find(
+      (candidate) =>
+        candidate.location === spec.location && candidate.name === spec.parameter,
+    );
+    // A missing parameter is tolerated per version (specs evolve); an entry
+    // applied in no snapshot at all is rejected by assertOverridesApplied.
+    if (!parameter) continue;
+    parameter.cliAliases = [...(parameter.cliAliases ?? []), spec.flag];
+  }
+}
+
+function applyBodyFieldFlagOverrides(
+  operation: AliasTarget,
+  overrides: ContractOverrides,
+): void {
+  const renames = overrides.bodyFieldFlags[operation.operationId];
+  if (!renames || !operation.requestBody) return;
+  for (const [fieldName, flag] of Object.entries(renames)) {
+    const field = operation.requestBody.fields.find(
+      (candidate) => candidate.name === fieldName,
+    );
+    // Missing fields are tolerated per version; assertOverridesApplied
+    // rejects entries that apply in no snapshot.
+    if (!field) continue;
+    field.cliName = flag;
+  }
+}
+
+// Single fail-closed gate over every flag namespace an operation exposes.
+// A new spec version that introduces a colliding parameter or body field
+// breaks the build here instead of silently shipping a dead or hijacked
+// flag; collisions are resolved with a reviewed rename in overrides.json.
+function validateFlagNamespace(operation: AliasTarget): void {
+  const owners = new Map<string, string>();
+  const claim = (flag: string, owner: string) => {
+    if (RESERVED_OPTION_NAMES.has(flag)) {
+      throw new Error(
+        `${operation.operationId}: --${flag} (${owner}) collides with a reserved or global flag; rename it in overrides.json bodyFieldFlags/parameterFlagAliases`,
+      );
+    }
+    const existing = owners.get(flag);
+    if (existing) {
+      throw new Error(
+        `${operation.operationId}: --${flag} (${owner}) collides with an existing option (${existing}); rename it in overrides.json`,
+      );
+    }
+    owners.set(flag, owner);
+  };
+  for (const parameter of operation.parameters) {
+    if (parameter.location === "path") continue;
+    claim(parameter.cliName, `${parameter.location} parameter ${parameter.name}`);
+    for (const alias of parameter.cliAliases ?? []) {
+      claim(alias, `flag alias of parameter ${parameter.name}`);
+    }
+  }
+  if (operation.requestBody?.legacyFieldFlags) {
+    for (const field of operation.requestBody.fields) {
+      claim(field.cliName, `body field ${field.name}`);
+    }
+  }
+}
+
+export function assertOverridesApplied(
+  contracts: ApiContract[],
+  overrides: ContractOverrides = OVERRIDES,
+): void {
+  for (const [operationId, aliases] of Object.entries(
+    overrides.parameterFlagAliases,
+  )) {
+    for (const spec of aliases) {
+      const applied = contracts.some((contract) =>
+        contract.operations.some(
+          (operation) =>
+            operation.operationId === operationId &&
+            operation.parameters.some(
+              (parameter) =>
+                parameter.location === spec.location &&
+                parameter.name === spec.parameter &&
+                parameter.cliAliases?.includes(spec.flag),
+            ),
+        ),
+      );
+      if (!applied) {
+        throw new Error(
+          `overrides.json: flag alias --${spec.flag} for ${operationId} ${spec.location} parameter "${spec.parameter}" is applied in no compiled contract; fix or remove the entry`,
+        );
+      }
+    }
+  }
+  for (const [operationId, renames] of Object.entries(overrides.bodyFieldFlags)) {
+    for (const [fieldName, flag] of Object.entries(renames)) {
+      const applied = contracts.some((contract) =>
+        contract.operations.some(
+          (operation) =>
+            operation.operationId === operationId &&
+            operation.requestBody?.fields.some(
+              (field) => field.name === fieldName && field.cliName === flag,
+            ),
+        ),
+      );
+      if (!applied) {
+        throw new Error(
+          `overrides.json: body field flag --${flag} for ${operationId} field "${fieldName}" is applied in no compiled contract; fix or remove the entry`,
+        );
+      }
+    }
+  }
+  for (const [version, byOperation] of Object.entries(overrides.commandOverrides)) {
+    const contract = contracts.find(
+      (candidate) => candidate.apiVersion === version,
+    );
+    if (!contract) {
+      throw new Error(
+        `overrides.json: commandOverrides references unknown version ${version}`,
+      );
+    }
+    for (const [operationId, override] of Object.entries(byOperation)) {
+      const operation = contract.operations.find(
+        (candidate) => candidate.operationId === operationId,
+      );
+      if (!operation) {
+        throw new Error(
+          `overrides.json: commandOverrides ${version}/${operationId} matches no operation`,
+        );
+      }
+      if (
+        (override.resource && operation.command.resource !== override.resource) ||
+        (override.action && operation.command.action !== override.action)
+      ) {
+        throw new Error(
+          `overrides.json: commandOverrides ${version}/${operationId} was not applied`,
+        );
+      }
+    }
+  }
+}
+
 function parameterDefaults(location: string): { style: string; explode: boolean } {
   if (location === "query" || location === "cookie") {
     return { style: "form", explode: true };
@@ -166,6 +326,7 @@ function collectBodyFields(
       const kind = existing?.kind ?? schemaKind(document, property);
       fields.set(name, {
         name,
+        cliName: kebabCase(name),
         required: Boolean(existing?.required || required.has(name)),
         kind,
         ...(kind === "array"
@@ -250,6 +411,7 @@ function normalizeRequestBody(
 export function compileApiContract(
   source: ContractSource,
   raw: string,
+  overrides: ContractOverrides = OVERRIDES,
 ): ApiContract {
   const document = parse(raw, {
     maxAliasCount: 100_000,
@@ -317,7 +479,30 @@ export function compileApiContract(
     if (left.path !== right.path) return left.path.localeCompare(right.path);
     return left.method.localeCompare(right.method);
   });
+  for (const operation of pending) {
+    applyParameterFlagAliases(operation, overrides);
+    applyBodyFieldFlagOverrides(operation, overrides);
+    validateFlagNamespace(operation);
+  }
   const names = planCommandNames(pending);
+  const commandOverrides = overrides.commandOverrides[source.version] ?? {};
+  pending.forEach((operation, index) => {
+    const override = commandOverrides[operation.operationId];
+    if (override) names[index] = { ...names[index], ...override };
+  });
+  const seenCommands = new Set<string>();
+  for (const name of names) {
+    const commands = [
+      `${name.resource} ${name.action}`,
+      ...(name.aliases ?? []).map((alias) => `${alias.resource} ${alias.action}`),
+    ];
+    for (const command of commands) {
+      if (seenCommands.has(command)) {
+        throw new Error(`${source.ref}: duplicate command ${command}`);
+      }
+      seenCommands.add(command);
+    }
+  }
   const operations: ApiOperation[] = pending.map(
     ({ tags: _tags, ...operation }, index) => ({
       ...operation,

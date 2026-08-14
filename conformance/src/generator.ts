@@ -1,6 +1,7 @@
 import packageJson from "../../package.json";
 
 import { readVerifiedSpec } from "./catalog";
+import { commandsByOperationId, loadGoldenSurface } from "./goldens";
 import { compileOpenApi, type CompiledSpec } from "./openapi";
 import { expectedRequest } from "./serialize";
 import type {
@@ -91,6 +92,7 @@ export function generateVectors(compiled: CompiledSpec): ConformanceVector[] {
 
 export async function generateCorpus(entry: CatalogEntry): Promise<GeneratedCorpus> {
   const raw = await readVerifiedSpec(entry);
-  const compiled = compileOpenApi(entry, raw);
+  const commands = commandsByOperationId(await loadGoldenSurface(entry.version));
+  const compiled = compileOpenApi(entry, raw, commands);
   return { compiled, vectors: generateVectors(compiled) };
 }

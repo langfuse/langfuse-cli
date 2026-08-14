@@ -38,6 +38,7 @@ export interface ApiParameter {
   location: "path" | "query" | "header" | "cookie";
   name: string;
   cliName: string;
+  cliAliases?: string[];
   required: boolean;
   style: string;
   explode: boolean;
@@ -45,8 +46,31 @@ export interface ApiParameter {
   itemKind?: ValueKind;
 }
 
+export interface ParameterFlagAlias {
+  // Path parameters are positional at the CLI and can never carry flag
+  // aliases; the compiler also rejects "path" at runtime since overrides.json
+  // bypasses the type system.
+  location: "query" | "header" | "cookie";
+  parameter: string;
+  flag: string;
+}
+
+export interface ContractOverrides {
+  schemaVersion: 1;
+  parameterFlagAliases: Record<string, ParameterFlagAlias[]>;
+  // operationId -> body field wire name -> CLI flag. Used to resolve flag
+  // collisions the compiler rejects (e.g. a field kebab-casing onto a
+  // reserved/global flag). Wire names in the request are never affected.
+  bodyFieldFlags: Record<string, Record<string, string>>;
+  commandOverrides: Record<
+    string,
+    Record<string, { resource?: string; action?: string }>
+  >;
+}
+
 export interface ApiBodyField {
   name: string;
+  cliName: string;
   required: boolean;
   kind: ValueKind;
   itemKind?: ValueKind;

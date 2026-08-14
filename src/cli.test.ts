@@ -144,6 +144,38 @@ describe("operation input parsing", () => {
     expect(input.query.resolve).toBe(false);
   });
 
+  test("resolves contract-declared parameter flag aliases", async () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      parameters: [
+        ...promptGet.parameters,
+        {
+          location: "query",
+          name: "version",
+          cliName: "version",
+          cliAliases: ["prompt-version"],
+          required: false,
+          style: "form",
+          explode: true,
+          kind: "number",
+        },
+      ],
+    };
+    const input = await parseOperationInput(operation, [
+      "my-prompt-name",
+      "--prompt-version",
+      "2",
+    ]);
+
+    expect(input.query.version).toBe(2);
+
+    // Missing-value errors must name the flag the user actually typed,
+    // not the canonical cliName the alias resolves to.
+    await expect(
+      parseOperationInput(operation, ["my-prompt-name", "--prompt-version"]),
+    ).rejects.toThrow("--prompt-version requires a value");
+  });
+
   test("preserves the item type of array request-body flags", async () => {
     const contract = compileApiContract(
       { version: "test", ref: "test", sha256: "test" },
@@ -181,8 +213,9 @@ paths:
 
     expect(operation.deprecated).toBe(true);
     expect(field?.itemKind).toBe("string");
+    expect(field?.cliName).toBe("custom-models");
     expect(
-      await parseOperationInput(operation, ["--customModels", "123"]),
+      await parseOperationInput(operation, ["--custom-models", "123"]),
     ).toMatchObject({ body: { customModels: ["123"] } });
   });
 
@@ -239,6 +272,7 @@ paths:
         fields: [
           {
             name: "chartConfig",
+            cliName: "chart-config",
             required: false,
             kind: "object",
           },
@@ -248,17 +282,17 @@ paths:
 
     await expect(
       parseOperationInput(operation, [
-        "--chartConfig.show_value_labels",
+        "--chart-config.show_value_labels",
         "widget-123",
       ]),
     ).rejects.toThrow(
-      "Nested body option --chartConfig.show_value_labels is unsupported; pass --chartConfig with a JSON object or use --body-json",
+      "Nested body option --chart-config.show_value_labels is unsupported; pass --chart-config with a JSON object or use --body-json",
     );
 
     expect(
       await parseOperationInput(operation, [
         "widget-123",
-        "--chartConfig",
+        "--chart-config",
         '{"show_value_labels":true}',
       ]),
     ).toMatchObject({
@@ -312,9 +346,10 @@ paths:
         contentType: "application/json",
         legacyFieldFlags: true,
         fields: [
-          { name: "content", required: true, kind: "string" },
+          { name: "content", cliName: "content", required: true, kind: "string" },
           {
             name: "tags",
+            cliName: "tags",
             required: false,
             kind: "array",
             itemKind: "string",

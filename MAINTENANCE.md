@@ -36,6 +36,36 @@ deprecation policy, and legacy CLI compatibility. `bun run conformance:all`
 builds the package and checks every operation through the native CLI using its
 lossless JSON input path. CI runs both.
 
+## Command goldens and overrides
+
+The user-facing command surface (resource, action, aliases, deprecation) of
+every snapshot is pinned in reviewed goldens under `conformance/goldens/`.
+Tests and the build fail when compiled names differ from the goldens, so a
+change to the naming heuristics cannot silently rename commands. After an
+intentional naming change, regenerate and review the diff:
+
+```sh
+bun run goldens:update
+```
+
+All option flags are derived mechanically: query/header parameters and
+request-body fields kebab-case their wire names (`objectId` -> `--object-id`),
+so new spec versions get flags without per-parameter maintenance. The
+compiler validates each operation's full flag namespace (parameters, aliases,
+body fields, reserved and global flags) and fails the build when a new
+snapshot introduces a collision, instead of silently shipping a dead or
+hijacked flag.
+
+Hand-written naming exceptions live in `src/contracts/overrides.json` and are
+applied by the contract compiler, never hardcoded in the runtime: extra
+parameter flag spellings (`parameterFlagAliases`, e.g. `--prompt-version`),
+body-field flag renames for collisions (`bodyFieldFlags`, e.g.
+`llmConnections_upsert.secretKey` -> `--provider-secret-key` because
+`--secret-key` is the global auth flag), and per-version command overrides.
+A snapshot that lacks the referenced parameter or field skips the entry, but
+an entry applied in no snapshot at all fails the build, tests, and
+`goldens:update`, so stale overrides cannot rot silently.
+
 ## Releases
 
 ```sh

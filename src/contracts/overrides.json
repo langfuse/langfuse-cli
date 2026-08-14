@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "parameterFlagAliases": {
+    "prompts_get": [
+      {
+        "location": "query",
+        "parameter": "version",
+        "flag": "prompt-version"
+      }
+    ]
+  },
+  "bodyFieldFlags": {
+    "llmConnections_upsert": {
+      "secretKey": "provider-secret-key"
+    },
+    "projects_createApiKey": {
+      "publicKey": "predefined-public-key",
+      "secretKey": "predefined-secret-key"
+    }
+  },
+  "commandOverrides": {}
+}

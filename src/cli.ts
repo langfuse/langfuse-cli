@@ -4,6 +4,7 @@ import { text as streamText } from "node:stream/consumers";
 import packageJson from "../package.json";
 
 import { createApiClient, renderCurl } from "./client";
+import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
 import {
   loadApiContract,
   loadContractCatalog,
@@ -26,16 +27,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const LANGFUSE_SKILL_URL =
   "https://raw.githubusercontent.com/langfuse/skills/main/skills/langfuse/SKILL.md";
 const GET_SKILL_FETCH_TIMEOUT_MS = 5_000;
-const VALUE_FLAGS = new Set([
-  "--public-key",
-  "--secret-key",
-  "--host",
-  "--env",
-  "--api-version",
-  "--timeout",
-  "--output",
-]);
-const BOOLEAN_FLAGS = new Set(["--json", "--curl", "--show-secrets"]);
+const VALUE_FLAGS = new Set(GLOBAL_VALUE_FLAG_NAMES.map((name) => `--${name}`));
+const BOOLEAN_FLAGS = new Set(
+  GLOBAL_BOOLEAN_FLAG_NAMES.map((name) => `--${name}`),
+);
 
 interface ParsedGlobals {
   values: Record<string, string>;
@@ -344,7 +339,7 @@ function printOperationHelp(operation: ApiOperation): void {
   if (operation.requestBody?.legacyFieldFlags) {
     for (const field of operation.requestBody.fields) {
       lines.push(
-        `  ${flagUsage(field.name, field.kind)}${field.required ? " (required)" : ""}`,
+        `  ${flagUsage(field.cliName, field.kind)}${field.required ? " (required)" : ""}`,
       );
     }
   }
@@ -435,6 +430,7 @@ function addParameterValue(
   input: ApiCallInput,
   parameter: ApiParameter,
   raw: string | undefined,
+  typedFlag: string,
 ): void {
   const target =
     parameter.location === "path"
@@ -445,7 +441,7 @@ function addParameterValue(
           ? input.headers
           : input.cookies;
   if (raw === undefined && parameter.kind !== "boolean") {
-    throw new CliError(`--${parameter.cliName} requires a value`);
+    throw new CliError(`--${typedFlag} requires a value`);
   }
   const parsed = parseJsonValue(raw ?? "true", parameter.itemKind ?? parameter.kind);
   if (parameter.kind === "array") {
@@ -510,13 +506,10 @@ export async function parseOperationInput(
   for (const parameter of operation.parameters) {
     if (parameter.location !== "path") {
       parameterByFlag.set(parameter.cliName, parameter);
+      for (const alias of parameter.cliAliases ?? []) {
+        parameterByFlag.set(alias, parameter);
+      }
     }
-  }
-  if (operation.operationId === "prompts_get") {
-    const version = operation.parameters.find(
-      (parameter) => parameter.location === "query" && parameter.name === "version",
-    );
-    if (version) parameterByFlag.set("prompt-version", version);
   }
   const positionals: string[] = [];
   let fieldBody: Record<string, JsonValue> | undefined;
@@ -531,12 +524,12 @@ export async function parseOperationInput(
     const parameter = parameterByFlag.get(option.name);
     const bodyField = operation.requestBody?.legacyFieldFlags
       ? operation.requestBody.fields.find(
-          (candidate) => candidate.name === option.name.split(".")[0],
+          (candidate) => candidate.cliName === option.name.split(".")[0],
         )
       : undefined;
     if (bodyField && option.name.includes(".")) {
       throw new CliError(
-        `Nested body option --${option.name} is unsupported; pass --${bodyField.name} with a JSON object or use --body-json`,
+        `Nested body option --${option.name} is unsupported; pass --${bodyField.cliName} with a JSON object or use --body-json`,
       );
     }
     const isBoolean =
@@ -570,7 +563,7 @@ export async function parseOperationInput(
       if (option.negated && parameter.kind !== "boolean") {
         throw new CliError(`--no-${option.name} is only valid for boolean options`);
       }
-      addParameterValue(input, parameter, option.negated ? "false" : raw);
+      addParameterValue(input, parameter, option.negated ? "false" : raw, option.name);
       continue;
     }
     if (!operation.requestBody) {
@@ -625,7 +618,7 @@ export async function parseOperationInput(
   if (completeBody === undefined && operation.requestBody?.legacyFieldFlags) {
     const missing = operation.requestBody.fields
       .filter((field) => field.required && fieldBody?.[field.name] === undefined)
-      .map((field) => `--${field.name}`);
+      .map((field) => `--${field.cliName}`);
     if (missing.length > 0) {
       throw new CliError(`Missing required body option(s): ${missing.join(", ")}`);
     }

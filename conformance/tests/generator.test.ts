@@ -55,6 +55,10 @@ describe("endpoint call generation", () => {
         sha256: "0".repeat(64),
       },
       raw,
+      {
+        widgets_get: { resource: "widgets", action: "get" },
+        widgets_create: { resource: "widgets", action: "create" },
+      },
     );
     const vectors = generateVectors(compiled);
     expect(compiled.unsupported).toEqual([]);

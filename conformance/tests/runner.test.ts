@@ -65,7 +65,9 @@ process.exit(response.ok ? 0 : 1);
       commit: "0".repeat(40),
       sha256: "0".repeat(64),
     };
-    const compiled = compileOpenApi(entry, raw);
+    const compiled = compileOpenApi(entry, raw, {
+      widgets_get: { resource: "widgets", action: "get" },
+    });
     const vector = generateVectors(compiled)[0];
     const results = await runConformance({
       manifest: compiled.manifest,
@@ -95,6 +97,7 @@ process.exit(2);
     const compiled = compileOpenApi(
       entry,
       raw.replace("tags: [Widgets]", "tags: [Widgets]\n      deprecated: true"),
+      { widgets_get: { resource: "legacy-widgets", action: "get" } },
     );
     const vector = generateVectors(compiled)[0];
     const results = await runConformance({

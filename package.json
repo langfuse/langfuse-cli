@@ -32,6 +32,7 @@
     "conformance:add-version": "bun conformance/src/add-version.ts",
     "conformance:run": "bun conformance/src/cli.ts run",
     "conformance:all": "bun conformance/src/all.ts",
+    "goldens:update": "bun scripts/goldens.ts",
     "build": "bun scripts/build.ts",
     "release": "bun scripts/release.ts",
     "prepublishOnly": "bun run build"

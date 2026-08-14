@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { kebabCase, planCommandNames, pluralize } from "../src/naming";
+import { kebabCase, planCommandNames, pluralize } from "./naming";
 
 describe("stable CLI naming policy", () => {
   test("normalizes tags and pluralizes resources", () => {
