@@ -362,13 +362,23 @@ function kindText(kind: ValueKind, itemKind?: ValueKind): string {
 function bodyFieldsSection(operation: ApiOperation): string {
   const body = operation.requestBody;
   if (!body || body.legacyFieldFlags || body.fields.length === 0) return "";
-  const lines = body.fields.map((field) =>
+  const fieldLine = (field: ApiBodyField, indent: string) =>
     annotate(
-      `${field.name.padEnd(18)} ${kindText(field.kind, field.itemKind)}${field.required ? " (required)" : ""}`,
+      `${indent}${field.name.padEnd(18)} ${kindText(field.kind, field.itemKind)}${field.required ? " (required)" : ""}`,
       field.enum,
       field.description,
-    ),
-  );
+    );
+  if (body.discriminator) {
+    const groups = Object.entries(body.discriminator.variants).map(
+      ([variant, fields]) =>
+        `  --${body.discriminator!.cliName} ${variant}:\n${fields
+          .filter((field) => field.name !== body.discriminator!.field)
+          .map((field) => fieldLine(field, "  "))
+          .join("\n")}`,
+    );
+    return `\nRequest body fields (field flags supported; select the variant with --${body.discriminator.cliName}, or pass --body-json):\n${groups.join("\n")}\n`;
+  }
+  const lines = body.fields.map((field) => fieldLine(field, ""));
   const unionNote = body.union
     ? "\n  This body is a union of shapes; fields are merged across variants. See the API reference for exact shapes.\n"
     : "";
@@ -524,16 +534,25 @@ function setBodyValue(
   raw: string | undefined,
   field: ApiBodyField,
 ): void {
-  const kind = field.kind === "array" ? field.itemKind : field.kind;
-  const parsed = parseJsonValue(raw ?? "true", kind);
-  const existing = body[field.name];
   if (field.kind === "array") {
-    if (Array.isArray(parsed)) body[field.name] = parsed;
-    else if (Array.isArray(existing)) existing.push(parsed);
-    else body[field.name] = [parsed];
-  } else {
-    body[field.name] = parsed;
+    // A JSON array value sets the whole field; otherwise the value is one
+    // item and the flag is repeatable.
+    if (raw !== undefined) {
+      try {
+        const whole = JSON.parse(raw) as JsonValue;
+        if (Array.isArray(whole)) {
+          body[field.name] = whole;
+          return;
+        }
+      } catch {}
+    }
+    const item = parseJsonValue(raw ?? "true", field.itemKind);
+    const existing = body[field.name];
+    if (Array.isArray(existing)) existing.push(item);
+    else body[field.name] = [item];
+    return;
   }
+  body[field.name] = parseJsonValue(raw ?? "true", field.kind);
 }
 
 function splitOption(token: string): { name: string; inline?: string; negated: boolean } {
@@ -567,9 +586,11 @@ function bodyHint(operation: ApiOperation): string {
   const sketch = required
     .map((field) => `"${field.name}":${bodyPlaceholder(field)}`)
     .join(",");
-  const unionNote = body.union
-    ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${operation.command.resource} ${operation.command.action}\`)`
-    : "";
+  const unionNote = body.discriminator
+    ? `\n(or use field flags directly by selecting a variant: --${body.discriminator.cliName} ${Object.keys(body.discriminator.variants).join("|")} …)`
+    : body.union
+      ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${operation.command.resource} ${operation.command.action}\`)`
+      : "";
   return `, e.g.\n\n  --body-json '{${sketch}}'\n${unionNote}`;
 }
 
@@ -598,6 +619,48 @@ export async function parseOperationInput(
   operation: ApiOperation,
   tokens: string[],
 ): Promise<ApiCallInput> {
+  const discriminator = operation.requestBody?.legacyFieldFlags
+    ? undefined
+    : operation.requestBody?.discriminator;
+  if (discriminator) {
+    // Phase 1: a cheap scan for the discriminator flag and the lossless body
+    // channel only — nothing else is interpreted. Runs solely for operations
+    // whose contract carries a discriminated union.
+    let selected: string | undefined;
+    let bodyChannel = false;
+    for (let index = 0; index < tokens.length; index++) {
+      const token = tokens[index];
+      if (!token.startsWith("--")) continue;
+      const equals = token.indexOf("=");
+      const name = equals === -1 ? token.slice(2) : token.slice(2, equals);
+      if (name === "body-json" || name === "body-file") bodyChannel = true;
+      if (name === discriminator.cliName) {
+        const value = equals === -1 ? tokens[index + 1] : token.slice(equals + 1);
+        if (value !== undefined && !value.startsWith("--")) selected = value;
+      }
+    }
+    if (selected !== undefined && !bodyChannel) {
+      const fields = discriminator.variants[selected];
+      if (!fields) {
+        throw new CliError(
+          `--${discriminator.cliName} must be one of: ${Object.keys(discriminator.variants).join(", ")} (got "${selected}")`,
+        );
+      }
+      // Phase 2: the ordinary single-pass parse, against the selected
+      // variant's fields — branch-specific kinds and required set apply.
+      return parseOperationInput(
+        {
+          ...operation,
+          requestBody: {
+            ...operation.requestBody!,
+            legacyFieldFlags: true,
+            fields,
+          },
+        },
+        tokens,
+      );
+    }
+  }
   const input: ApiCallInput = {
     path: {},
     query: {},
@@ -672,8 +735,11 @@ export async function parseOperationInput(
       throw new CliError(`Unknown option --${option.name}`);
     }
     if (!operation.requestBody.legacyFieldFlags) {
+      const disc = operation.requestBody.discriminator;
       throw new CliError(
-        `${operation.operationId} requires --body-json or --body-file for request bodies${bodyHint(operation)}`,
+        disc
+          ? `${operation.operationId} field flags require --${disc.cliName} (one of: ${Object.keys(disc.variants).join(", ")}) to select the body variant, or use --body-json/--body-file${bodyHint(operation)}`
+          : `${operation.operationId} requires --body-json or --body-file for request bodies${bodyHint(operation)}`,
       );
     }
     const field = bodyField;

@@ -80,12 +80,22 @@ export interface ApiBodyField {
   description?: string;
 }
 
+// A union body whose variants are selected by one single-valued enum/const
+// property (e.g. prompts_create "type": chat|text). Enables per-variant
+// body-field flags; unions without a clean discriminator stay body-json-only.
+export interface ApiBodyDiscriminator {
+  field: string;
+  cliName: string;
+  variants: Record<string, ApiBodyField[]>;
+}
+
 export interface ApiRequestBody {
   required: boolean;
   contentType: string;
   legacyFieldFlags: boolean;
   // Top-level oneOf/anyOf body: fields are merged across the union variants.
   union?: true;
+  discriminator?: ApiBodyDiscriminator;
   fields: ApiBodyField[];
 }
 

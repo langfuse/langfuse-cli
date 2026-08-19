@@ -141,6 +141,89 @@ paths:
     // one branch is not enum-constrained, so no enum is claimed
     expect(prompt.enum).toBeUndefined();
     expect(prompt.description).toBe("The prompt text.");
+
+    // discriminated union: variants keyed by the inferred "type" property,
+    // with branch-specific kinds preserved
+    const discriminator = operation.requestBody!.discriminator!;
+    expect(discriminator.field).toBe("type");
+    expect(Object.keys(discriminator.variants).sort()).toEqual(["chat", "text"]);
+    expect(
+      discriminator.variants.text.find((f) => f.name === "prompt")?.kind,
+    ).toBe("string");
+    expect(
+      discriminator.variants.chat.find((f) => f.name === "prompt")?.kind,
+    ).toBe("array");
+  });
+
+  test("union bodies are json-only structurally, even for unlisted operations", () => {
+    // operationId deliberately NOT in LEGACY_FIELD_FLAGS_UNSUPPORTED: a union
+    // op added by a future spec must not silently get merged field flags,
+    // and must gain variant flags when a discriminator is inferable.
+    const contract = compileApiContract(
+      SOURCE,
+      `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /future:
+    post:
+      operationId: future_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    kind: { type: string, enum: [a] }
+                    left: { type: string }
+                  required: [kind, left]
+                - type: object
+                  properties:
+                    kind: { type: string, enum: [b] }
+                    right: { type: number }
+                  required: [kind, right]
+      responses:
+        '200': { description: ok }
+`,
+    );
+    const body = contract.operations[0].requestBody!;
+    expect(body.legacyFieldFlags).toBe(false);
+    expect(body.discriminator?.field).toBe("kind");
+    expect(Object.keys(body.discriminator!.variants).sort()).toEqual(["a", "b"]);
+  });
+
+  test("unions without a clean discriminator stay body-json-only", () => {
+    const contract = compileApiContract(
+      SOURCE,
+      `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /rules:
+    post:
+      operationId: unstable_evaluationRules_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    name: { type: string }
+                    evaluator: { type: object }
+                  required: [name]
+                - type: object
+                  properties:
+                    name: { type: string }
+                    mapping: { type: array, items: { type: object } }
+                  required: [name]
+      responses:
+        '200': { description: ok }
+`,
+    );
+    expect(contract.operations[0].requestBody?.union).toBe(true);
+    expect(contract.operations[0].requestBody?.discriminator).toBeUndefined();
   });
 });
 

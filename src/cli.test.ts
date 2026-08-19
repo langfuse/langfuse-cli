@@ -440,6 +440,107 @@ paths:
     }
   });
 
+  test("discriminated unions parse field flags against the selected variant", async () => {
+    const nameField = { name: "name", cliName: "name", required: true, kind: "string" as const };
+    const typeField = (value: string) => ({
+      name: "type",
+      cliName: "type",
+      required: true,
+      kind: "string" as const,
+      enum: [value],
+    });
+    const operation: ApiOperation = {
+      ...promptGet,
+      key: "POST /api/public/v2/prompts",
+      operationId: "prompts_create",
+      method: "POST",
+      path: "/api/public/v2/prompts",
+      command: { resource: "prompts", action: "create" },
+      pathParameterOrder: [],
+      parameters: [],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        legacyFieldFlags: false,
+        union: true,
+        discriminator: {
+          field: "type",
+          cliName: "type",
+          variants: {
+            text: [
+              nameField,
+              { name: "prompt", cliName: "prompt", required: true, kind: "string" },
+              typeField("text"),
+            ],
+            chat: [
+              nameField,
+              {
+                name: "prompt",
+                cliName: "prompt",
+                required: true,
+                kind: "array",
+                itemKind: "object",
+              },
+              typeField("chat"),
+            ],
+          },
+        },
+        fields: [nameField],
+      },
+    };
+
+    // text variant: prompt stays a string
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "text", "--name", "hi", "--prompt", "lol",
+      ]),
+    ).toMatchObject({ body: { type: "text", name: "hi", prompt: "lol" } });
+
+    // chat variant: whole JSON array sets the field
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi",
+        "--prompt", '[{"role":"user","content":"hi"}]',
+      ]),
+    ).toMatchObject({
+      body: { type: "chat", prompt: [{ role: "user", content: "hi" }] },
+    });
+
+    // chat variant: repeated flags append items
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi",
+        "--prompt", '{"role":"system","content":"a"}',
+        "--prompt", '{"role":"user","content":"b"}',
+      ]),
+    ).toMatchObject({
+      body: {
+        prompt: [
+          { role: "system", content: "a" },
+          { role: "user", content: "b" },
+        ],
+      },
+    });
+
+    // variant required fields are enforced
+    await expect(
+      parseOperationInput(operation, ["--type", "text", "--name", "hi"]),
+    ).rejects.toThrow("Missing required body option(s): --prompt");
+
+    // missing and invalid discriminators
+    await expect(
+      parseOperationInput(operation, ["--name", "hi"]),
+    ).rejects.toThrow("field flags require --type (one of: text, chat)");
+    await expect(
+      parseOperationInput(operation, ["--type", "banana"]),
+    ).rejects.toThrow('--type must be one of: text, chat (got "banana")');
+
+    // the lossless channel bypasses variant parsing entirely
+    expect(
+      await parseOperationInput(operation, ["--body-json", '{"type":"text"}']),
+    ).toMatchObject({ body: { type: "text" } });
+  });
+
   test("resolves tag and version command aliases", () => {
     const operation: ApiOperation = {
       ...promptGet,

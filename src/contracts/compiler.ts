@@ -4,6 +4,7 @@ import { RESERVED_OPTION_NAMES } from "../flags";
 import { kebabCase, planCommandNames } from "./naming";
 import rawOverrides from "./overrides.json";
 import type {
+  ApiBodyDiscriminator,
   ApiBodyField,
   ApiContract,
   ApiOperation,
@@ -137,14 +138,17 @@ function applyBodyFieldFlagOverrides(
 ): void {
   const renames = overrides.bodyFieldFlags[operation.operationId];
   if (!renames || !operation.requestBody) return;
+  const fieldLists = [
+    operation.requestBody.fields,
+    ...Object.values(operation.requestBody.discriminator?.variants ?? {}),
+  ];
   for (const [fieldName, flag] of Object.entries(renames)) {
-    const field = operation.requestBody.fields.find(
-      (candidate) => candidate.name === fieldName,
-    );
     // Missing fields are tolerated per version; assertOverridesApplied
     // rejects entries that apply in no snapshot.
-    if (!field) continue;
-    field.cliName = flag;
+    for (const fields of fieldLists) {
+      const field = fields.find((candidate) => candidate.name === fieldName);
+      if (field) field.cliName = flag;
+    }
   }
 }
 
@@ -153,8 +157,7 @@ function applyBodyFieldFlagOverrides(
 // breaks the build here instead of silently shipping a dead or hijacked
 // flag; collisions are resolved with a reviewed rename in overrides.json.
 function validateFlagNamespace(operation: AliasTarget): void {
-  const owners = new Map<string, string>();
-  const claim = (flag: string, owner: string) => {
+  const makeClaimer = (owners: Map<string, string>) => (flag: string, owner: string) => {
     if (RESERVED_OPTION_NAMES.has(flag)) {
       throw new Error(
         `${operation.operationId}: --${flag} (${owner}) collides with a reserved or global flag; rename it in overrides.json bodyFieldFlags/parameterFlagAliases`,
@@ -168,16 +171,29 @@ function validateFlagNamespace(operation: AliasTarget): void {
     }
     owners.set(flag, owner);
   };
+  const base = new Map<string, string>();
+  const claimBase = makeClaimer(base);
   for (const parameter of operation.parameters) {
     if (parameter.location === "path") continue;
-    claim(parameter.cliName, `${parameter.location} parameter ${parameter.name}`);
+    claimBase(parameter.cliName, `${parameter.location} parameter ${parameter.name}`);
     for (const alias of parameter.cliAliases ?? []) {
-      claim(alias, `flag alias of parameter ${parameter.name}`);
+      claimBase(alias, `flag alias of parameter ${parameter.name}`);
     }
   }
   if (operation.requestBody?.legacyFieldFlags) {
     for (const field of operation.requestBody.fields) {
-      claim(field.cliName, `body field ${field.name}`);
+      claimBase(field.cliName, `body field ${field.name}`);
+    }
+  }
+  // Each discriminator variant is its own flag namespace layered over the
+  // parameters: variants may reuse names among themselves, but not collide
+  // with parameters, aliases, or reserved flags.
+  for (const [variant, fields] of Object.entries(
+    operation.requestBody?.discriminator?.variants ?? {},
+  )) {
+    const claimVariant = makeClaimer(new Map(base));
+    for (const field of fields) {
+      claimVariant(field.cliName, `body field ${field.name} (variant ${variant})`);
     }
   }
 }
@@ -420,6 +436,47 @@ function normalizeAuth(
   };
 }
 
+// Infer the union discriminator: the one property that exists in every
+// branch as a single-valued enum/const with pairwise-distinct values. The
+// spec's explicit discriminator.propertyName wins when declared. Ambiguity
+// (zero or several candidates) yields undefined: the body stays json-only
+// rather than the CLI guessing.
+function extractDiscriminator(
+  document: Record<string, any>,
+  branches: Record<string, any>[],
+  explicit: string | undefined,
+): ApiBodyDiscriminator | undefined {
+  if (branches.length < 2) return undefined;
+  const branchFields = branches.map((branch) =>
+    collectBodyFields(document, branch),
+  );
+  const candidates: string[] = [];
+  const shared = branchFields[0].map((field) => field.name);
+  for (const name of shared) {
+    const values = branchFields.map(
+      (fields) => fields.find((field) => field.name === name)?.enum,
+    );
+    if (!values.every((value) => value?.length === 1)) continue;
+    const flat = values.map((value) => String(value![0]));
+    if (new Set(flat).size !== flat.length) continue;
+    candidates.push(name);
+  }
+  const field = explicit && candidates.includes(explicit)
+    ? explicit
+    : candidates.length === 1
+      ? candidates[0]
+      : undefined;
+  if (!field) return undefined;
+  const variants: Record<string, ApiBodyField[]> = {};
+  branchFields.forEach((fields) => {
+    const value = String(
+      fields.find((candidate) => candidate.name === field)!.enum![0],
+    );
+    variants[value] = fields;
+  });
+  return { field, cliName: kebabCase(field), variants };
+}
+
 function normalizeRequestBody(
   document: Record<string, any>,
   operationId: string,
@@ -439,12 +496,29 @@ function normalizeRequestBody(
   const rawSchema = body.content?.[contentType]?.schema;
   if (!rawSchema) throw new Error(`${operationId}: request body has no schema`);
   const resolved = resolveLocalRef(document, rawSchema);
-  const union = Array.isArray(resolved.oneOf) || Array.isArray(resolved.anyOf);
+  const branches = resolved.oneOf ?? resolved.anyOf;
+  const union = Array.isArray(branches);
+  // Union bodies never get merged field flags, structurally — independent of
+  // the hand-maintained exclusion list. A union op appearing in a future spec
+  // is automatically json-only, and automatically gains per-variant flags
+  // when a discriminator is inferable.
+  const legacyFieldFlags =
+    !union && !LEGACY_FIELD_FLAGS_UNSUPPORTED.has(operationId);
+  const discriminator = union
+    ? extractDiscriminator(
+        document,
+        branches.map((branch: Record<string, any>) =>
+          resolveLocalRef(document, branch),
+        ),
+        resolved.discriminator?.propertyName,
+      )
+    : undefined;
   return {
     required: Boolean(body.required),
     contentType,
-    legacyFieldFlags: !LEGACY_FIELD_FLAGS_UNSUPPORTED.has(operationId),
+    legacyFieldFlags,
     ...(union ? { union: true as const } : {}),
+    ...(discriminator ? { discriminator } : {}),
     fields: collectBodyFields(document, rawSchema),
   };
 }
