@@ -515,8 +515,15 @@ async function cutRelease(): Promise<void> {
   await runCommand("git", ["commit", "-m", `chore(release): ${tagName}`]);
   releaseCommitted = true;
   await runCommand("git", ["tag", "-a", tagName, "-m", tagName]);
-  await runCommand("git", ["push", "origin", "main"]);
-  await runCommand("git", ["push", "origin", `refs/tags/${tagName}`]);
+  // Atomic: a partial failure (commit pushed, tag rejected) would strand
+  // main on a burned version with no tag, no draft, and no retry path.
+  await runCommand("git", [
+    "push",
+    "--atomic",
+    "origin",
+    "main",
+    `refs/tags/${tagName}`,
+  ]);
 
   const releaseArgs = [
     "release",

@@ -107,30 +107,21 @@ describe("release configuration", () => {
     expect(() => assertReleasableVersion("1.0")).toThrow("Invalid semver");
   });
 
-  test("publish-time guard binds tag, prerelease flag, and latest monotonicity", () => {
+  test("publish-time guard binds tag, prerelease flag, and channel monotonicity", () => {
     const base = {
       version: "1.1.0",
       tagName: "v1.1.0",
       isPrerelease: false,
-      currentLatest: "1.0.0",
+      currentDistTags: { latest: "1.0.0" },
     };
     expect(releaseGuard(base)).toBe("latest");
-    expect(releaseGuard({ ...base, currentLatest: null })).toBe("latest"); // first publish
-    expect(
-      releaseGuard({
-        version: "1.2.0-rc.0",
-        tagName: "v1.2.0-rc.0",
-        isPrerelease: true,
-        // monotonicity applies only to latest; rc may trail the current latest
-        currentLatest: "9.9.9",
-      }),
-    ).toBe("rc");
+    expect(releaseGuard({ ...base, currentDistTags: null })).toBe("latest"); // first publish
 
     expect(() =>
-      releaseGuard({ ...base, currentLatest: "1.1.0" }),
+      releaseGuard({ ...base, currentDistTags: { latest: "1.1.0" } }),
     ).toThrow('Refusing to move npm dist-tag "latest" backwards');
     expect(() =>
-      releaseGuard({ ...base, currentLatest: "2.0.0" }),
+      releaseGuard({ ...base, currentDistTags: { latest: "2.0.0" } }),
     ).toThrow("backwards");
     expect(() => releaseGuard({ ...base, tagName: "v1.1.1" })).toThrow(
       "does not match",
@@ -143,11 +134,30 @@ describe("release configuration", () => {
         version: "1.2.0-rc.0",
         tagName: "v1.2.0-rc.0",
         isPrerelease: false,
-        currentLatest: null,
+        currentDistTags: null,
       }),
     ).toThrow("must be published as a GitHub pre-release");
     expect(() =>
       releaseGuard({ ...base, version: "v1.1.0", tagName: "vv1.1.0" }),
     ).toThrow("not in normalized form");
+  });
+
+  test("prerelease channels are monotonicity-guarded independently of latest", () => {
+    const rc = (version: string, currentDistTags: Record<string, string> | null) =>
+      releaseGuard({
+        version,
+        tagName: `v${version}`,
+        isPrerelease: true,
+        currentDistTags,
+      });
+    // rc may trail latest; only its own channel is compared
+    expect(rc("1.2.0-rc.1", { latest: "9.9.9", rc: "1.2.0-rc.0" })).toBe("rc");
+    // first publish on the channel passes
+    expect(rc("1.2.0-rc.0", { latest: "1.1.0" })).toBe("rc");
+    // a stale rc draft published after a newer rc is refused
+    expect(() => rc("1.2.0-rc.0", { latest: "1.1.0", rc: "1.2.0-rc.1" })).toThrow(
+      'Refusing to move npm dist-tag "rc" backwards',
+    );
+    expect(() => rc("1.2.0-rc.1", { rc: "1.2.0-rc.1" })).toThrow("backwards");
   });
 });

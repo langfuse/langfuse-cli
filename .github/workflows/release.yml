@@ -124,6 +124,22 @@ jobs:
           bun bin/langfuse.mjs --help > /dev/null
           echo "Smoke test passed."
 
+      # The early guard ran before ~5 minutes of gates; re-check against the
+      # registry state at publish time so a release published in that window
+      # cannot slip a dist-tag backwards (per-tag concurrency does not
+      # serialize different releases against each other).
+      - name: Re-verify release policy immediately before publish
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          FINAL_TAG="$(bun scripts/release-guard.ts)"
+          if [ "$FINAL_TAG" != "$DIST_TAG" ]; then
+            echo "::error::dist-tag changed between verification and publish ($DIST_TAG -> $FINAL_TAG)"
+            exit 1
+          fi
+
       # conformance:all already built dist/; --ignore-scripts avoids a second
       # prepublishOnly build producing a different publish than was verified.
       - name: Publish to npm

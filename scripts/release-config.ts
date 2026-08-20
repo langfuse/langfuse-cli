@@ -118,14 +118,15 @@ export function assertReleasableVersion(raw: string): string {
 
 // Publish-time guard used by the GitHub Actions workflow. Validates the
 // version policy, the tag <-> version binding, GitHub pre-release flag
-// consistency, and latest-tag monotonicity; returns the npm dist-tag.
+// consistency, and dist-tag monotonicity on the derived channel; returns
+// the npm dist-tag.
 export function releaseGuard(input: {
   version: string;
   tagName: string;
   isPrerelease: boolean;
-  // npm's current latest version, or null when the package has never been
+  // npm's current dist-tags map, or null when the package has never been
   // published (first release)
-  currentLatest: string | null;
+  currentDistTags: Record<string, string> | null;
 }): string {
   const version = assertReleasableVersion(input.version);
   if (version !== input.version) {
@@ -150,13 +151,14 @@ export function releaseGuard(input: {
     );
   }
   const distTag = publishTagForVersion(version);
-  if (
-    distTag === "latest" &&
-    input.currentLatest !== null &&
-    !gt(version, input.currentLatest)
-  ) {
+  // Monotonicity on the channel being published: latest never moves to an
+  // older stable, and a stale alpha/beta/rc draft never regresses its own
+  // channel either. A channel with no current value (first publish on it)
+  // passes.
+  const currentOnChannel = input.currentDistTags?.[distTag];
+  if (currentOnChannel !== undefined && !gt(version, currentOnChannel)) {
     throw new Error(
-      `Refusing to move npm dist-tag "latest" backwards: ${version} is not greater than the current latest ${input.currentLatest}`,
+      `Refusing to move npm dist-tag "${distTag}" backwards: ${version} is not greater than the current ${distTag} ${currentOnChannel}`,
     );
   }
   return distTag;
