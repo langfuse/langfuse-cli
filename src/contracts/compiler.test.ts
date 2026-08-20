@@ -123,6 +123,7 @@ paths:
                   properties:
                     type: { type: string, enum: [text] }
                     prompt: { type: string, description: "The prompt text." }
+                    config: { nullable: true }
                   required: [type, prompt]
       responses:
         '200': { description: ok }
@@ -142,6 +143,11 @@ paths:
     expect(prompt.enum).toBeUndefined();
     expect(prompt.description).toBe("The prompt text.");
 
+    // unconstrained schemas (e.g. `nullable: true` only) are "any", not
+    // "string": structured values must not be stringified
+    const config = operation.requestBody!.fields.find((f) => f.name === "config")!;
+    expect(config.kind).toBe("any");
+
     // discriminated union: variants keyed by the inferred "type" property,
     // with branch-specific kinds preserved
     const discriminator = operation.requestBody!.discriminator!;
@@ -156,7 +162,7 @@ paths:
   });
 
   test("union bodies are json-only structurally, even for unlisted operations", () => {
-    // operationId deliberately NOT in LEGACY_FIELD_FLAGS_UNSUPPORTED: a union
+    // operationId deliberately NOT in FIELD_FLAGS_UNSUPPORTED: a union
     // op added by a future spec must not silently get merged field flags,
     // and must gain variant flags when a discriminator is inferable.
     const contract = compileApiContract(
@@ -188,7 +194,7 @@ paths:
 `,
     );
     const body = contract.operations[0].requestBody!;
-    expect(body.legacyFieldFlags).toBe(false);
+    expect(body.fieldFlags).toBe(false);
     expect(body.discriminator?.field).toBe("kind");
     expect(Object.keys(body.discriminator!.variants).sort()).toEqual(["a", "b"]);
   });
@@ -397,6 +403,44 @@ paths:
         unknownOperation,
       ),
     ).toThrow("applied in no compiled contract");
+  });
+
+  test("renaming the discriminator field moves the selection flag with it", () => {
+    const unionSpec = `openapi: 3.0.1
+info: { title: fixture, version: '1' }
+paths:
+  /things:
+    post:
+      operationId: things_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    type: { type: string, enum: [a] }
+                    left: { type: string }
+                  required: [type]
+                - type: object
+                  properties:
+                    type: { type: string, enum: [b] }
+                    right: { type: string }
+                  required: [type]
+      responses:
+        '200': { description: ok }
+`;
+    const contract = compileApiContract(
+      SOURCE,
+      unionSpec,
+      overrides({ bodyFieldFlags: { things_create: { type: "thing-type" } } }),
+    );
+    const body = contract.operations[0].requestBody!;
+    expect(body.discriminator?.cliName).toBe("thing-type");
+    for (const fields of Object.values(body.discriminator!.variants)) {
+      expect(fields.find((f) => f.name === "type")?.cliName).toBe("thing-type");
+    }
   });
 
   test("rejects command overrides for unknown versions or operations", () => {

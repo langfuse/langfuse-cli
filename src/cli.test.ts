@@ -273,7 +273,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: true,
+        fieldFlags: true,
         fields: [
           {
             name: "chartConfig",
@@ -322,7 +322,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         fields: [],
       },
     };
@@ -349,7 +349,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: true,
+        fieldFlags: true,
         fields: [
           { name: "content", cliName: "content", required: true, kind: "string" },
           {
@@ -392,7 +392,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         union: true,
         fields: [
           { name: "name", cliName: "name", required: true, kind: "string" },
@@ -461,7 +461,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         union: true,
         discriminator: {
           field: "type",
@@ -470,6 +470,7 @@ paths:
             text: [
               nameField,
               { name: "prompt", cliName: "prompt", required: true, kind: "string" },
+              { name: "config", cliName: "config", required: false, kind: "any" },
               typeField("text"),
             ],
             chat: [
@@ -539,6 +540,50 @@ paths:
     expect(
       await parseOperationInput(operation, ["--body-json", '{"type":"text"}']),
     ).toMatchObject({ body: { type: "text" } });
+
+    // "any" fields (unconstrained schemas like prompt config) keep
+    // structured JSON values instead of stringifying them
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "text", "--name", "hi", "--prompt", "lol",
+        "--config", '{"temperature":0}',
+      ]),
+    ).toMatchObject({ body: { config: { temperature: 0 } } });
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "text", "--name", "hi", "--prompt", "lol",
+        "--config", "plain",
+      ]),
+    ).toMatchObject({ body: { config: "plain" } });
+
+    // whole-array values are validated per item, like the repeated form
+    await expect(
+      parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi", "--prompt", "[1]",
+      ]),
+    ).rejects.toThrow("--prompt: array item 0 must be an object");
+
+    // array values append to accumulated items in either order
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi",
+        "--prompt", '{"role":"system","content":"a"}',
+        "--prompt", '[{"role":"user","content":"b"}]',
+      ]),
+    ).toMatchObject({
+      body: {
+        prompt: [
+          { role: "system", content: "a" },
+          { role: "user", content: "b" },
+        ],
+      },
+    });
+
+    // discriminator flag plus the lossless channel is an explicit error,
+    // not a contradictory fallthrough
+    await expect(
+      parseOperationInput(operation, ["--type", "text", "--body-json", '{"x":1}']),
+    ).rejects.toThrow("Do not mix --body-json/--body-file with body field flags");
   });
 
   test("resolves tag and version command aliases", () => {
@@ -824,7 +869,7 @@ describe("exit code taxonomy", () => {
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         fields: [],
       },
     };

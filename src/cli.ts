@@ -329,7 +329,8 @@ export function assertOperationCallable(
 }
 
 function kindLabel(kind: ValueKind): string {
-  return kind === "array" ? "value (repeatable)" : kind;
+  if (kind === "array") return "value (repeatable)";
+  return kind === "any" ? "json" : kind;
 }
 
 function flagUsage(name: string, kind: ValueKind): string {
@@ -356,12 +357,13 @@ function annotate(
 }
 
 function kindText(kind: ValueKind, itemKind?: ValueKind): string {
-  return kind === "array" ? `array<${itemKind ?? "string"}>` : kind;
+  if (kind === "array") return `array<${kindText(itemKind ?? "string")}>`;
+  return kind === "any" ? "json" : kind;
 }
 
 function bodyFieldsSection(operation: ApiOperation): string {
   const body = operation.requestBody;
-  if (!body || body.legacyFieldFlags || body.fields.length === 0) return "";
+  if (!body || body.fieldFlags || body.fields.length === 0) return "";
   const fieldLine = (field: ApiBodyField, indent: string) =>
     annotate(
       `${indent}${field.name.padEnd(18)} ${kindText(field.kind, field.itemKind)}${field.required ? " (required)" : ""}`,
@@ -400,7 +402,7 @@ function printOperationHelp(operation: ApiOperation): void {
       ),
     );
   }
-  if (operation.requestBody?.legacyFieldFlags) {
+  if (operation.requestBody?.fieldFlags) {
     for (const field of operation.requestBody.fields) {
       lines.push(
         annotate(
@@ -529,27 +531,50 @@ function addParameterValue(
   }
 }
 
+function kindMatches(value: JsonValue, kind: ValueKind | undefined): boolean {
+  if (kind === undefined || kind === "any") return true;
+  if (kind === "string") return typeof value === "string";
+  if (kind === "number") return typeof value === "number";
+  if (kind === "boolean") return typeof value === "boolean";
+  if (kind === "null") return value === null;
+  if (kind === "array") return Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function kindArticle(kind: ValueKind): string {
+  if (kind === "object" || kind === "array") return `an ${kind}`;
+  if (kind === "null") return "null";
+  return `a ${kind}`;
+}
+
 function setBodyValue(
   body: Record<string, JsonValue>,
   raw: string | undefined,
   field: ApiBodyField,
 ): void {
   if (field.kind === "array") {
-    // A JSON array value sets the whole field; otherwise the value is one
-    // item and the flag is repeatable.
+    // A JSON array value appends all its elements; otherwise the value is
+    // one item. Both forms are repeatable and validated per item.
+    let bulk: JsonValue[] | undefined;
     if (raw !== undefined) {
       try {
-        const whole = JSON.parse(raw) as JsonValue;
-        if (Array.isArray(whole)) {
-          body[field.name] = whole;
-          return;
-        }
+        const parsed = JSON.parse(raw) as JsonValue;
+        if (Array.isArray(parsed)) bulk = parsed;
       } catch {}
     }
-    const item = parseJsonValue(raw ?? "true", field.itemKind);
+    const items = bulk ?? [parseJsonValue(raw ?? "true", field.itemKind)];
+    if (field.itemKind !== undefined && field.itemKind !== "any") {
+      items.forEach((item, index) => {
+        if (!kindMatches(item, field.itemKind)) {
+          throw new CliError(
+            `--${field.cliName}: array item ${index} must be ${kindArticle(field.itemKind!)}`,
+          );
+        }
+      });
+    }
     const existing = body[field.name];
-    if (Array.isArray(existing)) existing.push(item);
-    else body[field.name] = [item];
+    if (Array.isArray(existing)) existing.push(...items);
+    else body[field.name] = items;
     return;
   }
   body[field.name] = parseJsonValue(raw ?? "true", field.kind);
@@ -619,7 +644,7 @@ export async function parseOperationInput(
   operation: ApiOperation,
   tokens: string[],
 ): Promise<ApiCallInput> {
-  const discriminator = operation.requestBody?.legacyFieldFlags
+  const discriminator = operation.requestBody?.fieldFlags
     ? undefined
     : operation.requestBody?.discriminator;
   if (discriminator) {
@@ -639,6 +664,11 @@ export async function parseOperationInput(
         if (value !== undefined && !value.startsWith("--")) selected = value;
       }
     }
+    if (selected !== undefined && bodyChannel) {
+      throw new CliError(
+        "Do not mix --body-json/--body-file with body field flags",
+      );
+    }
     if (selected !== undefined && !bodyChannel) {
       const fields = discriminator.variants[selected];
       if (!fields) {
@@ -653,7 +683,7 @@ export async function parseOperationInput(
           ...operation,
           requestBody: {
             ...operation.requestBody!,
-            legacyFieldFlags: true,
+            fieldFlags: true,
             fields,
           },
         },
@@ -687,7 +717,7 @@ export async function parseOperationInput(
     }
     const option = splitOption(token);
     const parameter = parameterByFlag.get(option.name);
-    const bodyField = operation.requestBody?.legacyFieldFlags
+    const bodyField = operation.requestBody?.fieldFlags
       ? operation.requestBody.fields.find(
           (candidate) => candidate.cliName === option.name.split(".")[0],
         )
@@ -734,7 +764,7 @@ export async function parseOperationInput(
     if (!operation.requestBody) {
       throw new CliError(`Unknown option --${option.name}`);
     }
-    if (!operation.requestBody.legacyFieldFlags) {
+    if (!operation.requestBody.fieldFlags) {
       const disc = operation.requestBody.discriminator;
       throw new CliError(
         disc
@@ -783,7 +813,7 @@ export async function parseOperationInput(
     }
   }
   let body = completeBody !== undefined ? completeBody : fieldBody;
-  if (completeBody === undefined && operation.requestBody?.legacyFieldFlags) {
+  if (completeBody === undefined && operation.requestBody?.fieldFlags) {
     const missing = operation.requestBody.fields
       .filter((field) => field.required && fieldBody?.[field.name] === undefined)
       .map((field) => `--${field.cliName}`);

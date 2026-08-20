@@ -31,7 +31,7 @@ const HTTP_METHODS = [
   "trace",
 ] as const;
 
-const LEGACY_FIELD_FLAGS_UNSUPPORTED = new Set([
+const FIELD_FLAGS_UNSUPPORTED = new Set([
   "annotationQueues_createQueue",
   "datasetItems_create",
   "datasetRunItems_create",
@@ -84,6 +84,7 @@ function schemaKind(
   const type = Array.isArray(schema.type)
     ? schema.type.find((candidate: string) => candidate !== "null")
     : schema.type;
+  if (type === "string") return "string";
   if (type === "integer" || type === "number") return "number";
   if (type === "boolean") return "boolean";
   if (type === "array") return "array";
@@ -98,7 +99,20 @@ function schemaKind(
     );
     return kinds.size === 1 ? [...kinds][0] : "object";
   }
-  return "string";
+  // String-facet keywords imply a string; a schema with no constraints at
+  // all (e.g. `nullable: true` only, like prompt config) accepts any JSON
+  // value and must not stringify structured input.
+  if (
+    schema.format ||
+    schema.pattern ||
+    schema.enum ||
+    schema.const !== undefined ||
+    schema.minLength !== undefined ||
+    schema.maxLength !== undefined
+  ) {
+    return "string";
+  }
+  return "any";
 }
 
 const OVERRIDES = rawOverrides as ContractOverrides;
@@ -149,6 +163,12 @@ function applyBodyFieldFlagOverrides(
       const field = fields.find((candidate) => candidate.name === fieldName);
       if (field) field.cliName = flag;
     }
+    // Renaming the discriminator field must move the variant-selection flag
+    // with it, or phase-1 selection and phase-2 parsing disagree.
+    const discriminator = operation.requestBody.discriminator;
+    if (discriminator && discriminator.field === fieldName) {
+      discriminator.cliName = flag;
+    }
   }
 }
 
@@ -180,7 +200,7 @@ function validateFlagNamespace(operation: AliasTarget): void {
       claimBase(alias, `flag alias of parameter ${parameter.name}`);
     }
   }
-  if (operation.requestBody?.legacyFieldFlags) {
+  if (operation.requestBody?.fieldFlags) {
     for (const field of operation.requestBody.fields) {
       claimBase(field.cliName, `body field ${field.name}`);
     }
@@ -502,8 +522,8 @@ function normalizeRequestBody(
   // the hand-maintained exclusion list. A union op appearing in a future spec
   // is automatically json-only, and automatically gains per-variant flags
   // when a discriminator is inferable.
-  const legacyFieldFlags =
-    !union && !LEGACY_FIELD_FLAGS_UNSUPPORTED.has(operationId);
+  const fieldFlags =
+    !union && !FIELD_FLAGS_UNSUPPORTED.has(operationId);
   const discriminator = union
     ? extractDiscriminator(
         document,
@@ -516,7 +536,7 @@ function normalizeRequestBody(
   return {
     required: Boolean(body.required),
     contentType,
-    legacyFieldFlags,
+    fieldFlags,
     ...(union ? { union: true as const } : {}),
     ...(discriminator ? { discriminator } : {}),
     fields: collectBodyFields(document, rawSchema),

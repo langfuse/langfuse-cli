@@ -20,7 +20,9 @@ export type ValueKind =
   | "boolean"
   | "array"
   | "object"
-  | "null";
+  | "null"
+  // unconstrained schema: parsed as JSON when possible, string otherwise
+  | "any";
 
 export interface CommandName {
   resource: string;
@@ -92,7 +94,7 @@ export interface ApiBodyDiscriminator {
 export interface ApiRequestBody {
   required: boolean;
   contentType: string;
-  legacyFieldFlags: boolean;
+  fieldFlags: boolean;
   // Top-level oneOf/anyOf body: fields are merged across the union variants.
   union?: true;
   discriminator?: ApiBodyDiscriminator;
