@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# Publishes to npm when a GitHub release is published.
+#
+# Flow: `bun run release` pushes a release commit + tag and opens a draft
+# GitHub release. A human edits the notes and publishes the release, which
+# triggers this workflow. Publishing authenticates via npm trusted publishing
+# (OIDC) — no npm token exists anywhere — and npm attaches provenance
+# attestations automatically.
+#
+# One-time npm/GitHub setup: see MAINTENANCE.md "One-time npm configuration".
+# The npm-publish environment MUST carry protection rules (required
+# reviewers + deployment tag policy): release events execute this workflow
+# file as of the tagged commit, so environment protection is the platform
+# gate between "has push access" and "can publish to npm".
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+# One group per release: parallel releases of different tags may queue and
+# run independently; re-deliveries of the same tag serialize. A shared fixed
+# group would silently cancel a superseded pending release run.
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write # OIDC credential for npm trusted publishing
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify released commit is on main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::released commit is not on main"
+            exit 1
+          fi
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+          # This workflow publishes an artifact; never restore caches into it.
+          no-cache: true
+
+      - name: Install dependencies
+        run: bun ci
+
+      # Shared policy with scripts/release.ts (release-config.ts): validates
+      # tag <-> version binding, prerelease consistency, identifier whitelist,
+      # and latest-tag monotonicity; emits the npm dist-tag.
+      - name: Verify release policy and derive npm dist-tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          DIST_TAG="$(bun scripts/release-guard.ts)"
+          echo "DIST_TAG=$DIST_TAG" >> "$GITHUB_ENV"
+          echo "Publishing with npm dist-tag $DIST_TAG"
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+      - name: Build and fake-call every endpoint in every API snapshot
+        run: bun run conformance:all
+
+      - name: Set up Node (bundles the npm that performs the publish)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          # This workflow publishes an artifact; never restore caches into it.
+          package-manager-cache: false
+
+      - name: Verify npm supports trusted publishing (requires npm >= 11.5.1)
+        run: |
+          set -euo pipefail
+          NPM_VERSION="$(npm --version)"
+          MINIMUM="11.5.1"
+          if [ "$(printf '%s\n' "$MINIMUM" "$NPM_VERSION" | sort -V | head -n1)" != "$MINIMUM" ]; then
+            echo "::error::npm $NPM_VERSION is too old for trusted publishing (need >= $MINIMUM)"
+            exit 1
+          fi
+          echo "npm $NPM_VERSION"
+
+      # npm publish does not verify tarball completeness; a files-array or
+      # build-layout regression must fail here, not ship as latest.
+      - name: Verify packed tarball contents
+        run: |
+          set -euo pipefail
+          FILES="$(npm pack --dry-run --json --ignore-scripts | jq -r '.[0].files[].path')"
+          for required in bin/langfuse.mjs dist/cli.js dist/contracts/catalog.json README.md; do
+            if ! printf '%s\n' "$FILES" | grep -qx "$required"; then
+              echo "::error::$required is missing from the npm tarball"
+              exit 1
+            fi
+          done
+          echo "Tarball contents verified."
+
+      - name: Smoke-test the built CLI under Node and Bun
+        run: |
+          set -euo pipefail
+          node bin/langfuse.mjs --version
+          bun bin/langfuse.mjs --help > /dev/null
+          echo "Smoke test passed."
+
+      # The early guard ran before ~5 minutes of gates; re-check against the
+      # registry state at publish time so a release published in that window
+      # cannot slip a dist-tag backwards (per-tag concurrency does not
+      # serialize different releases against each other).
+      - name: Re-verify release policy immediately before publish
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          FINAL_TAG="$(bun scripts/release-guard.ts)"
+          if [ "$FINAL_TAG" != "$DIST_TAG" ]; then
+            echo "::error::dist-tag changed between verification and publish ($DIST_TAG -> $FINAL_TAG)"
+            exit 1
+          fi
+
+      # conformance:all already built dist/; --ignore-scripts avoids a second
+      # prepublishOnly build producing a different publish than was verified.
+      - name: Publish to npm
+        run: npm publish --ignore-scripts --tag "$DIST_TAG"
