@@ -3,6 +3,7 @@ import { prerelease, valid } from "semver";
 
 import {
   PRERELEASE_IDENTIFIERS,
+  assertReleasableVersion,
   npmEnvironment,
   parseReleaseArgs,
   prereleaseVersion,
@@ -452,22 +453,28 @@ async function runGates(): Promise<void> {
 async function cutRelease(): Promise<void> {
   if (!isDryRun) {
     await assertOnMainAndSynced().then(warnUnlessCiGreen);
+    // `gh` is a hard post-push dependency (draft release creation); verify
+    // auth before anything irreversible happens.
+    await runCommand("gh", ["auth", "status"], { capture: true });
+    console.log("gh auth: ok");
   } else {
-    console.log("Dry run: skipping branch/sync/CI checks.");
+    console.log("Dry run: skipping branch/sync/CI/gh checks.");
   }
   await assertNoReleaseRelevantChanges();
 
   const pkg = await readPackageJson();
-  const nextVersion =
+  const selectedVersion =
     releaseOptions.version ?? (await selectVersion(rl, pkg.version));
-  if (!nextVersion) {
+  if (!selectedVersion) {
     console.log("Release cancelled.");
     return;
   }
-  if (!valid(nextVersion)) throw new Error(`Invalid semver: ${nextVersion}`);
+  // Enforce the same policy the publish workflow enforces, so nothing this
+  // script cuts can be rejected by CI after the tag is pushed.
+  const nextVersion = assertReleasableVersion(selectedVersion);
   if (nextVersion === pkg.version) throw new Error("Version must change.");
 
-  const distTag = publishTagForVersion(nextVersion, releaseOptions.tag);
+  const distTag = publishTagForVersion(nextVersion);
   const isPrerelease = prerelease(nextVersion) !== null;
   const tagName = `v${nextVersion}`;
   console.log(`Release version: ${nextVersion}`);
@@ -542,14 +549,15 @@ async function publishLocal(): Promise<void> {
   await assertNoReleaseRelevantChanges();
 
   const pkg = await readPackageJson();
-  const nextVersion =
+  const selectedVersion =
     releaseOptions.version ?? (await selectVersion(rl, pkg.version));
 
-  if (!nextVersion) {
+  if (!selectedVersion) {
     console.log("Release cancelled.");
     return;
   }
-  if (!valid(nextVersion)) throw new Error(`Invalid semver: ${nextVersion}`);
+  const nextVersion = valid(selectedVersion);
+  if (!nextVersion) throw new Error(`Invalid semver: ${selectedVersion}`);
   if (nextVersion === pkg.version) throw new Error("Version must change.");
   const publishTag = publishTagForVersion(nextVersion, releaseOptions.tag);
   console.log(`Release version: ${nextVersion}`);

@@ -76,18 +76,25 @@ bun run release
 ```
 
 1. **Cut** (local, interactive): verifies you are on `main`, in sync with
-   origin, with green CI and a clean tree; asks for the next version
-   (patch/minor/major, or alpha/beta/rc prereleases); verifies the version is
-   not on npm and the tag is free; runs typecheck, both test suites, and the
-   full conformance build; then pushes a `chore(release): vX.Y.Z` commit plus
-   the `vX.Y.Z` tag and opens a **draft GitHub release** with generated notes.
+   origin, and `gh` is authenticated; checks CI status on HEAD (warns and
+   asks when it cannot be confirmed green — note that a commit whose checks
+   have not started yet passes this silently, so wait for CI after pushing);
+   asks for the next version (patch/minor/major, or alpha/beta/rc
+   prereleases — other identifiers and build metadata are rejected, matching
+   the publish workflow's policy); verifies the version is not on npm and the
+   tag is free; runs typecheck, both test suites, and the full conformance
+   build; then pushes a `chore(release): vX.Y.Z` commit plus the `vX.Y.Z` tag
+   and opens a **draft GitHub release** with generated notes.
 2. **Publish the GitHub release**: edit the notes on GitHub and click
    Publish. This is the release decision — nothing reaches npm before it.
 3. **npm publish** (automatic): publishing the release triggers
-   [`release.yml`](.github/workflows/release.yml), which re-verifies the tag
-   (tag == package.json version, commit on main, prerelease consistency),
-   re-runs all gates, and publishes via **npm trusted publishing (OIDC)** with
-   provenance attestations. No npm token exists anywhere.
+   [`release.yml`](.github/workflows/release.yml), which re-verifies the
+   release against the same policy module the cut script uses
+   (`scripts/release-guard.ts`: tag == package.json version, commit on main,
+   prerelease consistency, identifier whitelist, and `latest` never moving to
+   an older version), verifies the packed tarball contents, re-runs all
+   gates, and publishes via **npm trusted publishing (OIDC)** with provenance
+   attestations. No npm token exists anywhere.
 
 npm dist-tags derive from the version: stable → `latest`, `-alpha.N` →
 `alpha`, `-beta.N` → `beta`, `-rc.N` → `rc`. Prerelease versions must be
@@ -115,8 +122,10 @@ bun run release -- --publish-local
 This runs the same gates plus `npm pack --dry-run` and an explicit publish
 confirmation, and requires interactive npm authentication (with OTP if the
 package disallows tokens). It does not commit or tag; do that manually after.
+`--tag <dist-tag>` overrides the dist-tag in this mode only; the CI path
+always derives it from the version.
 
-### One-time npm configuration
+### One-time npm/GitHub configuration (required)
 
 On npmjs.com → `langfuse-cli` → Settings:
 
@@ -126,5 +135,16 @@ On npmjs.com → `langfuse-cli` → Settings:
    tokens" — CI publishes via the trusted publisher, humans can still
    `--publish-local` interactively with OTP, and no token can ever publish.
 
-In the GitHub repo, create the `npm-publish` environment (Settings →
-Environments); optionally add required reviewers to gate publishes further.
+In the GitHub repo, environment protection is **required, not optional**:
+`release` events execute the workflow file **as of the tagged commit**, so
+without protection anyone with push access could tag a commit carrying a
+modified `release.yml` and publish arbitrary code through the trusted
+publisher. The environment protection rules are the platform-level gate that
+closes this:
+
+1. Settings → Environments → create `npm-publish`.
+2. Add **required reviewers** (release approvers).
+3. Set **deployment branches and tags** to "Selected branches and tags" and
+   allow only tags matching `v*`.
+4. Additionally, add a repository **ruleset restricting who can create `v*`
+   tags** (Settings → Rules → Rulesets) to maintainers.

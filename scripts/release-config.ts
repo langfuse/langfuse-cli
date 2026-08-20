@@ -1,4 +1,4 @@
-import { inc, prerelease, valid, validRange } from "semver";
+import { gt, inc, prerelease, valid, validRange } from "semver";
 
 export interface ReleaseOptions {
   dryRun: boolean;
@@ -32,6 +32,11 @@ export function parseReleaseArgs(args: string[]): ReleaseOptions {
     } else {
       throw new Error(`Unknown release option: ${argument}`);
     }
+  }
+  if (options.tag && !options.publishLocal) {
+    throw new Error(
+      "--tag only applies to --publish-local; the CI publish derives the dist-tag from the version",
+    );
   }
   return options;
 }
@@ -85,6 +90,76 @@ export function prereleaseVersion(
   const next = inc(current, level, identifier);
   if (!next) throw new Error(`Cannot compute ${level} ${identifier} from ${current}`);
   return next;
+}
+
+// The single releasable-version policy shared by the cut script and the
+// publish workflow (via scripts/release-guard.ts): normalized semver, no
+// build metadata, prerelease identifiers restricted to the exact-case set
+// the dist-tag derivation understands. Returns the normalized version.
+export function assertReleasableVersion(raw: string): string {
+  if (raw.includes("+")) {
+    throw new Error(
+      `Build metadata is not releasable: ${raw} (the dist-tag and tag guards cannot classify it)`,
+    );
+  }
+  const normalized = valid(raw);
+  if (!normalized) throw new Error(`Invalid semver: ${raw}`);
+  const prereleaseParts = prerelease(normalized);
+  if (prereleaseParts) {
+    const identifier = String(prereleaseParts[0]);
+    if (!(PRERELEASE_IDENTIFIERS as readonly string[]).includes(identifier)) {
+      throw new Error(
+        `Prerelease identifier "${identifier}" is not releasable; use one of: ${PRERELEASE_IDENTIFIERS.join(", ")} (exact case)`,
+      );
+    }
+  }
+  return normalized;
+}
+
+// Publish-time guard used by the GitHub Actions workflow. Validates the
+// version policy, the tag <-> version binding, GitHub pre-release flag
+// consistency, and latest-tag monotonicity; returns the npm dist-tag.
+export function releaseGuard(input: {
+  version: string;
+  tagName: string;
+  isPrerelease: boolean;
+  // npm's current latest version, or null when the package has never been
+  // published (first release)
+  currentLatest: string | null;
+}): string {
+  const version = assertReleasableVersion(input.version);
+  if (version !== input.version) {
+    throw new Error(
+      `package.json version ${input.version} is not in normalized form (${version})`,
+    );
+  }
+  if (input.tagName !== `v${version}`) {
+    throw new Error(
+      `Release tag ${input.tagName} does not match package.json version ${version}`,
+    );
+  }
+  const isPrereleaseVersion = prerelease(version) !== null;
+  if (isPrereleaseVersion && !input.isPrerelease) {
+    throw new Error(
+      `Prerelease version ${version} must be published as a GitHub pre-release`,
+    );
+  }
+  if (!isPrereleaseVersion && input.isPrerelease) {
+    throw new Error(
+      `Stable version ${version} must not be marked as a GitHub pre-release`,
+    );
+  }
+  const distTag = publishTagForVersion(version);
+  if (
+    distTag === "latest" &&
+    input.currentLatest !== null &&
+    !gt(version, input.currentLatest)
+  ) {
+    throw new Error(
+      `Refusing to move npm dist-tag "latest" backwards: ${version} is not greater than the current latest ${input.currentLatest}`,
+    );
+  }
+  return distTag;
 }
 
 export function publishTagForVersion(

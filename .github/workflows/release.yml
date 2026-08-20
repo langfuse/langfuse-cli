@@ -7,9 +7,11 @@
 # (OIDC) — no npm token exists anywhere — and npm attaches provenance
 # attestations automatically.
 #
-# One-time npm setup (package settings on npmjs.com):
-#   Trusted Publisher: GitHub — owner langfuse, repo langfuse-cli,
-#   workflow release.yml, environment npm-publish.
+# One-time npm/GitHub setup: see MAINTENANCE.md "One-time npm configuration".
+# The npm-publish environment MUST carry protection rules (required
+# reviewers + deployment tag policy): release events execute this workflow
+# file as of the tagged commit, so environment protection is the platform
+# gate between "has push access" and "can publish to npm".
 name: Release
 
 on:
@@ -18,8 +20,11 @@ on:
 
 permissions: {}
 
+# One group per release: parallel releases of different tags may queue and
+# run independently; re-deliveries of the same tag serialize. A shared fixed
+# group would silently cancel a superseded pending release run.
 concurrency:
-  group: npm-publish
+  group: npm-publish-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -39,48 +44,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify tag, version, and prerelease consistency
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+      - name: Verify released commit is on main
         run: |
           set -euo pipefail
-          VERSION="$(jq -r .version package.json)"
-          if [ "$TAG_NAME" != "v$VERSION" ]; then
-            echo "::error::release tag $TAG_NAME does not match package.json version $VERSION"
-            exit 1
-          fi
           git fetch origin main
           if ! git merge-base --is-ancestor HEAD origin/main; then
             echo "::error::released commit is not on main"
             exit 1
           fi
-          case "$VERSION" in
-            *-*)
-              if [ "$IS_PRERELEASE" != "true" ]; then
-                echo "::error::prerelease version $VERSION must be published as a GitHub pre-release"
-                exit 1
-              fi
-              IDENTIFIER="${VERSION#*-}"
-              IDENTIFIER="${IDENTIFIER%%.*}"
-              case "$IDENTIFIER" in
-                alpha|beta|rc) DIST_TAG="$IDENTIFIER" ;;
-                *)
-                  echo "::error::unsupported prerelease identifier \"$IDENTIFIER\" (expected alpha, beta, or rc)"
-                  exit 1
-                  ;;
-              esac
-              ;;
-            *)
-              if [ "$IS_PRERELEASE" != "false" ]; then
-                echo "::error::stable version $VERSION must not be marked as a GitHub pre-release"
-                exit 1
-              fi
-              DIST_TAG="latest"
-              ;;
-          esac
-          echo "DIST_TAG=$DIST_TAG" >> "$GITHUB_ENV"
-          echo "Publishing $VERSION with npm dist-tag $DIST_TAG"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -91,6 +62,19 @@ jobs:
 
       - name: Install dependencies
         run: bun ci
+
+      # Shared policy with scripts/release.ts (release-config.ts): validates
+      # tag <-> version binding, prerelease consistency, identifier whitelist,
+      # and latest-tag monotonicity; emits the npm dist-tag.
+      - name: Verify release policy and derive npm dist-tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          DIST_TAG="$(bun scripts/release-guard.ts)"
+          echo "DIST_TAG=$DIST_TAG" >> "$GITHUB_ENV"
+          echo "Publishing with npm dist-tag $DIST_TAG"
 
       - name: Typecheck
         run: bun run typecheck
@@ -118,6 +102,27 @@ jobs:
             exit 1
           fi
           echo "npm $NPM_VERSION"
+
+      # npm publish does not verify tarball completeness; a files-array or
+      # build-layout regression must fail here, not ship as latest.
+      - name: Verify packed tarball contents
+        run: |
+          set -euo pipefail
+          FILES="$(npm pack --dry-run --json --ignore-scripts | jq -r '.[0].files[].path')"
+          for required in bin/langfuse.mjs dist/cli.js dist/contracts/catalog.json README.md; do
+            if ! printf '%s\n' "$FILES" | grep -qx "$required"; then
+              echo "::error::$required is missing from the npm tarball"
+              exit 1
+            fi
+          done
+          echo "Tarball contents verified."
+
+      - name: Smoke-test the built CLI under Node and Bun
+        run: |
+          set -euo pipefail
+          node bin/langfuse.mjs --version
+          bun bin/langfuse.mjs --help > /dev/null
+          echo "Smoke test passed."
 
       # conformance:all already built dist/; --ignore-scripts avoids a second
       # prepublishOnly build producing a different publish than was verified.
