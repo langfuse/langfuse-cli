@@ -85,6 +85,16 @@ langfuse api observations list --limit 5 --curl
 # Prompts
 langfuse api prompts list
 langfuse api prompts get my-prompt
+
+# Union request bodies (prompts, evaluators, placements) take field flags
+# directly: the discriminator flag (--type) selects the variant, and the
+# variant's own types and required fields apply.
+langfuse api prompts create --type text --name my-prompt --prompt 'Hello {{name}}'
+langfuse api prompts create --type chat --name support \
+  --prompt '{"role":"system","content":"be nice"}' \
+  --prompt '{"role":"user","content":"{{question}}"}'
+
+# The lossless JSON channel remains fully equivalent
 langfuse api prompts create --body-json '{"name":"my-prompt","type":"text","prompt":"Hello {{name}}"}'
 
 # Datasets
@@ -112,6 +122,12 @@ objects, arrays, unions, and free-form JSON. Simple request-body fields also
 get generated kebab-case flags (for example `--object-id` for the `objectId`
 field) consistent with query-parameter flags; wire names in the request are
 never affected.
+
+Union bodies with a discriminator (for example prompt create's chat vs. text
+variants) support field flags directly: the discriminator flag selects the
+variant and the CLI parses and validates against that variant's schema —
+`langfuse api help <resource> <action>` shows the per-variant fields. Unions
+without a clean discriminator stay `--body-json`-only rather than guessing.
 
 ## Exit codes
 
