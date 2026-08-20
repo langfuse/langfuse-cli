@@ -371,11 +371,19 @@ function bodyFieldsSection(operation: ApiOperation): string {
       field.description,
     );
   if (body.discriminator) {
+    // These fields are typed as flags, so show flag spellings (--commit-message),
+    // not JSON wire keys (commitMessage).
     const groups = Object.entries(body.discriminator.variants).map(
       ([variant, fields]) =>
         `  --${body.discriminator!.cliName} ${variant}:\n${fields
           .filter((field) => field.name !== body.discriminator!.field)
-          .map((field) => fieldLine(field, "  "))
+          .map((field) =>
+            annotate(
+              `  ${flagUsage(field.cliName, field.kind)}${field.required ? " (required)" : ""}`,
+              field.enum,
+              field.description,
+            ),
+          )
           .join("\n")}`,
     );
     return `\nRequest body fields (field flags supported; select the variant with --${body.discriminator.cliName}, or pass --body-json):\n${groups.join("\n")}\n`;
