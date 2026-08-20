@@ -329,7 +329,8 @@ export function assertOperationCallable(
 }
 
 function kindLabel(kind: ValueKind): string {
-  return kind === "array" ? "value (repeatable)" : kind;
+  if (kind === "array") return "value (repeatable)";
+  return kind === "any" ? "json" : kind;
 }
 
 function flagUsage(name: string, kind: ValueKind): string {
@@ -356,19 +357,38 @@ function annotate(
 }
 
 function kindText(kind: ValueKind, itemKind?: ValueKind): string {
-  return kind === "array" ? `array<${itemKind ?? "string"}>` : kind;
+  if (kind === "array") return `array<${kindText(itemKind ?? "string")}>`;
+  return kind === "any" ? "json" : kind;
 }
 
 function bodyFieldsSection(operation: ApiOperation): string {
   const body = operation.requestBody;
-  if (!body || body.legacyFieldFlags || body.fields.length === 0) return "";
-  const lines = body.fields.map((field) =>
+  if (!body || body.fieldFlags || body.fields.length === 0) return "";
+  const fieldLine = (field: ApiBodyField, indent: string) =>
     annotate(
-      `${field.name.padEnd(18)} ${kindText(field.kind, field.itemKind)}${field.required ? " (required)" : ""}`,
+      `${indent}${field.name.padEnd(18)} ${kindText(field.kind, field.itemKind)}${field.required ? " (required)" : ""}`,
       field.enum,
       field.description,
-    ),
-  );
+    );
+  if (body.discriminator) {
+    // These fields are typed as flags, so show flag spellings (--commit-message),
+    // not JSON wire keys (commitMessage).
+    const groups = Object.entries(body.discriminator.variants).map(
+      ([variant, fields]) =>
+        `  --${body.discriminator!.cliName} ${variant}:\n${fields
+          .filter((field) => field.name !== body.discriminator!.field)
+          .map((field) =>
+            annotate(
+              `  ${flagUsage(field.cliName, field.kind)}${field.required ? " (required)" : ""}`,
+              field.enum,
+              field.description,
+            ),
+          )
+          .join("\n")}`,
+    );
+    return `\nRequest body fields (field flags supported; select the variant with --${body.discriminator.cliName}, or pass --body-json):\n${groups.join("\n")}\n`;
+  }
+  const lines = body.fields.map((field) => fieldLine(field, ""));
   const unionNote = body.union
     ? "\n  This body is a union of shapes; fields are merged across variants. See the API reference for exact shapes.\n"
     : "";
@@ -390,7 +410,7 @@ function printOperationHelp(operation: ApiOperation): void {
       ),
     );
   }
-  if (operation.requestBody?.legacyFieldFlags) {
+  if (operation.requestBody?.fieldFlags) {
     for (const field of operation.requestBody.fields) {
       lines.push(
         annotate(
@@ -519,21 +539,53 @@ function addParameterValue(
   }
 }
 
+function kindMatches(value: JsonValue, kind: ValueKind | undefined): boolean {
+  if (kind === undefined || kind === "any") return true;
+  if (kind === "string") return typeof value === "string";
+  if (kind === "number") return typeof value === "number";
+  if (kind === "boolean") return typeof value === "boolean";
+  if (kind === "null") return value === null;
+  if (kind === "array") return Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function kindArticle(kind: ValueKind): string {
+  if (kind === "object" || kind === "array") return `an ${kind}`;
+  if (kind === "null") return "null";
+  return `a ${kind}`;
+}
+
 function setBodyValue(
   body: Record<string, JsonValue>,
   raw: string | undefined,
   field: ApiBodyField,
 ): void {
-  const kind = field.kind === "array" ? field.itemKind : field.kind;
-  const parsed = parseJsonValue(raw ?? "true", kind);
-  const existing = body[field.name];
   if (field.kind === "array") {
-    if (Array.isArray(parsed)) body[field.name] = parsed;
-    else if (Array.isArray(existing)) existing.push(parsed);
-    else body[field.name] = [parsed];
-  } else {
-    body[field.name] = parsed;
+    // A JSON array value appends all its elements; otherwise the value is
+    // one item. Both forms are repeatable and validated per item.
+    let bulk: JsonValue[] | undefined;
+    if (raw !== undefined) {
+      try {
+        const parsed = JSON.parse(raw) as JsonValue;
+        if (Array.isArray(parsed)) bulk = parsed;
+      } catch {}
+    }
+    const items = bulk ?? [parseJsonValue(raw ?? "true", field.itemKind)];
+    if (field.itemKind !== undefined && field.itemKind !== "any") {
+      items.forEach((item, index) => {
+        if (!kindMatches(item, field.itemKind)) {
+          throw new CliError(
+            `--${field.cliName}: array item ${index} must be ${kindArticle(field.itemKind!)}`,
+          );
+        }
+      });
+    }
+    const existing = body[field.name];
+    if (Array.isArray(existing)) existing.push(...items);
+    else body[field.name] = items;
+    return;
   }
+  body[field.name] = parseJsonValue(raw ?? "true", field.kind);
 }
 
 function splitOption(token: string): { name: string; inline?: string; negated: boolean } {
@@ -567,9 +619,11 @@ function bodyHint(operation: ApiOperation): string {
   const sketch = required
     .map((field) => `"${field.name}":${bodyPlaceholder(field)}`)
     .join(",");
-  const unionNote = body.union
-    ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${operation.command.resource} ${operation.command.action}\`)`
-    : "";
+  const unionNote = body.discriminator
+    ? `\n(or use field flags directly by selecting a variant: --${body.discriminator.cliName} ${Object.keys(body.discriminator.variants).join("|")} …)`
+    : body.union
+      ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${operation.command.resource} ${operation.command.action}\`)`
+      : "";
   return `, e.g.\n\n  --body-json '{${sketch}}'\n${unionNote}`;
 }
 
@@ -598,6 +652,53 @@ export async function parseOperationInput(
   operation: ApiOperation,
   tokens: string[],
 ): Promise<ApiCallInput> {
+  const discriminator = operation.requestBody?.fieldFlags
+    ? undefined
+    : operation.requestBody?.discriminator;
+  if (discriminator) {
+    // Phase 1: a cheap scan for the discriminator flag and the lossless body
+    // channel only — nothing else is interpreted. Runs solely for operations
+    // whose contract carries a discriminated union.
+    let selected: string | undefined;
+    let bodyChannel = false;
+    for (let index = 0; index < tokens.length; index++) {
+      const token = tokens[index];
+      if (!token.startsWith("--")) continue;
+      const equals = token.indexOf("=");
+      const name = equals === -1 ? token.slice(2) : token.slice(2, equals);
+      if (name === "body-json" || name === "body-file") bodyChannel = true;
+      if (name === discriminator.cliName) {
+        const value = equals === -1 ? tokens[index + 1] : token.slice(equals + 1);
+        if (value !== undefined && !value.startsWith("--")) selected = value;
+      }
+    }
+    if (selected !== undefined && bodyChannel) {
+      throw new CliError(
+        "Do not mix --body-json/--body-file with body field flags",
+      );
+    }
+    if (selected !== undefined && !bodyChannel) {
+      const fields = discriminator.variants[selected];
+      if (!fields) {
+        throw new CliError(
+          `--${discriminator.cliName} must be one of: ${Object.keys(discriminator.variants).join(", ")} (got "${selected}")`,
+        );
+      }
+      // Phase 2: the ordinary single-pass parse, against the selected
+      // variant's fields — branch-specific kinds and required set apply.
+      return parseOperationInput(
+        {
+          ...operation,
+          requestBody: {
+            ...operation.requestBody!,
+            fieldFlags: true,
+            fields,
+          },
+        },
+        tokens,
+      );
+    }
+  }
   const input: ApiCallInput = {
     path: {},
     query: {},
@@ -624,7 +725,7 @@ export async function parseOperationInput(
     }
     const option = splitOption(token);
     const parameter = parameterByFlag.get(option.name);
-    const bodyField = operation.requestBody?.legacyFieldFlags
+    const bodyField = operation.requestBody?.fieldFlags
       ? operation.requestBody.fields.find(
           (candidate) => candidate.cliName === option.name.split(".")[0],
         )
@@ -671,9 +772,12 @@ export async function parseOperationInput(
     if (!operation.requestBody) {
       throw new CliError(`Unknown option --${option.name}`);
     }
-    if (!operation.requestBody.legacyFieldFlags) {
+    if (!operation.requestBody.fieldFlags) {
+      const disc = operation.requestBody.discriminator;
       throw new CliError(
-        `${operation.operationId} requires --body-json or --body-file for request bodies${bodyHint(operation)}`,
+        disc
+          ? `${operation.operationId} field flags require --${disc.cliName} (one of: ${Object.keys(disc.variants).join(", ")}) to select the body variant, or use --body-json/--body-file${bodyHint(operation)}`
+          : `${operation.operationId} requires --body-json or --body-file for request bodies${bodyHint(operation)}`,
       );
     }
     const field = bodyField;
@@ -717,7 +821,7 @@ export async function parseOperationInput(
     }
   }
   let body = completeBody !== undefined ? completeBody : fieldBody;
-  if (completeBody === undefined && operation.requestBody?.legacyFieldFlags) {
+  if (completeBody === undefined && operation.requestBody?.fieldFlags) {
     const missing = operation.requestBody.fields
       .filter((field) => field.required && fieldBody?.[field.name] === undefined)
       .map((field) => `--${field.cliName}`);

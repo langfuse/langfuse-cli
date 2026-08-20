@@ -273,7 +273,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: true,
+        fieldFlags: true,
         fields: [
           {
             name: "chartConfig",
@@ -322,7 +322,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         fields: [],
       },
     };
@@ -349,7 +349,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: true,
+        fieldFlags: true,
         fields: [
           { name: "content", cliName: "content", required: true, kind: "string" },
           {
@@ -392,7 +392,7 @@ paths:
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         union: true,
         fields: [
           { name: "name", cliName: "name", required: true, kind: "string" },
@@ -438,6 +438,152 @@ paths:
       expect((error as Error).message).toContain("requires a request body");
       expect((error as Error).message).toContain(hint);
     }
+  });
+
+  test("discriminated unions parse field flags against the selected variant", async () => {
+    const nameField = { name: "name", cliName: "name", required: true, kind: "string" as const };
+    const typeField = (value: string) => ({
+      name: "type",
+      cliName: "type",
+      required: true,
+      kind: "string" as const,
+      enum: [value],
+    });
+    const operation: ApiOperation = {
+      ...promptGet,
+      key: "POST /api/public/v2/prompts",
+      operationId: "prompts_create",
+      method: "POST",
+      path: "/api/public/v2/prompts",
+      command: { resource: "prompts", action: "create" },
+      pathParameterOrder: [],
+      parameters: [],
+      requestBody: {
+        required: true,
+        contentType: "application/json",
+        fieldFlags: false,
+        union: true,
+        discriminator: {
+          field: "type",
+          cliName: "type",
+          variants: {
+            text: [
+              nameField,
+              { name: "prompt", cliName: "prompt", required: true, kind: "string" },
+              { name: "config", cliName: "config", required: false, kind: "any" },
+              typeField("text"),
+            ],
+            chat: [
+              nameField,
+              {
+                name: "prompt",
+                cliName: "prompt",
+                required: true,
+                kind: "array",
+                itemKind: "object",
+              },
+              typeField("chat"),
+            ],
+          },
+        },
+        fields: [nameField],
+      },
+    };
+
+    // text variant: prompt stays a string
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "text", "--name", "hi", "--prompt", "lol",
+      ]),
+    ).toMatchObject({ body: { type: "text", name: "hi", prompt: "lol" } });
+
+    // chat variant: whole JSON array sets the field
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi",
+        "--prompt", '[{"role":"user","content":"hi"}]',
+      ]),
+    ).toMatchObject({
+      body: { type: "chat", prompt: [{ role: "user", content: "hi" }] },
+    });
+
+    // chat variant: repeated flags append items
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi",
+        "--prompt", '{"role":"system","content":"a"}',
+        "--prompt", '{"role":"user","content":"b"}',
+      ]),
+    ).toMatchObject({
+      body: {
+        prompt: [
+          { role: "system", content: "a" },
+          { role: "user", content: "b" },
+        ],
+      },
+    });
+
+    // variant required fields are enforced
+    await expect(
+      parseOperationInput(operation, ["--type", "text", "--name", "hi"]),
+    ).rejects.toThrow("Missing required body option(s): --prompt");
+
+    // missing and invalid discriminators
+    await expect(
+      parseOperationInput(operation, ["--name", "hi"]),
+    ).rejects.toThrow("field flags require --type (one of: text, chat)");
+    await expect(
+      parseOperationInput(operation, ["--type", "banana"]),
+    ).rejects.toThrow('--type must be one of: text, chat (got "banana")');
+
+    // the lossless channel bypasses variant parsing entirely
+    expect(
+      await parseOperationInput(operation, ["--body-json", '{"type":"text"}']),
+    ).toMatchObject({ body: { type: "text" } });
+
+    // "any" fields (unconstrained schemas like prompt config) keep
+    // structured JSON values instead of stringifying them
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "text", "--name", "hi", "--prompt", "lol",
+        "--config", '{"temperature":0}',
+      ]),
+    ).toMatchObject({ body: { config: { temperature: 0 } } });
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "text", "--name", "hi", "--prompt", "lol",
+        "--config", "plain",
+      ]),
+    ).toMatchObject({ body: { config: "plain" } });
+
+    // whole-array values are validated per item, like the repeated form
+    await expect(
+      parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi", "--prompt", "[1]",
+      ]),
+    ).rejects.toThrow("--prompt: array item 0 must be an object");
+
+    // array values append to accumulated items in either order
+    expect(
+      await parseOperationInput(operation, [
+        "--type", "chat", "--name", "hi",
+        "--prompt", '{"role":"system","content":"a"}',
+        "--prompt", '[{"role":"user","content":"b"}]',
+      ]),
+    ).toMatchObject({
+      body: {
+        prompt: [
+          { role: "system", content: "a" },
+          { role: "user", content: "b" },
+        ],
+      },
+    });
+
+    // discriminator flag plus the lossless channel is an explicit error,
+    // not a contradictory fallthrough
+    await expect(
+      parseOperationInput(operation, ["--type", "text", "--body-json", '{"x":1}']),
+    ).rejects.toThrow("Do not mix --body-json/--body-file with body field flags");
   });
 
   test("resolves tag and version command aliases", () => {
@@ -723,7 +869,7 @@ describe("exit code taxonomy", () => {
       requestBody: {
         required: true,
         contentType: "application/json",
-        legacyFieldFlags: false,
+        fieldFlags: false,
         fields: [],
       },
     };
