@@ -39,6 +39,13 @@
         "deprecated-operation-markers"
       ],
       "knownIssues": ["oas3.0-const-keyword"]
+    },
+    {
+      "version": "4.16.0",
+      "ref": "v4.16.0",
+      "commit": "12453aab35d43f1f5254571c95e456a03cf6a4ca",
+      "sha256": "9ba51a22782a481ee2bf57513541a2bc3df1388e8d2c5c5a081f3a8e7e08366d",
+      "knownIssues": ["oas3.0-const-keyword"]
     }
   ]
 }
