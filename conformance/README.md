@@ -14,7 +14,7 @@ The primary test invokes every operation in every cataloged spec through the rea
 
 For operations marked `deprecated: true`, it instead verifies exit code 2, a helpful error on stderr, and zero network requests.
 
-The black-box oracle does not share request-building code with the CLI. `bun run conformance:all` checks all 479 operations across 5 pinned snapshots through the actual CLI using lossless `--body-json` input, including pre-network rejection for deprecated operations.
+The black-box oracle does not share request-building code with the CLI. `bun run conformance:all` checks all 593 operations across 6 pinned snapshots through the actual CLI using lossless `--body-json` input, including pre-network rejection for deprecated operations.
 
 Supporting unit tests verify immutable spec hashes, valid sampling, serialization, naming, invocation generation, and the capture runner itself.
 
@@ -29,6 +29,7 @@ OpenAPI cannot describe database setup, generated IDs, cross-request bindings, c
 | 3.200.0 | 61 | 98 |
 | 3.225.3 | 69 | 113 |
 | 4.10.0 | 70 | 114 |
+| 4.16.0 | 70 | 114 |
 
 Each source file is downloaded by immutable commit and verified against the SHA-256 in `catalog.json`. Tests are network-free after sync.
 
