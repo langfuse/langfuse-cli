@@ -1,6 +1,6 @@
 <img width="2400" height="600" alt="hero-b" src="https://github.com/user-attachments/assets/85dcdba4-c037-4e3e-9f20-e39cde0a15ec" />
 
-# langfuse-cli
+# Langfuse CLI
 
 Interact with the [Langfuse](https://langfuse.com) API from the command line.
 
@@ -8,14 +8,14 @@ Interact with the [Langfuse](https://langfuse.com) API from the command line.
 
 ```sh
 # Run directly
-npx langfuse-cli api <resource> <action>
+npx @langfuse/cli api <resource> <action>
 # via bun:
-bunx --bun langfuse-cli api <resource> <action>
+bunx --bun @langfuse/cli api <resource> <action>
 
 # Or install globally
-npm i -g langfuse-cli
+npm i -g @langfuse/cli
 # via bun:
-bun add --global langfuse-cli
+bun add --global @langfuse/cli
 
 # then run
 langfuse api <resource> <action>

@@ -1,4 +1,7 @@
 import { createInterface } from "node:readline/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { prerelease, valid } from "semver";
 
 import {
@@ -12,6 +15,11 @@ import {
   type PrereleaseIdentifier,
   type ReleaseOptions,
 } from "./release-config";
+import {
+  CANONICAL_PACKAGE_NAME,
+  LEGACY_PACKAGE_NAME,
+  prepareNpmPackages,
+} from "./npm-packages";
 
 type PackageJson = {
   name: string;
@@ -29,7 +37,13 @@ const exactReleaseFiles = new Set([
   "bun.lock",
   "package.json",
 ]);
-const releasePathPrefixes = ["bin/", "conformance/", "scripts/", "src/"];
+const releasePathPrefixes = [
+  "bin/",
+  "conformance/",
+  "npm/",
+  "scripts/",
+  "src/",
+];
 let releaseOptions: ReleaseOptions;
 try {
   releaseOptions = parseReleaseArgs(process.argv.slice(2));
@@ -52,7 +66,8 @@ function printHelp(): void {
 Cuts a release: verifies main is clean, green, and in sync, runs all gates,
 bumps the version, pushes a release commit + tag, and opens a draft GitHub
 release. Publishing the GitHub release triggers the npm publish via GitHub
-Actions (.github/workflows/release.yml, npm trusted publishing).
+Actions (.github/workflows/release.yml, npm trusted publishing) for both
+${CANONICAL_PACKAGE_NAME} and ${LEGACY_PACKAGE_NAME}.
 
 Options:
   --version <semver>  Release an explicit version without the version prompt
@@ -263,12 +278,18 @@ async function assertVersionNotPublished(
   version: string,
 ): Promise<void> {
   console.log(`\nChecking npm for ${packageName}@${version}...`);
-  const { stdout } = await runCommand(
+  const result = await runCommand(
     "npm",
     ["view", packageName, "versions", "--json"],
-    { capture: true },
+    { capture: true, throwOnError: false },
   );
-  const parsed = JSON.parse(stdout) as string | string[];
+  if (result.exitCode !== 0) {
+    if (result.stderr.includes("E404")) return;
+    throw new Error(
+      `npm view ${packageName} versions --json failed with exit code ${result.exitCode}\n${result.stderr}`,
+    );
+  }
+  const parsed = JSON.parse(result.stdout) as string | string[];
   const versions = Array.isArray(parsed) ? parsed : [parsed];
 
   if (versions.includes(version)) {
@@ -331,6 +352,7 @@ async function printPostBuildReview(): Promise<void> {
         "README.md",
         "bin",
         "conformance",
+        "npm",
         "package.json",
         "scripts",
         "src",
@@ -481,7 +503,8 @@ async function cutRelease(): Promise<void> {
   console.log(`Git tag: ${tagName}`);
   console.log(`npm dist-tag (applied by CI): ${distTag}`);
 
-  await assertVersionNotPublished(pkg.name, nextVersion);
+  await assertVersionNotPublished(CANONICAL_PACKAGE_NAME, nextVersion);
+  await assertVersionNotPublished(LEGACY_PACKAGE_NAME, nextVersion);
   if (!isDryRun) await assertTagAvailable(tagName);
 
   pkg.version = nextVersion;
@@ -543,7 +566,7 @@ async function cutRelease(): Promise<void> {
   console.log("Next steps:");
   console.log("  1. Edit the release notes on GitHub.");
   console.log(
-    `  2. Publish the release — GitHub Actions then publishes ${pkg.name}@${nextVersion} to npm with dist-tag "${distTag}".`,
+    `  2. Publish the release — GitHub Actions then publishes ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} to npm with dist-tag "${distTag}".`,
   );
 }
 
@@ -570,7 +593,8 @@ async function publishLocal(): Promise<void> {
   console.log(`Release version: ${nextVersion}`);
   console.log(`npm dist-tag: ${publishTag}`);
 
-  await assertVersionNotPublished(pkg.name, nextVersion);
+  await assertVersionNotPublished(CANONICAL_PACKAGE_NAME, nextVersion);
+  await assertVersionNotPublished(LEGACY_PACKAGE_NAME, nextVersion);
   await assertNpmPublishContext();
 
   pkg.version = nextVersion;
@@ -579,37 +603,59 @@ async function publishLocal(): Promise<void> {
 
   await runGates();
 
-  await runCommand("npm", ["pack", "--dry-run"]);
-  await printPostBuildReview();
+  const stagingParent = await mkdtemp(resolve(tmpdir(), "langfuse-cli-release-"));
+  const releaseSha = (
+    await runCommand("git", ["rev-parse", "HEAD"], { capture: true })
+  ).stdout.trim();
+  const packages = await prepareNpmPackages(
+    resolve(stagingParent, "packages"),
+    undefined,
+    releaseSha,
+  );
 
-  if (isDryRun) {
-    console.log("\nDry run complete. Publish skipped.");
-    await restorePackageJsonIfNeeded();
-    return;
+  try {
+    await runCommand("npm", ["pack", "--dry-run", packages.canonical]);
+    await runCommand("npm", ["pack", "--dry-run", packages.legacy]);
+    await printPostBuildReview();
+
+    if (isDryRun) {
+      console.log("\nDry run complete. Publish skipped.");
+      await restorePackageJsonIfNeeded();
+      return;
+    }
+
+    const shouldPublish = await confirm(
+      rl,
+      `Publish ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} to npm with dist-tag "${publishTag}" and the status above?`,
+    );
+    if (!shouldPublish) {
+      console.log("Publish skipped.");
+      await restorePackageJsonIfNeeded();
+      return;
+    }
+
+    // conformance:all already built above, and npm pack --dry-run showed both
+    // package contents. Avoid lifecycle runs producing different artifacts.
+    publishStarted = true;
+    await runCommand(
+      "npm",
+      ["publish", packages.canonical, "--ignore-scripts", "--tag", publishTag],
+      { suspendPrompt: true },
+    );
+    await runCommand(
+      "npm",
+      ["publish", packages.legacy, "--ignore-scripts", "--tag", publishTag],
+      { suspendPrompt: true },
+    );
+    console.log(
+      `Published both npm packages at ${nextVersion} with dist-tag "${publishTag}".`,
+    );
+    console.log(
+      `Create a release commit/tag for ${CANONICAL_PACKAGE_NAME}@${nextVersion}; publish-local does not commit automatically.`,
+    );
+  } finally {
+    await rm(stagingParent, { force: true, recursive: true });
   }
-
-  const shouldPublish = await confirm(
-    rl,
-    `Publish ${pkg.name}@${nextVersion} to npm with dist-tag "${publishTag}" and the status above?`,
-  );
-  if (!shouldPublish) {
-    console.log("Publish skipped.");
-    await restorePackageJsonIfNeeded();
-    return;
-  }
-
-  // conformance:all already built above, and npm pack --dry-run showed the package
-  // contents. Avoid a second lifecycle run producing a different publish.
-  publishStarted = true;
-  await runCommand("npm", ["publish", "--ignore-scripts", "--tag", publishTag], {
-    suspendPrompt: true,
-  });
-  console.log(
-    `Published ${pkg.name}@${nextVersion} with npm dist-tag "${publishTag}".`,
-  );
-  console.log(
-    `Create a release commit/tag for ${pkg.name}@${nextVersion}; publish-local does not commit automatically.`,
-  );
 }
 
 try {

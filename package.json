@@ -1,5 +1,5 @@
 {
-  "name": "langfuse-cli",
+  "name": "@langfuse/cli",
   "version": "1.2.0",
   "description": "Interact with Langfuse API from the command line",
   "author": "Langfuse",
@@ -7,6 +7,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/langfuse/langfuse-cli.git"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "langfuse",

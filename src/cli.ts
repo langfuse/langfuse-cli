@@ -180,7 +180,7 @@ Original error: ${reason}
 }
 
 function printHelp(): void {
-  process.stdout.write(`langfuse-cli — Interact with Langfuse from the command line
+  process.stdout.write(`Langfuse CLI — Interact with Langfuse from the command line
 
 Usage: langfuse [options] <command>
 
