@@ -135,11 +135,8 @@ jobs:
           done
           test "$(jq -r '.name' "$PACKAGE_ROOT/canonical/package.json")" = "@langfuse/cli"
           test "$(jq -r '.name' "$PACKAGE_ROOT/legacy/package.json")" = "langfuse-cli"
-          grep -Fq '# `langfuse-cli` is deprecated' "$PACKAGE_ROOT/legacy/README.md"
-          if grep -Fq '# `langfuse-cli` is deprecated' "$PACKAGE_ROOT/canonical/README.md"; then
-            echo "::error::canonical npm README is marked deprecated"
-            exit 1
-          fi
+          cmp README.md "$PACKAGE_ROOT/canonical/README.md"
+          cmp npm/legacy/README.md "$PACKAGE_ROOT/legacy/README.md"
           diff -qr "$PACKAGE_ROOT/canonical/bin" "$PACKAGE_ROOT/legacy/bin"
           diff -qr "$PACKAGE_ROOT/canonical/dist" "$PACKAGE_ROOT/legacy/dist"
           echo "Both tarballs verified."
