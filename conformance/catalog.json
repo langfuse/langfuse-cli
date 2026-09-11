@@ -41,10 +41,10 @@
       "knownIssues": ["oas3.0-const-keyword"]
     },
     {
-      "version": "4.16.0",
-      "ref": "v4.16.0",
-      "commit": "12453aab35d43f1f5254571c95e456a03cf6a4ca",
-      "sha256": "9ba51a22782a481ee2bf57513541a2bc3df1388e8d2c5c5a081f3a8e7e08366d",
+      "version": "4.35.0",
+      "ref": "v4.35.0",
+      "commit": "3089a77f2b86e08058a868802f43e417982094f0",
+      "sha256": "8f3a25d28afbf8bdd710d8e7a5c60d65ff5c71315764c46c8dea504e8f67adb6",
       "knownIssues": ["oas3.0-const-keyword"]
     }
   ]
