@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { expandSchemaBranches, sampleFromSchema } from "../src/schema";
+import { validateSchemaCases } from "../src/validation";
 
 const document = {
   components: {
@@ -60,5 +61,30 @@ describe("OpenAPI schema expansion and sampling", () => {
       ],
     });
     expect(sample).toEqual({ name: "test-name", messages: ["test-messages-1"] });
+  });
+
+  test("chooses a valid sample for overlapping oneOf object branches", () => {
+    const schema = {
+      oneOf: [
+        {
+          allOf: [
+            { $ref: "#/components/schemas/Base" },
+            {
+              type: "object",
+              properties: { key: { type: "string" } },
+              required: ["key"],
+            },
+          ],
+        },
+        { $ref: "#/components/schemas/Base" },
+      ],
+    };
+
+    const sample = sampleFromSchema(document, schema);
+    expect(sample).toEqual({ name: "test-name" });
+    expect(
+      validateSchemaCases(document, [{ label: "overlapping oneOf", schema, value: sample }])
+        .valid,
+    ).toBe(true);
   });
 });

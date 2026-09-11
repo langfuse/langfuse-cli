@@ -110,7 +110,14 @@ export function sampleFromSchema(
     return structuredClone(schema.enum[0]);
   }
   if (schema.const !== undefined) return structuredClone(schema.const);
-  if (schema.oneOf || schema.anyOf || schema.allOf) {
+  if (schema.oneOf) {
+    const [branch] = expandSchemaBranches(document, schema, trail).sort(
+      (left, right) =>
+        new Set(left.required ?? []).size - new Set(right.required ?? []).size,
+    );
+    return sampleFromSchema(document, branch, seed, trail);
+  }
+  if (schema.anyOf || schema.allOf) {
     const [branch] = expandSchemaBranches(document, schema, trail);
     return sampleFromSchema(document, branch, seed, trail);
   }

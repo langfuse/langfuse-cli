@@ -263,6 +263,149 @@
     ]
   },
   {
+    "operationId": "evaluationRules_create",
+    "key": "POST /api/public/v2/evaluation-rules",
+    "resource": "evaluation-rules",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "evaluation-rules-v2",
+        "action": "create",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluationRules_delete",
+    "key": "DELETE /api/public/v2/evaluation-rules/{evaluationRuleId}",
+    "resource": "evaluation-rules",
+    "action": "delete",
+    "aliases": [
+      {
+        "resource": "evaluation-rules-v2",
+        "action": "delete",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluationRules_get",
+    "key": "GET /api/public/v2/evaluation-rules/{evaluationRuleId}",
+    "resource": "evaluation-rules",
+    "action": "get",
+    "aliases": [
+      {
+        "resource": "evaluation-rules-v2",
+        "action": "get",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluationRules_list",
+    "key": "GET /api/public/v2/evaluation-rules",
+    "resource": "evaluation-rules",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "evaluation-rules-v2",
+        "action": "list",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluationRules_update",
+    "key": "PATCH /api/public/v2/evaluation-rules/{evaluationRuleId}",
+    "resource": "evaluation-rules",
+    "action": "update",
+    "aliases": [
+      {
+        "resource": "evaluation-rules-v2",
+        "action": "update",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluators_create",
+    "key": "POST /api/public/v2/evaluators",
+    "resource": "evaluators",
+    "action": "create",
+    "aliases": [
+      {
+        "resource": "evaluators-v2",
+        "action": "create",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluators_delete",
+    "key": "DELETE /api/public/v2/evaluators/{evaluatorId}",
+    "resource": "evaluators",
+    "action": "delete",
+    "aliases": [
+      {
+        "resource": "evaluators-v2",
+        "action": "delete",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluators_get",
+    "key": "GET /api/public/v2/evaluators/{evaluatorId}",
+    "resource": "evaluators",
+    "action": "get",
+    "aliases": [
+      {
+        "resource": "evaluators-v2",
+        "action": "get",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluators_list",
+    "key": "GET /api/public/v2/evaluators",
+    "resource": "evaluators",
+    "action": "list",
+    "aliases": [
+      {
+        "resource": "evaluators-v2",
+        "action": "list",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluators_listVersions",
+    "key": "GET /api/public/v2/evaluators/{evaluatorId}/versions",
+    "resource": "evaluators",
+    "action": "list-versions",
+    "aliases": [
+      {
+        "resource": "evaluators-v2",
+        "action": "list-versions",
+        "source": "version"
+      }
+    ]
+  },
+  {
+    "operationId": "evaluators_update",
+    "key": "PATCH /api/public/v2/evaluators/{evaluatorId}",
+    "resource": "evaluators",
+    "action": "update",
+    "aliases": [
+      {
+        "resource": "evaluators-v2",
+        "action": "update",
+        "source": "version"
+      }
+    ]
+  },
+  {
     "operationId": "experiments_list",
     "key": "GET /api/public/experiments",
     "resource": "experiments",
@@ -432,6 +575,12 @@
     "key": "GET /api/public/models",
     "resource": "models",
     "action": "list"
+  },
+  {
+    "operationId": "models_upsert",
+    "key": "PUT /api/public/models/{id}",
+    "resource": "models",
+    "action": "upsert"
   },
   {
     "operationId": "observations_getMany",
@@ -899,59 +1048,5 @@
     "key": "PATCH /api/public/unstable/dashboards/{dashboardId}/placements/{placementId}",
     "resource": "unstable-dashboards",
     "action": "update-placement"
-  },
-  {
-    "operationId": "unstable_evaluationRules_create",
-    "key": "POST /api/public/unstable/evaluation-rules",
-    "resource": "unstable-evaluation-rules",
-    "action": "create"
-  },
-  {
-    "operationId": "unstable_evaluationRules_delete",
-    "key": "DELETE /api/public/unstable/evaluation-rules/{evaluationRuleId}",
-    "resource": "unstable-evaluation-rules",
-    "action": "delete"
-  },
-  {
-    "operationId": "unstable_evaluationRules_get",
-    "key": "GET /api/public/unstable/evaluation-rules/{evaluationRuleId}",
-    "resource": "unstable-evaluation-rules",
-    "action": "get"
-  },
-  {
-    "operationId": "unstable_evaluationRules_list",
-    "key": "GET /api/public/unstable/evaluation-rules",
-    "resource": "unstable-evaluation-rules",
-    "action": "list"
-  },
-  {
-    "operationId": "unstable_evaluationRules_update",
-    "key": "PATCH /api/public/unstable/evaluation-rules/{evaluationRuleId}",
-    "resource": "unstable-evaluation-rules",
-    "action": "update"
-  },
-  {
-    "operationId": "unstable_evaluators_create",
-    "key": "POST /api/public/unstable/evaluators",
-    "resource": "unstable-evaluators",
-    "action": "create"
-  },
-  {
-    "operationId": "unstable_evaluators_delete",
-    "key": "DELETE /api/public/unstable/evaluators/{evaluatorId}",
-    "resource": "unstable-evaluators",
-    "action": "delete"
-  },
-  {
-    "operationId": "unstable_evaluators_get",
-    "key": "GET /api/public/unstable/evaluators/{evaluatorId}",
-    "resource": "unstable-evaluators",
-    "action": "get"
-  },
-  {
-    "operationId": "unstable_evaluators_list",
-    "key": "GET /api/public/unstable/evaluators",
-    "resource": "unstable-evaluators",
-    "action": "list"
   }
 ]
