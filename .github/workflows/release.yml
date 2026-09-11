@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# Publishes to npm when a GitHub release is published.
+# Publishes the canonical and compatibility npm packages when a GitHub release
+# is published.
 #
 # Flow: `bun run release` pushes a release commit + tag and opens a draft
 # GitHub release. A human edits the notes and publishes the release, which
@@ -52,6 +53,9 @@ jobs:
             echo "::error::released commit is not on main"
             exit 1
           fi
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          echo "RELEASE_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
+          echo "Release commit: $RELEASE_SHA"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -63,18 +67,20 @@ jobs:
       - name: Install dependencies
         run: bun ci
 
-      # Shared policy with scripts/release.ts (release-config.ts): validates
+      # Shared policy with scripts/release.ts validates both package identities,
       # tag <-> version binding, prerelease consistency, identifier whitelist,
-      # and latest-tag monotonicity; emits the npm dist-tag.
-      - name: Verify release policy and derive npm dist-tag
+      # channel monotonicity, and safe partial-publish recovery.
+      - name: Verify release policy and derive dual-publish plan
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          DIST_TAG="$(bun scripts/release-guard.ts)"
+          RELEASE_PLAN="$(bun scripts/release-guard.ts --json)"
+          DIST_TAG="$(jq -r '.distTag' <<< "$RELEASE_PLAN")"
           echo "DIST_TAG=$DIST_TAG" >> "$GITHUB_ENV"
           echo "Publishing with npm dist-tag $DIST_TAG"
+          jq '.packages' <<< "$RELEASE_PLAN"
 
       - name: Typecheck
         run: bun run typecheck
@@ -103,19 +109,40 @@ jobs:
           fi
           echo "npm $NPM_VERSION"
 
-      # npm publish does not verify tarball completeness; a files-array or
-      # build-layout regression must fail here, not ship as latest.
-      - name: Verify packed tarball contents
+      # Stage two package roots from the one verified build. The canonical
+      # package receives README.md; the legacy package receives the migration
+      # README under that same filename on npm.
+      - name: Prepare canonical and legacy npm packages
         run: |
           set -euo pipefail
-          FILES="$(npm pack --dry-run --json --ignore-scripts | jq -r '.[0].files[].path')"
-          for required in bin/langfuse.mjs dist/cli.js dist/contracts/catalog.json README.md; do
-            if ! printf '%s\n' "$FILES" | grep -qx "$required"; then
-              echo "::error::$required is missing from the npm tarball"
-              exit 1
-            fi
+          PACKAGE_ROOT="$GITHUB_WORKSPACE/.npm-packages"
+          bun scripts/npm-packages.ts "$PACKAGE_ROOT" "$RELEASE_SHA"
+          echo "PACKAGE_ROOT=$PACKAGE_ROOT" >> "$GITHUB_ENV"
+
+      # npm publish does not verify tarball completeness; a files-array,
+      # README selection, or build-layout regression must fail here.
+      - name: Verify both packed tarballs
+        run: |
+          set -euo pipefail
+          for package in canonical legacy; do
+            FILES="$(npm pack --dry-run --json --ignore-scripts "$PACKAGE_ROOT/$package" | jq -r '.[0].files[].path')"
+            for required in LICENSE bin/langfuse.mjs dist/cli.js dist/contracts/catalog.json README.md; do
+              if ! grep -qx "$required" <<< "$FILES"; then
+                echo "::error::$required is missing from the $package npm tarball"
+                exit 1
+              fi
+            done
           done
-          echo "Tarball contents verified."
+          test "$(jq -r '.name' "$PACKAGE_ROOT/canonical/package.json")" = "@langfuse/cli"
+          test "$(jq -r '.name' "$PACKAGE_ROOT/legacy/package.json")" = "langfuse-cli"
+          grep -Fq '# `langfuse-cli` is deprecated' "$PACKAGE_ROOT/legacy/README.md"
+          if grep -Fq '# `langfuse-cli` is deprecated' "$PACKAGE_ROOT/canonical/README.md"; then
+            echo "::error::canonical npm README is marked deprecated"
+            exit 1
+          fi
+          diff -qr "$PACKAGE_ROOT/canonical/bin" "$PACKAGE_ROOT/legacy/bin"
+          diff -qr "$PACKAGE_ROOT/canonical/dist" "$PACKAGE_ROOT/legacy/dist"
+          echo "Both tarballs verified."
 
       - name: Smoke-test the built CLI under Node and Bun
         run: |
@@ -134,13 +161,59 @@ jobs:
           IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          FINAL_TAG="$(bun scripts/release-guard.ts)"
+          FINAL_PLAN="$(bun scripts/release-guard.ts --json)"
+          FINAL_TAG="$(jq -r '.distTag' <<< "$FINAL_PLAN")"
           if [ "$FINAL_TAG" != "$DIST_TAG" ]; then
             echo "::error::dist-tag changed between verification and publish ($DIST_TAG -> $FINAL_TAG)"
             exit 1
           fi
+          echo "FINAL_PLAN=$FINAL_PLAN" >> "$GITHUB_ENV"
+          jq '.packages' <<< "$FINAL_PLAN"
 
       # conformance:all already built dist/; --ignore-scripts avoids a second
       # prepublishOnly build producing a different publish than was verified.
-      - name: Publish to npm
-        run: npm publish --ignore-scripts --tag "$DIST_TAG"
+      # Canonical publishes first so a partial failure never blocks old-name
+      # users from their previously working version.
+      - name: Publish @langfuse/cli to npm
+        run: |
+          set -euo pipefail
+          STATUS="$(jq -r '.packages.canonical.status' <<< "$FINAL_PLAN")"
+          VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
+          if [ "$STATUS" = "already-published" ]; then
+            echo "@langfuse/cli@$VERSION was already published from this release; skipping."
+          else
+            npm publish "$PACKAGE_ROOT/canonical" --ignore-scripts --tag "$DIST_TAG"
+          fi
+
+      - name: Publish langfuse-cli compatibility package to npm
+        run: |
+          set -euo pipefail
+          STATUS="$(jq -r '.packages.legacy.status' <<< "$FINAL_PLAN")"
+          VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
+          if [ "$STATUS" = "already-published" ]; then
+            echo "langfuse-cli@$VERSION was already published from this release; skipping."
+          else
+            npm publish "$PACKAGE_ROOT/legacy" --ignore-scripts --tag "$DIST_TAG"
+          fi
+
+      - name: Verify both publishes reached npm
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          EXPECTED_VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
+          for attempt in 1 2 3 4 5; do
+            if PUBLISHED_PLAN="$(bun scripts/release-guard.ts --json)" &&
+              [ "$(jq -r '.packages.canonical.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
+              [ "$(jq -r '.packages.legacy.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
+              [ "$(npm view "@langfuse/cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ] &&
+              [ "$(npm view "langfuse-cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ]; then
+              jq '.packages' <<< "$PUBLISHED_PLAN"
+              echo "Both npm packages verified."
+              exit 0
+            fi
+            sleep "$((attempt * 2))"
+          done
+          echo "::error::could not verify both npm packages from release commit $RELEASE_SHA"
+          exit 1

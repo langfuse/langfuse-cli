@@ -81,9 +81,9 @@ bun run release
    have not started yet passes this silently, so wait for CI after pushing);
    asks for the next version (patch/minor/major, or alpha/beta/rc
    prereleases — other identifiers and build metadata are rejected, matching
-   the publish workflow's policy); verifies the version is not on npm and the
-   tag is free; runs typecheck, both test suites, and the full conformance
-   build; then pushes a `chore(release): vX.Y.Z` commit plus the `vX.Y.Z` tag
+   the publish workflow's policy); verifies the version is unused under both
+   npm package names and the tag is free; runs typecheck, both test suites, and
+   the full conformance build; then pushes a `chore(release): vX.Y.Z` commit plus the `vX.Y.Z` tag
    and opens a **draft GitHub release** with generated notes.
 2. **Publish the GitHub release**: edit the notes on GitHub and click
    Publish. This is the release decision — nothing reaches npm before it.
@@ -91,10 +91,19 @@ bun run release
    [`release.yml`](.github/workflows/release.yml), which re-verifies the
    release against the same policy module the cut script uses
    (`scripts/release-guard.ts`: tag == package.json version, commit on main,
-   prerelease consistency, identifier whitelist, and `latest` never moving to
-   an older version), verifies the packed tarball contents, re-runs all
-   gates, and publishes via **npm trusted publishing (OIDC)** with provenance
-   attestations. No npm token exists anywhere.
+   prerelease consistency, identifier whitelist, both package channels in
+   sync, and dist-tags never moving backwards), verifies both packed tarballs,
+   re-runs all gates, and publishes `@langfuse/cli` followed by the
+   `langfuse-cli` compatibility package via **npm trusted publishing (OIDC)**
+   with provenance attestations. No npm token exists anywhere.
+
+Both packages come from one build. `scripts/npm-packages.ts` stages two package
+roots with identical `bin/`, `dist/`, version, and `langfuse` executable. The
+canonical package receives `README.md`; the compatibility package receives
+`npm/legacy/README.md` as its npm `README.md`. The scoped package publishes
+first. If the second publish fails, rerun the workflow: the guard skips an
+existing version only when its `gitHead` matches the release commit, then
+publishes the missing package.
 
 npm dist-tags derive from the version: stable → `latest`, `-alpha.N` →
 `alpha`, `-beta.N` → `beta`, `-rc.N` → `rc`. Prerelease versions must be
@@ -119,15 +128,24 @@ Only when Actions is unavailable, publish directly from a machine:
 bun run release -- --publish-local
 ```
 
-This runs the same gates plus `npm pack --dry-run` and an explicit publish
-confirmation, and requires interactive npm authentication (with OTP if the
-package disallows tokens). It does not commit or tag; do that manually after.
+This runs the same gates plus `npm pack --dry-run` for both staged packages and
+an explicit publish confirmation, and requires interactive npm authentication
+(with OTP if either package disallows tokens). It publishes the canonical
+package first and the compatibility package second. It does not commit or tag;
+do that manually after.
 `--tag <dist-tag>` overrides the dist-tag in this mode only; the CI path
 always derives it from the version.
 
 ### One-time npm/GitHub configuration (required)
 
-On npmjs.com → `langfuse-cli` → Settings:
+The public `@langfuse/cli` package must exist before npm permits trusted-
+publisher configuration. Bootstrap it once as a public prerelease from an
+authenticated `@langfuse` organization owner, using 2FA and
+`npm publish --access public`. Do not use the stable version intended for the
+first automated dual publish.
+
+On npmjs.com → `@langfuse/cli` → Settings, and again on
+`langfuse-cli` → Settings:
 
 1. **Trusted Publisher** → GitHub: owner `langfuse`, repository `langfuse-cli`,
    workflow filename `release.yml`, environment `npm-publish`.
@@ -148,3 +166,20 @@ closes this:
    allow only tags matching `v*`.
 4. Additionally, add a repository **ruleset restricting who can create `v*`
    tags** (Settings → Rules → Rulesets) to maintainers.
+
+### Legacy npm deprecation notice
+
+The compatibility tarball is functional but its npm README directs users to
+`@langfuse/cli`. After both packages for a version are verified, an
+authenticated npm owner may also attach npm's install-time notice:
+
+```sh
+npm deprecate 'langfuse-cli@<version>' \
+  'Renamed to @langfuse/cli. v2 will only be published there. Migration: https://github.com/langfuse/langfuse-cli#readme'
+```
+
+The workflow does not run `npm deprecate`: trusted publishing authenticates
+package publication, while registry metadata changes remain an explicit owner
+operation. At v2, remove the compatibility staging/publish steps, publish only
+`@langfuse/cli`, and deprecate the complete legacy version range. Never
+unpublish the old artifacts.
