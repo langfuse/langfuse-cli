@@ -22,6 +22,10 @@ langfuse api <resource> <action>
 langfuse --env .env api <resource> <action>
 ```
 
+Note: the package was previously published under `langfuse-cli`. That package
+is identical to thise one and will be updated alongside until we release a new major version.
+We recommend using `@langfuse/cli` from now on.
+
 ## Authentication
 
 The CLI needs the following parameters to work:

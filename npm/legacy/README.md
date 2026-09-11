@@ -1,4 +1,4 @@
-# `langfuse-cli` is deprecated
+# Use `@langfuse/cli` instead of the package `langfuse-cli` from now on
 
 The npm package has moved to
 [`@langfuse/cli`](https://www.npmjs.com/package/@langfuse/cli). The executable
