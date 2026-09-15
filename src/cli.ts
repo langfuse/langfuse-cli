@@ -361,8 +361,8 @@ function explicitDeprecationNote(operation: ApiOperation): string | undefined {
   }
   return description
     .split(/\n\s*\n/, 1)[0]
-    .replace(/^\*\*Deprecated:?\*\*\s*/i, "")
-    .replace(/^Deprecated:?\s*/i, "")
+    .replace(/^\*\*Deprecated[.:]?\*\*\s*/i, "")
+    .replace(/^Deprecated[.:]?\s*/i, "")
     .replace(/\s*\n\s*/g, " ")
     .trim();
 }

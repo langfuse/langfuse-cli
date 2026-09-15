@@ -235,9 +235,13 @@ paths:
     expect(() => assertOperationCallable(operation, "4.10.0")).toThrow(
       'Cannot call deprecated API operation "prompts get"',
     );
-    expect(() => assertOperationCallable(operation, "4.10.0")).toThrow(
-      "Use `GET /api/public/v3/prompts` instead.",
-    );
+    try {
+      assertOperationCallable(operation, "4.10.0");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("Use `GET /api/public/v3/prompts` instead.");
+      expect(message).not.toContain("**Deprecated");
+    }
 
     const hidden = schemaOutput({
       schemaVersion: 1,
