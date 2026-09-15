@@ -109,12 +109,14 @@ langfuse api dataset-items list --dataset-name my-dataset
 langfuse api scores list --limit 20
 
 # Use an API snapshot compatible with an older self-hosted deployment
-langfuse --api-version 3 api traces list
-langfuse --api-version 3.150.0 api traces list
+langfuse --host http://localhost:3000 --api-version 3 api traces list
+langfuse --host http://localhost:3000 --api-version 3.150.0 api traces list
 
 # Detect the server version through /api/public/health
 langfuse --api-version auto api prompts list
 ```
+
+V3 API snapshots are available on self-hosted deployments only, Langfuse Cloud only supports v4 and up.
 
 OpenAPI tags and explicit route versions remain accepted aliases, for example
 `scores-v3 list` for the canonical `scores list`. Verbose OpenAPI `operationId`

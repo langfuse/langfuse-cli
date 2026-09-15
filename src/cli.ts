@@ -193,7 +193,7 @@ Options:
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
   --host <url>            Langfuse host (default: ${DEFAULT_HOST})
   --env <path>            Load env vars from a file
-  --api-version <version> Exact/major version, latest, or auto
+  --api-version <version> Exact/major version, latest, or auto (v3: self-hosted only)
   --timeout <ms>          Request timeout (default: ${DEFAULT_TIMEOUT_MS})
   -h, --help              Show help
   --version               Show CLI version
