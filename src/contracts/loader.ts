@@ -8,6 +8,12 @@ import type {
 } from "./types";
 
 const CATALOG_URL = new URL("./contracts/catalog.json", import.meta.url);
+const CLOUD_HOSTNAMES = new Set([
+  "cloud.langfuse.com",
+  "us.cloud.langfuse.com",
+  "jp.cloud.langfuse.com",
+  "hipaa.cloud.langfuse.com",
+]);
 
 function parseVersion(version: string): [number, number, number] | undefined {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version);
@@ -28,6 +34,20 @@ function compareVersion(left: string, right: string): number {
 function requestedMajor(version: string): number | undefined {
   const match = /^v?(\d+)(?:\.x)?$/i.exec(version);
   return match ? Number(match[1]) : undefined;
+}
+
+function assertVersionSupported(version: string, host: string): void {
+  const major = requestedMajor(version) ?? parseVersion(version)?.[0];
+  if (
+    major === 3 &&
+    URL.canParse(host) &&
+    CLOUD_HOSTNAMES.has(new URL(host).hostname.replace(/\.$/, ""))
+  ) {
+    throw new CliError(
+      "Langfuse Cloud does not support v3 API snapshots. Use a v4 or newer snapshot (update the CLI if needed). For a self-hosted v3 deployment, set --host to its URL.",
+      EXIT_CONFIG,
+    );
+  }
 }
 
 function latestMajorEntry(
@@ -99,11 +119,13 @@ export async function resolveContractVersion(params: {
 }): Promise<{ catalog: ApiContractCatalog; version: string; detected?: string }> {
   const catalog = params.catalog ?? (await loadContractCatalog());
   const requested = params.requested ?? "latest";
+  assertVersionSupported(requested === "latest" ? catalog.latest : requested, params.host);
   if (requested === "latest") {
     return { catalog, version: catalog.latest };
   }
   if (requested === "auto") {
     const detected = await detectServerVersion(params.host, params.timeoutMs);
+    assertVersionSupported(detected, params.host);
     const exact = catalog.versions.find((entry) => entry.version === detected);
     const compatible = exact ?? compatibleEntry(catalog.versions, detected);
     if (!compatible) {

@@ -628,6 +628,17 @@ describe("API version reporting", () => {
     showSecrets: false,
   };
 
+  test("lists bundled snapshots even with a v3 selector on Cloud", async () => {
+    const output = await captureOutput(() =>
+      runApi(
+        { ...config, host: "https://cloud.langfuse.com", apiVersion: "3" },
+        ["versions", "list"],
+        catalog,
+      ),
+    );
+    expect(output.stdout).toBe("3.150.0\n3.216.0\n4.10.0\n");
+  });
+
   test("versions current prints the resolved major selection", async () => {
     const output = await captureOutput(() =>
       runApi({ ...config, apiVersion: "3" }, ["versions", "current"], catalog),
