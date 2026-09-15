@@ -54,6 +54,7 @@ interface RuntimeConfig {
   json: boolean;
   curl: boolean;
   showSecrets: boolean;
+  includeDeprecated: boolean;
   output?: string;
 }
 
@@ -138,6 +139,7 @@ async function runtimeConfig(globals: ParsedGlobals): Promise<RuntimeConfig> {
     json: globals.booleans.has("json"),
     curl: globals.booleans.has("curl"),
     showSecrets: globals.booleans.has("show-secrets"),
+    includeDeprecated: globals.booleans.has("include-deprecated"),
     output: globals.values.output,
   };
 }
@@ -194,6 +196,7 @@ Options:
   --host <url>            Langfuse host (default: ${DEFAULT_HOST})
   --env <path>            Load env vars from a file
   --api-version <version> Exact/major version, latest, or auto
+  --include-deprecated    Include deprecated Cloud v3 commands in help/schema
   --timeout <ms>          Request timeout (default: ${DEFAULT_TIMEOUT_MS})
   -h, --help              Show help
   --version               Show CLI version
@@ -215,9 +218,39 @@ interface CommandBinding {
   alias: boolean;
 }
 
-function canonicalResourceMap(contract: ApiContract): Map<string, ApiOperation[]> {
+const MONTH_NUMBERS: Record<string, string> = {
+  january: "01",
+  february: "02",
+  march: "03",
+  april: "04",
+  may: "05",
+  june: "06",
+  july: "07",
+  august: "08",
+  september: "09",
+  october: "10",
+  november: "11",
+  december: "12",
+};
+
+function discoverableOperations(
+  operations: ApiOperation[],
+  includeDeprecated: boolean,
+): ApiOperation[] {
+  return includeDeprecated
+    ? operations
+    : operations.filter((operation) => !operation.deprecated);
+}
+
+function canonicalResourceMap(
+  contract: ApiContract,
+  includeDeprecated = true,
+): Map<string, ApiOperation[]> {
   const resources = new Map<string, ApiOperation[]>();
-  for (const operation of contract.operations) {
+  for (const operation of discoverableOperations(
+    contract.operations,
+    includeDeprecated,
+  )) {
     const existing = resources.get(operation.command.resource) ?? [];
     existing.push(operation);
     resources.set(operation.command.resource, existing);
@@ -253,9 +286,12 @@ function resourceMap(contract: ApiContract): Map<string, CommandBinding[]> {
   return resources;
 }
 
-function printApiHelp(contract: ApiContract): void {
-  const resources = [...canonicalResourceMap(contract)].sort(([left], [right]) =>
-    left.localeCompare(right),
+function printApiHelp(
+  contract: ApiContract,
+  includeDeprecated: boolean,
+): void {
+  const resources = [...canonicalResourceMap(contract, includeDeprecated)].sort(
+    ([left], [right]) => left.localeCompare(right),
   );
   process.stdout.write(`Usage: langfuse api <resource> <action> [options]
 
@@ -274,7 +310,10 @@ Discovery:
   api schema --json          Machine-readable command schema
   api __schema --json        Legacy command alias
   api versions list          Bundled historical snapshots
+  --include-deprecated       Show deprecated Cloud v3 commands
+  --api-version 3            Self-hosted v3 snapshots (legacy traces remain current)
   Path commands are canonical; OpenAPI tag and route-version aliases also work
+  Deprecated Cloud v3 reads are hidden unless --include-deprecated is set
 
 Action options:
   --body-json <json>         Lossless JSON request body
@@ -285,19 +324,32 @@ Action options:
 `);
 }
 
-function printResourceHelp(contract: ApiContract, resource: string): void {
+function printResourceHelp(
+  contract: ApiContract,
+  resource: string,
+  includeDeprecated: boolean,
+): void {
   const bindings = resourceMap(contract).get(resource);
   if (!bindings) throw new CliError(`Unknown API resource: ${resource}`);
+  const visible = includeDeprecated
+    ? bindings
+    : bindings.filter((binding) => !binding.operation.deprecated);
+  const listed = visible.length > 0 ? visible : bindings;
+  const hidden =
+    !includeDeprecated &&
+    visible.length === 0 &&
+    bindings.some((binding) => binding.operation.deprecated);
   process.stdout.write(`Usage: langfuse api ${resource} <action> [options]
-
+${hidden ? "\nThis resource is deprecated on the selected API snapshot. Pass --include-deprecated to treat it as discoverable, or --api-version 3 for self-hosted v3.\n" : ""}
 Actions:
-${bindings
-  .map(
-    (binding) => {
-      const label = `${binding.action}${binding.alias ? " [alias]" : ""}${binding.operation.deprecated ? " [deprecated]" : ""}`;
-      return `  ${label.padEnd(43)} ${binding.operation.method} ${binding.operation.path}`;
-    },
-  )
+${listed
+  .map((binding) => {
+    const deprecated = Boolean(binding.operation.deprecated);
+    const label = `${binding.action}${binding.alias ? " [alias]" : ""}${deprecated ? " [deprecated]" : ""}`;
+    const headline = deprecated ? deprecationHeadline(binding.operation) : undefined;
+    const line = `  ${label.padEnd(43)} ${binding.operation.method} ${binding.operation.path}`;
+    return headline ? `${line}\n    ${headline}` : line;
+  })
   .join("\n")}
 `);
 }
@@ -309,10 +361,37 @@ function explicitDeprecationNote(operation: ApiOperation): string | undefined {
   }
   return description
     .split(/\n\s*\n/, 1)[0]
-    .replace(/^\*\*Deprecated\.\*\*\s*/i, "")
-    .replace(/^Deprecated\.?\s*/i, "")
+    .replace(/^\*\*Deprecated:?\*\*\s*/i, "")
+    .replace(/^Deprecated:?\s*/i, "")
     .replace(/\s*\n\s*/g, " ")
     .trim();
+}
+
+function cloudRemovalDate(description?: string): string | undefined {
+  const match = description?.match(/removed on ([A-Za-z]+) (\d{1,2}), (\d{4})/i);
+  if (!match) return undefined;
+  const month = MONTH_NUMBERS[match[1].toLowerCase()];
+  if (!month) return undefined;
+  return `${match[3]}-${month}-${match[2].padStart(2, "0")}`;
+}
+
+function replacementHint(operation: ApiOperation): string | undefined {
+  if (
+    /\/traces(?:\/|$|\?)/.test(operation.path) ||
+    /\/observations(?:\/|$|\?)/.test(operation.path)
+  ) {
+    return "use observations list / Observations API v2";
+  }
+  return undefined;
+}
+
+export function deprecationHeadline(operation: ApiOperation): string {
+  const parts = ["deprecated"];
+  const date = cloudRemovalDate(operation.description);
+  if (date) parts.push(`Cloud removal ${date}`);
+  const replacement = replacementHint(operation);
+  if (replacement) parts.push(replacement);
+  return `${parts.join("; ")}.`;
 }
 
 export function assertOperationCallable(
@@ -322,9 +401,9 @@ export function assertOperationCallable(
   if (!operation.deprecated) return;
   const note = explicitDeprecationNote(operation);
   throw new CliError(
-    `Cannot call deprecated API operation "${operation.command.resource} ${operation.command.action}" (${operation.method} ${operation.path}) in API ${apiVersion}.` +
+    `Cannot call deprecated API operation "${operation.command.resource} ${operation.command.action}" (${operation.method} ${operation.path}) in API ${apiVersion}. ${deprecationHeadline(operation)}` +
       (note ? ` ${note}` : " No replacement is declared in its OpenAPI description.") +
-      ` Use "langfuse api help ${operation.command.resource}" or "langfuse api schema --json" to find supported operations.`,
+      ` Use "langfuse api schema --json" for current operations, or --api-version 3 for self-hosted v3.`,
   );
 }
 
@@ -434,14 +513,14 @@ function printOperationHelp(operation: ApiOperation): void {
     );
   }
   process.stdout.write(`Usage: langfuse api ${operation.command.resource} ${operation.command.action}${positionals ? ` ${positionals}` : ""} [options]
-
-${operation.summary ?? operation.operationId}
-${operation.description ? `\n${operation.description}\n` : ""}
 ${
   operation.deprecated
-    ? `\nDEPRECATED\nThis operation is discoverable but cannot be called by this CLI.${explicitDeprecationNote(operation) ? ` ${explicitDeprecationNote(operation)}` : ""}\n`
+    ? `\n${deprecationHeadline(operation)}\nThis operation is hidden from default help/schema and cannot be called by this CLI.${explicitDeprecationNote(operation) ? ` ${explicitDeprecationNote(operation)}` : ""} Self-hosted v3 remains available with --api-version 3.\n`
     : ""
-}${bodyFieldsSection(operation)}
+}
+${operation.summary ?? operation.operationId}
+${operation.description ? `\n${operation.description}\n` : ""}
+${bodyFieldsSection(operation)}
 Options:
 ${lines.length ? lines.join("\n") : "  (no operation-specific options)"}
   --json                         JSON response envelope
@@ -998,33 +1077,43 @@ export async function callAllPages(
   };
 }
 
-export function schemaOutput(contract: ApiContract) {
+export function schemaOutput(
+  contract: ApiContract,
+  options: { includeDeprecated?: boolean } = {},
+) {
+  const includeDeprecated = Boolean(options.includeDeprecated);
   return {
     schemaVersion: 1,
     apiVersion: contract.apiVersion,
     sourceSha256: contract.sourceSha256,
-    resources: [...canonicalResourceMap(contract)].map(([name, operations]) => ({
-      name,
-      actions: operations.map((operation) => ({
-        name: operation.command.action,
-        aliases: operation.command.aliases ?? [],
-        operationId: operation.operationId,
-        method: operation.method,
-        path: operation.path,
-        deprecated: Boolean(operation.deprecated),
-        ...(operation.pagination ? { pagination: operation.pagination } : {}),
-        auth: operation.auth,
-        pathParameterOrder: operation.pathParameterOrder,
-        parameters: operation.parameters,
-        ...(operation.requestBody
-          ? { requestBody: operation.requestBody }
-          : {}),
-        ...(operation.summary ? { summary: operation.summary } : {}),
-        ...(operation.description
-          ? { description: operation.description }
-          : {}),
-      })),
-    })),
+    includeDeprecated,
+    resources: [...canonicalResourceMap(contract, includeDeprecated)].map(
+      ([name, operations]) => ({
+        name,
+        actions: operations.map((operation) => ({
+          name: operation.command.action,
+          aliases: operation.command.aliases ?? [],
+          operationId: operation.operationId,
+          method: operation.method,
+          path: operation.path,
+          deprecated: Boolean(operation.deprecated),
+          ...(operation.deprecated
+            ? { deprecation: deprecationHeadline(operation) }
+            : {}),
+          ...(operation.pagination ? { pagination: operation.pagination } : {}),
+          auth: operation.auth,
+          pathParameterOrder: operation.pathParameterOrder,
+          parameters: operation.parameters,
+          ...(operation.requestBody
+            ? { requestBody: operation.requestBody }
+            : {}),
+          ...(operation.summary ? { summary: operation.summary } : {}),
+          ...(operation.description
+            ? { description: operation.description }
+            : {}),
+        })),
+      }),
+    ),
   };
 }
 
@@ -1104,30 +1193,31 @@ export async function runApi(
     catalog,
   });
   const contract = await loadApiContract(resolved.version);
+  const includeDeprecated = config.includeDeprecated;
   if (
     args.length === 0 ||
     (args[0] === "help" && args.length === 1) ||
     args[0] === "--help" ||
     args[0] === "-h"
   ) {
-    printApiHelp(contract);
+    printApiHelp(contract, includeDeprecated);
     return;
   }
   if (["schema", "__schema", "__spec"].includes(args[0])) {
-    const schema = schemaOutput(contract);
+    const schema = schemaOutput(contract, { includeDeprecated });
     if (config.json) process.stdout.write(`${JSON.stringify(schema)}\n`);
-    else printApiHelp(contract);
+    else printApiHelp(contract, includeDeprecated);
     return;
   }
   if (args[0] === "help") {
-    if (!args[1]) printApiHelp(contract);
-    else if (!args[2]) printResourceHelp(contract, args[1]);
+    if (!args[1]) printApiHelp(contract, includeDeprecated);
+    else if (!args[2]) printResourceHelp(contract, args[1], includeDeprecated);
     else printOperationHelp(operationByCommand(contract, args[1], args[2]));
     return;
   }
   const resource = args[0];
   if (!args[1] || args[1] === "help" || args[1] === "--help" || args[1] === "-h") {
-    printResourceHelp(contract, resource);
+    printResourceHelp(contract, resource, includeDeprecated);
     return;
   }
   const operation = operationByCommand(contract, resource, args[1]);

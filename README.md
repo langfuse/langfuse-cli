@@ -67,6 +67,8 @@ langfuse api prompts create help
 
 # Machine-readable discovery
 langfuse api schema --json
+# Include deprecated Cloud v3 commands (legacy-traces-v1, etc.)
+langfuse --include-deprecated api schema --json
 
 # Create a prompt
 langfuse api prompts create --json-body '{"name":"my-prompt","type":"text","prompt":"Hello {{name}}"}'
@@ -108,7 +110,10 @@ langfuse api dataset-items list --dataset-name my-dataset
 # Scores
 langfuse api scores list --limit 20
 
-# Use an API snapshot compatible with an older self-hosted deployment
+# Use an API snapshot compatible with an older self-hosted deployment.
+# On Cloud, v3 trace/observation reads are hidden unless you pass
+# --include-deprecated; they still cannot be called. Self-hosted v3 keeps
+# `traces list` as a current command:
 langfuse --api-version 3 api traces list
 langfuse --api-version 3.150.0 api traces list
 

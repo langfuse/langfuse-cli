@@ -183,7 +183,7 @@ export function planCommandNames(inputs: NamingInput[]): CommandName[] {
     const resource = input.deprecated
       ? route.version
         ? `${route.resource}-${route.version}`
-        : `legacy-${route.resource}`
+        : `legacy-${route.resource}-v1`
       : route.resource;
     return {
       input,

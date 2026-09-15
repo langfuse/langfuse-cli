@@ -118,4 +118,51 @@ describe("stable CLI naming policy", () => {
       },
     ]);
   });
+
+  test("names unversioned deprecated reads legacy-<resource>-v1", () => {
+    expect(
+      planCommandNames([
+        {
+          operationId: "trace_list",
+          method: "GET",
+          path: "/api/public/traces",
+          tags: ["Trace"],
+          deprecated: true,
+        },
+        {
+          operationId: "legacy_observationsV1_getMany",
+          method: "GET",
+          path: "/api/public/observations",
+          tags: ["LegacyObservationsV1"],
+          deprecated: true,
+        },
+        {
+          operationId: "observations_getMany",
+          method: "GET",
+          path: "/api/public/v2/observations",
+          tags: ["Observations"],
+        },
+      ]),
+    ).toEqual([
+      {
+        resource: "legacy-traces-v1",
+        action: "list",
+        aliases: [
+          { resource: "traces", action: "list", source: "path" },
+          { resource: "trace", action: "list", source: "tag" },
+        ],
+      },
+      {
+        resource: "legacy-observations-v1",
+        action: "list",
+      },
+      {
+        resource: "observations",
+        action: "list",
+        aliases: [
+          { resource: "observations-v2", action: "list", source: "version" },
+        ],
+      },
+    ]);
+  });
 });

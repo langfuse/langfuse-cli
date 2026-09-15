@@ -156,7 +156,7 @@
   {
     "operationId": "datasetRunItems_create",
     "key": "POST /api/public/dataset-run-items",
-    "resource": "legacy-dataset-run-items",
+    "resource": "legacy-dataset-run-items-v1",
     "action": "create",
     "aliases": [
       {
@@ -170,7 +170,7 @@
   {
     "operationId": "datasetRunItems_list",
     "key": "GET /api/public/dataset-run-items",
-    "resource": "legacy-dataset-run-items",
+    "resource": "legacy-dataset-run-items-v1",
     "action": "list",
     "aliases": [
       {
@@ -197,7 +197,7 @@
   {
     "operationId": "datasets_deleteRun",
     "key": "DELETE /api/public/datasets/{datasetName}/runs/{runName}",
-    "resource": "legacy-datasets",
+    "resource": "legacy-datasets-v1",
     "action": "delete-run",
     "aliases": [
       {
@@ -224,7 +224,7 @@
   {
     "operationId": "datasets_getRun",
     "key": "GET /api/public/datasets/{datasetName}/runs/{runName}",
-    "resource": "legacy-datasets",
+    "resource": "legacy-datasets-v1",
     "action": "get-run",
     "aliases": [
       {
@@ -238,7 +238,7 @@
   {
     "operationId": "datasets_getRuns",
     "key": "GET /api/public/datasets/{datasetName}/runs",
-    "resource": "legacy-datasets",
+    "resource": "legacy-datasets-v1",
     "action": "list-runs",
     "aliases": [
       {
@@ -432,7 +432,7 @@
   {
     "operationId": "ingestion_batch",
     "key": "POST /api/public/ingestion",
-    "resource": "legacy-ingestion",
+    "resource": "legacy-ingestion-v1",
     "action": "batch",
     "aliases": [
       {
@@ -446,32 +446,20 @@
   {
     "operationId": "legacy_metricsV1_metrics",
     "key": "GET /api/public/metrics",
-    "resource": "legacy-metrics",
+    "resource": "legacy-metrics-v1",
     "action": "get",
-    "aliases": [
-      {
-        "resource": "legacy-metrics-v1",
-        "action": "get",
-        "source": "tag"
-      }
-    ],
     "deprecated": true
   },
   {
     "operationId": "legacy_observationsV1_get",
     "key": "GET /api/public/observations/{observationId}",
-    "resource": "legacy-observations",
+    "resource": "legacy-observations-v1",
     "action": "get",
     "aliases": [
       {
         "resource": "observations",
         "action": "get",
         "source": "path"
-      },
-      {
-        "resource": "legacy-observations-v1",
-        "action": "get",
-        "source": "tag"
       }
     ],
     "deprecated": true
@@ -479,15 +467,8 @@
   {
     "operationId": "legacy_observationsV1_getMany",
     "key": "GET /api/public/observations",
-    "resource": "legacy-observations",
+    "resource": "legacy-observations-v1",
     "action": "list",
-    "aliases": [
-      {
-        "resource": "legacy-observations-v1",
-        "action": "list",
-        "source": "tag"
-      }
-    ],
     "deprecated": true
   },
   {
@@ -882,7 +863,7 @@
   {
     "operationId": "sessions_get",
     "key": "GET /api/public/sessions/{sessionId}",
-    "resource": "legacy-sessions",
+    "resource": "legacy-sessions-v1",
     "action": "get",
     "aliases": [
       {
@@ -896,7 +877,7 @@
   {
     "operationId": "sessions_list",
     "key": "GET /api/public/sessions",
-    "resource": "legacy-sessions",
+    "resource": "legacy-sessions-v1",
     "action": "list",
     "aliases": [
       {
@@ -936,7 +917,7 @@
   {
     "operationId": "trace_get",
     "key": "GET /api/public/traces/{traceId}",
-    "resource": "legacy-traces",
+    "resource": "legacy-traces-v1",
     "action": "get",
     "aliases": [
       {
@@ -955,7 +936,7 @@
   {
     "operationId": "trace_list",
     "key": "GET /api/public/traces",
-    "resource": "legacy-traces",
+    "resource": "legacy-traces-v1",
     "action": "list",
     "aliases": [
       {

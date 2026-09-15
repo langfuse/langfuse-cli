@@ -11,7 +11,12 @@ export const GLOBAL_VALUE_FLAG_NAMES = [
   "output",
 ] as const;
 
-export const GLOBAL_BOOLEAN_FLAG_NAMES = ["json", "curl", "show-secrets"] as const;
+export const GLOBAL_BOOLEAN_FLAG_NAMES = [
+  "json",
+  "curl",
+  "show-secrets",
+  "include-deprecated",
+] as const;
 
 export const BODY_CHANNEL_FLAG_NAMES = ["body-json", "body-file"] as const;
 

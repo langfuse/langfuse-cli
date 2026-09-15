@@ -7,6 +7,7 @@ import {
   assertOperationCallable,
   assertPaginationUsage,
   callAllPages,
+  deprecationHeadline,
   extractPaginationFlags,
   operationByCommand,
   parseOperationInput,
@@ -238,13 +239,72 @@ paths:
       "Use `GET /api/public/v3/prompts` instead.",
     );
 
-    const schema = schemaOutput({
+    const hidden = schemaOutput({
       schemaVersion: 1,
       apiVersion: "4.10.0",
       sourceSha256: "test",
       operations: [operation],
     });
+    expect(hidden.includeDeprecated).toBe(false);
+    expect(hidden.resources).toEqual([]);
+
+    const schema = schemaOutput(
+      {
+        schemaVersion: 1,
+        apiVersion: "4.10.0",
+        sourceSha256: "test",
+        operations: [operation],
+      },
+      { includeDeprecated: true },
+    );
     expect(schema.resources[0].actions[0].deprecated).toBe(true);
+    expect(schema.resources[0].actions[0].deprecation).toBe("deprecated.");
+  });
+
+  test("labels legacy traces with Cloud removal and the v2 observations recipe", () => {
+    const operation: ApiOperation = {
+      ...promptGet,
+      deprecated: true,
+      method: "GET",
+      path: "/api/public/traces",
+      operationId: "trace_list",
+      command: { resource: "legacy-traces-v1", action: "list" },
+      summary: "Get list of traces",
+      description:
+        "**Deprecated:** On Langfuse Cloud, Langfuse v3 is deprecated and this endpoint will be removed on November 16, 2026. In Langfuse v4, read span and trace data via `GET /api/public/v2/observations`.",
+    };
+
+    expect(deprecationHeadline(operation)).toBe(
+      "deprecated; Cloud removal 2026-11-16; use observations list / Observations API v2.",
+    );
+
+    const current: ApiOperation = {
+      ...promptGet,
+      method: "GET",
+      path: "/api/public/v2/observations",
+      operationId: "observations_getMany",
+      command: { resource: "observations", action: "list" },
+    };
+    const mixed = schemaOutput({
+      schemaVersion: 1,
+      apiVersion: "4.35.0",
+      sourceSha256: "test",
+      operations: [operation, current],
+    });
+    expect(mixed.resources.map((resource) => resource.name)).toEqual([
+      "observations",
+    ]);
+    expect(
+      schemaOutput(
+        {
+          schemaVersion: 1,
+          apiVersion: "4.35.0",
+          sourceSha256: "test",
+          operations: [operation, current],
+        },
+        { includeDeprecated: true },
+      ).resources.map((resource) => resource.name),
+    ).toEqual(["legacy-traces-v1", "observations"]);
   });
 
   test("rejects nested body flags without consuming a positional", async () => {
@@ -626,6 +686,7 @@ describe("API version reporting", () => {
     json: false,
     curl: false,
     showSecrets: false,
+    includeDeprecated: false,
   };
 
   test("versions current prints the resolved major selection", async () => {
@@ -898,6 +959,7 @@ describe("exit code taxonomy", () => {
             json: true,
             curl: false,
             showSecrets: false,
+            includeDeprecated: false,
           },
         ),
       );
@@ -921,6 +983,7 @@ describe("result output", () => {
           json: false,
           curl: false,
           showSecrets: false,
+          includeDeprecated: false,
           output,
         },
       );
