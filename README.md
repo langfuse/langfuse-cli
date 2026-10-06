@@ -169,3 +169,7 @@ The CLI is implemented in TypeScript and runs on Node.js 20+ or Bun. It has zero
 See [MAINTENANCE.md](MAINTENANCE.md) for build, API snapshot, testing, and
 release workflows. The version-pinned black-box suite is documented separately
 in [`conformance/README.md`](conformance/README.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). All third party components incorporated into the Langfuse CLI are licensed under the original license provided by the owner of the applicable component.
