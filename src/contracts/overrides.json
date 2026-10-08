@@ -18,5 +18,15 @@
       "secretKey": "predefined-secret-key"
     }
   },
-  "commandOverrides": {}
+  "commandOverrides": {
+    "4.48.0": {
+      "unstable_skills_createVersion": { "resource": "skills" },
+      "unstable_skills_deleteVersion": { "resource": "skills" },
+      "unstable_skills_get": { "resource": "skills" },
+      "unstable_skills_getFileContents": { "resource": "skills" },
+      "unstable_skills_list": { "resource": "skills" },
+      "unstable_skills_setLabels": { "resource": "skills" },
+      "unstable_skills_update": { "resource": "skills" }
+    }
+  }
 }
