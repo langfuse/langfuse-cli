@@ -25,7 +25,7 @@ export async function runSkillsCommand(
     ? { lockVersion: 1, skills: {} }
     : await readSkillsLock();
   const targets = await resolveSkillTargets(config, options, lock, action);
-  await validateDestinations(targets.map(({ destination }) => destination), lock);
+  await validateDestinations(targets.map(({ destination }) => destination), lock, options.noLockfile);
 
   // Resolve every manifest and check destinations before changing any installation.
   const installations = [];
@@ -82,11 +82,19 @@ export async function runSkillsCommand(
   }
 }
 
-async function validateDestinations(targets: string[], lock: LangfuseSkillsLock): Promise<void> {
+async function validateDestinations(targets: string[], lock: LangfuseSkillsLock, allowExternal: boolean): Promise<void> {
   if (targets.length === 0) return;
   const selected = new Set(targets);
   const directories = [...new Set(targets.concat(Object.keys(lock.skills).map((path) => resolve(path))))];
   const physicalPaths = await Promise.all(directories.map(resolvePhysicalPath));
+  if (!allowExternal) {
+    const root = await realpath(process.cwd());
+    for (let i = 0; i < directories.length; i++) {
+      if (selected.has(directories[i]) && (physicalPaths[i] === root || !containsDirectory(root, physicalPaths[i]))) {
+        throw new CliError(`Locked skill installation must stay within the project: ${directories[i]}. Use an explicit --directory with --no-lockfile to install outside the project.`, EXIT_LOCAL);
+      }
+    }
+  }
   for (let i = 0; i < directories.length; i++) {
     for (let j = i + 1; j < directories.length; j++) {
       if (!selected.has(directories[i]) && !selected.has(directories[j])) continue;

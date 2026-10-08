@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import {
   assertOperationCallable,
@@ -56,7 +56,7 @@ async function withSkillsFixture(fn: (fixture: {
       return Response.json(manifests.get(url.pathname.split("/").at(-1)!));
     }) as typeof fetch;
     await fn({ directory, manifests, contents, command: async (args) => {
-      process.exitCode = undefined;
+      process.exitCode = 0;
       const output = await captureOutput(() => run([
         "node", "langfuse", "--public-key", "test", "--secret-key", "test",
         "--host", "https://example.invalid", "--json", "skills", ...args,
@@ -72,6 +72,100 @@ async function withSkillsFixture(fn: (fixture: {
 }
 
 describe("hosted skills commands", () => {
+  for (const kind of ["absolute", "relative", "symlink"] as const) {
+    test(`rejects an external lockfile destination through ${kind} paths before requests`, async () => {
+      await withSkillsFixture(async ({ directory, manifests, contents, command }) => {
+        const outside = await mkdtemp(join(tmpdir(), "langfuse-cli-outside-"));
+        try {
+          let path = join(outside, "example");
+          if (kind === "relative") path = relative(directory, path);
+          if (kind === "symlink") {
+            await symlink(outside, "alias", "dir");
+            path = "alias/example";
+          }
+          const manifest = skillManifest("example", { "SKILL.md": "example" });
+          manifests.set("example", manifest);
+          contents.set(manifest.files[0].sha256Hash, "example");
+          const lock = JSON.stringify({ lockVersion: 1, skills: {
+            [path]: { name: "example", selector: { label: "production" }, version: 1 },
+          } });
+          await writeFile("langfuse-skills-lock.json", lock);
+          let requests = 0;
+          const originalFetch = globalThis.fetch;
+          globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+            requests++;
+            return originalFetch(...args);
+          }) as typeof fetch;
+          for (const action of ["install", "update"]) {
+            const result = await command([action]);
+            expect(result.exitCode).toBe(6);
+            expect(requests).toBe(0);
+            expect(await readFile(join(outside, "example/SKILL.md"), "utf8").catch(() => null)).toBeNull();
+            expect(await readFile("langfuse-skills-lock.json", "utf8")).toBe(lock);
+          }
+        } finally {
+          await rm(outside, { recursive: true, force: true });
+        }
+      });
+    });
+  }
+
+  test("requires an explicit unlocked install for an external directory", async () => {
+    await withSkillsFixture(async ({ manifests, contents, command }) => {
+      const outside = await mkdtemp(join(tmpdir(), "langfuse-cli-outside-"));
+      try {
+        const manifest = skillManifest("example", { "SKILL.md": "example" });
+        manifests.set("example", manifest);
+        contents.set(manifest.files[0].sha256Hash, "example");
+        const result = await command(["install", "example", "--directory", outside]);
+        expect(result.exitCode).toBe(6);
+        expect(await readFile(join(outside, "example/SKILL.md"), "utf8").catch(() => null)).toBeNull();
+        await writeFile("langfuse-skills-lock.json", "invalid lock");
+        const unlocked = await command(["install", "example", "--directory", outside, "--no-lockfile"]);
+        expect(unlocked.exitCode).toBe(0);
+        expect(await readFile(join(outside, "example/SKILL.md"), "utf8")).toBe("example");
+        expect(await readFile("langfuse-skills-lock.json", "utf8")).toBe("invalid lock");
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("rejects a lock entry targeting the project directory itself", async () => {
+    await withSkillsFixture(async ({ manifests, contents, command }) => {
+      await mkdir("example");
+      process.chdir("example");
+      await writeFile("SKILL.md", "original");
+      await writeFile("langfuse-skills-lock.json", JSON.stringify({ lockVersion: 1, skills: {
+        ".": { name: "example", selector: { label: "production" }, version: 1 },
+      } }));
+      const manifest = skillManifest("example", { "SKILL.md": "replacement" });
+      manifests.set("example", manifest);
+      contents.set(manifest.files[0].sha256Hash, "replacement");
+      const result = await command(["install", "--force"]);
+      expect(result.exitCode).toBe(6);
+      expect(await readFile("SKILL.md", "utf8")).toBe("original");
+    });
+  });
+
+  test("bounds tag pagination and accepts a final page at the limit", async () => {
+    await withSkillsFixture(async ({ command }) => {
+      for (const terminates of [false, true]) {
+        let requests = 0;
+        globalThis.fetch = (async (input: string | URL | Request) => {
+          const url = new URL(input instanceof Request ? input.url : input.toString());
+          expect(Number(url.searchParams.get("page"))).toBe(++requests);
+          if (requests > 100) throw new Error("Unbounded pagination");
+          return Response.json({ data: [], meta: { hasNextPage: !terminates || requests < 100 } });
+        }) as typeof fetch;
+        const result = await command(["install", "--tag", "example"]);
+        expect(result.exitCode).toBe(terminates ? 0 : 7);
+        expect(requests).toBe(100);
+        expect(result.stdout).toBe(terminates ? "[]\n" : "");
+      }
+    });
+  });
+
   for (const paths of [["scripts/A.txt", "scripts/a.txt"], ["Scripts/a.txt", "scripts/b.txt"]]) {
     test(`handles filesystem aliases without losing files: ${paths.join(", ")}`, async () => {
       await withSkillsFixture(async ({ directory, manifests, contents, command }) => {

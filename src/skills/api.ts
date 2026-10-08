@@ -50,13 +50,14 @@ export type SkillFile = z.infer<typeof skillFileSchema>;
 type SkillVersion = z.infer<typeof skillVersionSchema>;
 
 export const FILE_CONTENT_BATCH_SIZE = 50;
+const MAX_SKILL_LIST_PAGES = 100;
 
 export async function fetchSkillNamesByTag(
   config: SkillsConfig,
   tag: string,
 ): Promise<string[]> {
   const names = new Set<string>();
-  for (let page = 1; ; page++) {
+  for (let page = 1; page <= MAX_SKILL_LIST_PAGES; page++) {
     const value = await getJson(config, "", { tag, page: String(page), limit: "100" });
     const result = skillListSchema.safeParse(value);
     if (!result.success) {
@@ -65,6 +66,7 @@ export async function fetchSkillNamesByTag(
     for (const skill of result.data.data) names.add(skill.name);
     if (!result.data.meta.hasNextPage) return [...names];
   }
+  throw new CliError(`Langfuse skill listing exceeded ${MAX_SKILL_LIST_PAGES} pages; no skills were installed`, EXIT_RESPONSE);
 }
 
 export async function fetchSkill(
