@@ -6,11 +6,13 @@
 //   4 network, DNS, TLS, or timeout failure reaching the host
 //   5 the API responded with a non-success HTTP status
 //   6 local file or bundled-contract failure
+//   7 invalid or inconsistent API response
 export const EXIT_USAGE = 2;
 export const EXIT_CONFIG = 3;
 export const EXIT_NETWORK = 4;
 export const EXIT_HTTP = 5;
 export const EXIT_LOCAL = 6;
+export const EXIT_RESPONSE = 7;
 
 export class CliError extends Error {
   constructor(

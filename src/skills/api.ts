@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import packageJson from "../../package.json";
-import { CliError, EXIT_CONFIG, EXIT_HTTP, EXIT_NETWORK } from "../errors";
+import { CliError, EXIT_CONFIG, EXIT_HTTP, EXIT_NETWORK, EXIT_RESPONSE } from "../errors";
 
 export interface SkillsConfig {
   publicKey?: string;
@@ -60,7 +60,7 @@ export async function fetchSkillNamesByTag(
     const value = await getJson(config, "", { tag, page: String(page), limit: "100" });
     const result = skillListSchema.safeParse(value);
     if (!result.success) {
-      throw new CliError("Langfuse returned an invalid skill list", EXIT_HTTP);
+      throw new CliError("Langfuse returned an invalid skill list", EXIT_RESPONSE);
     }
     for (const skill of result.data.data) names.add(skill.name);
     if (!result.data.meta.hasNextPage) return [...names];
@@ -81,7 +81,7 @@ export async function fetchSkill(
   const value = await getJson(config, encodeURIComponent(name), query);
   const result = skillVersionSchema.safeParse(value);
   if (!result.success || result.data.name !== name) {
-    throw new CliError("Langfuse returned an invalid skill manifest", EXIT_HTTP);
+    throw new CliError("Langfuse returned an invalid skill manifest", EXIT_RESPONSE);
   }
   return result.data;
 }
@@ -95,18 +95,18 @@ export async function fetchFileContents(
   });
   const result = fileContentsSchema.safeParse(value);
   if (!result.success) {
-    throw new CliError("Langfuse returned invalid skill file contents", EXIT_HTTP);
+    throw new CliError("Langfuse returned invalid skill file contents", EXIT_RESPONSE);
   }
   const requested = new Set(hashes);
   const contents = new Map<string, string>();
   for (const entry of result.data.data) {
     if (!requested.has(entry.sha256Hash) || contents.has(entry.sha256Hash)) {
-      throw new CliError("Langfuse returned invalid skill file contents", EXIT_HTTP);
+      throw new CliError("Langfuse returned invalid skill file contents", EXIT_RESPONSE);
     }
     contents.set(entry.sha256Hash, entry.content);
   }
   if (contents.size !== hashes.length) {
-    throw new CliError("Langfuse returned incomplete skill file contents", EXIT_HTTP);
+    throw new CliError("Langfuse returned incomplete skill file contents", EXIT_RESPONSE);
   }
   return contents;
 }
@@ -143,7 +143,7 @@ async function getJson(
   try {
     return JSON.parse(text);
   } catch {
-    throw new CliError("Langfuse returned invalid JSON for the skill", EXIT_HTTP);
+    throw new CliError("Langfuse returned invalid JSON for the skill", EXIT_RESPONSE);
   }
 }
 
