@@ -147,6 +147,7 @@ without a clean discriminator stay `--body-json`-only rather than guessing.
 | 4 | Network, DNS, TLS, or timeout failure reaching the host |
 | 5 | The API responded with a non-success HTTP status (response is still printed) |
 | 6 | Local file or bundled-contract failure |
+| 7 | Invalid or inconsistent API response |
 
 ## Agent Usage
 

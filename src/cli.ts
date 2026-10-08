@@ -202,7 +202,7 @@ Options:
   --version               Show CLI version
 
 Exit codes:
-  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file
+  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file · 7 invalid response
 
 Examples:
   langfuse api help
@@ -230,6 +230,7 @@ cannot be combined with --label or --version.
 Without a name or tag, install restores the versions and directories in the lock.
 Update follows saved labels and keeps explicit versions pinned. An optional name
 limits updates to that skill. Local edits require --force to replace.
+Installation directories must not overlap other recorded installations.
 
 Install options:
   --tag <tag>             Install all skills with this tag instead of a name
@@ -1227,7 +1228,7 @@ export async function run(argv: string[]): Promise<void> {
       if (args[0] !== "install" && args[0] !== "update") {
         throw new CliError(`Unknown skills action: ${args[0]}`);
       }
-      if (["help", "--help", "-h"].includes(args[1] ?? "")) {
+      if (["--help", "-h"].includes(args[1] ?? "")) {
         printSkillsHelp();
         return;
       }
