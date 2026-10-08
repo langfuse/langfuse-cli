@@ -13,7 +13,7 @@ const lockedSkillSchema = z.strictObject({
 
 const langfuseSkillsLockV1Schema = z.strictObject({
   lockVersion: z.literal(1),
-  // Installation directory relative to this lockfile, or absolute across drives.
+  // Installation directory relative to this lockfile and within the project.
   skills: z.record(z.string().min(1), lockedSkillSchema),
 });
 

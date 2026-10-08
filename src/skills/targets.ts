@@ -1,4 +1,4 @@
-import { basename, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 
 import { CliError, EXIT_LOCAL } from "../errors";
 import { fetchSkillNamesByTag, type SkillsConfig, type SkillSelector } from "./api";
@@ -31,7 +31,7 @@ export async function resolveSkillTargets(
     const destinations = new Set<string>();
     return entries.map(([path, skill]) => {
       const destination = resolve(path);
-      if (basename(destination) !== skill.name || destinations.has(destination)) {
+      if (isAbsolute(path) || basename(destination) !== skill.name || destinations.has(destination)) {
         throw new CliError(`Invalid or duplicate installation directory in lockfile: ${path}`, EXIT_LOCAL);
       }
       destinations.add(destination);

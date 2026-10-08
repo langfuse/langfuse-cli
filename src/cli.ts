@@ -230,20 +230,25 @@ cannot be combined with --label or --version.
 Without a name or tag, install restores the versions and directories in the lock.
 Update follows saved labels and keeps explicit versions pinned. An optional name
 limits updates to that skill. Local edits require --force to replace.
-Installation directories must not overlap other recorded installations.
+If verification needs an unavailable previous version, update stops before writing.
+--force skips the historical check and allows replacing local files.
+With the lockfile enabled, installation directories must stay within the project
+and must not overlap other recorded installations, including through symlinks.
 
 Install options:
   --tag <tag>             Install all skills with this tag instead of a name
   --version <number>      Install an immutable version (named skill only)
   --label <label>         Install this label for each selected skill
   --directory <path>      Parent directory (default: .agents/skills)
-  --no-lockfile           Skip reading/writing the lockfile (name or tag required)
+  --no-lockfile           Skip lockfile reads/writes and recorded-directory checks
+                         (name or tag required; allows explicit external installs)
   --force                 Replace an existing installation when contents differ
   --json                  Print an object for a named install, otherwise an array
 
 Tag installs check all manifests and destinations before writing. If a download
 fails, skills already installed remain installed. No matches succeeds with an
 empty result (an empty array with --json).
+Tag listing stops with an error if the server reports more than 100 pages.
 
 Matching local files skip content downloads. Unless --no-lockfile is set,
 installation metadata is recorded in langfuse-skills-lock.json in the working
