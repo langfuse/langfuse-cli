@@ -12,6 +12,7 @@ import {
   EXIT_NETWORK,
 } from "./errors";
 import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
+import { runSkillsCommand } from "./skills";
 import {
   loadApiContract,
   loadContractCatalog,
@@ -186,6 +187,8 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
+  skills install          Install Langfuse-hosted skills by name or tag
+  skills update           Update locked skills using their saved selectors
   get-skill               Print the latest Langfuse skill from GitHub
 
 Options:
@@ -199,13 +202,57 @@ Options:
   --version               Show CLI version
 
 Exit codes:
-  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file
+  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file · 7 invalid response
 
 Examples:
   langfuse api help
   langfuse api prompts list
   langfuse api prompts create --body-json '{"name":"my-prompt","type":"text","prompt":"Hello"}'
   langfuse api observations list --limit 20
+  langfuse skills install support-triage
+  langfuse skills install support-triage@staging
+  langfuse skills install support-triage@3
+  langfuse skills install --tag support
+  langfuse skills install
+  langfuse skills update
+`);
+}
+
+function printSkillsHelp(): void {
+  process.stdout.write(`Usage: langfuse skills install [name[@selector]] [options]
+       langfuse skills install --tag <tag> [options]
+       langfuse skills update [name] [--force] [--json]
+
+Install a named skill or all skills with a tag. Defaults to the production label.
+Use name@production or name@staging for a label, and name@3 for an exact version.
+An all-digit suffix selects a version; use --label for numeric labels. A suffix
+cannot be combined with --label or --version.
+Without a name or tag, install restores the versions and directories in the lock.
+Update follows saved labels and keeps explicit versions pinned. An optional name
+limits updates to that skill. Local edits require --force to replace.
+If verification needs an unavailable previous version, update stops before writing.
+--force skips the historical check and allows replacing local files.
+With the lockfile enabled, installation directories must stay within the project
+and must not overlap other recorded installations, including through symlinks.
+
+Install options:
+  --tag <tag>             Install all skills with this tag instead of a name
+  --version <number>      Install an immutable version (named skill only)
+  --label <label>         Install this label for each selected skill
+  --directory <path>      Parent directory (default: .agents/skills)
+  --no-lockfile           Skip lockfile reads/writes and recorded-directory checks
+                         (name or tag required; allows explicit external installs)
+  --force                 Replace an existing installation when contents differ
+  --json                  Print an object for a named install, otherwise an array
+
+Tag installs check all manifests and destinations before writing. If a download
+fails, skills already installed remain installed. No matches succeeds with an
+empty result (an empty array with --json).
+Tag listing stops with an error if the server reports more than 100 pages.
+
+Matching local files skip content downloads. Unless --no-lockfile is set,
+installation metadata is recorded in langfuse-skills-lock.json in the working
+directory. Bare install and update require the lockfile.
 `);
 }
 
@@ -1171,6 +1218,31 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (command === "get-skill") {
       await getSkill();
+      return;
+    }
+    if (command === "skills") {
+      if (
+        args.length === 0 ||
+        args[0] === "help" ||
+        args[0] === "--help" ||
+        args[0] === "-h"
+      ) {
+        printSkillsHelp();
+        return;
+      }
+      if (args[0] !== "install" && args[0] !== "update") {
+        throw new CliError(`Unknown skills action: ${args[0]}`);
+      }
+      if (["--help", "-h"].includes(args[1] ?? "")) {
+        printSkillsHelp();
+        return;
+      }
+      for (const flag of ["curl", "show-secrets", "output", "api-version"]) {
+        if (globals.booleans.has(flag) || globals.values[flag] !== undefined) {
+          throw new CliError(`--${flag} is only supported by api commands, not skills ${args[0]}`);
+        }
+      }
+      await runSkillsCommand(await runtimeConfig(globals), args.slice(1), args[0]);
       return;
     }
     if (command !== "api") {
