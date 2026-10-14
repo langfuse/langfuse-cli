@@ -47,7 +47,7 @@ const fileContentsSchema = z.object({
 
 export type SkillSelector = z.infer<typeof skillSelectorSchema>;
 export type SkillFile = z.infer<typeof skillFileSchema>;
-type SkillVersion = z.infer<typeof skillVersionSchema>;
+export type SkillVersion = z.infer<typeof skillVersionSchema>;
 
 export const FILE_CONTENT_BATCH_SIZE = 50;
 const MAX_SKILL_LIST_PAGES = 100;
@@ -58,7 +58,7 @@ export async function fetchSkillNamesByTag(
 ): Promise<string[]> {
   const names = new Set<string>();
   for (let page = 1; page <= MAX_SKILL_LIST_PAGES; page++) {
-    const value = await getJson(config, "", { tag, page: String(page), limit: "100" });
+    const value = await requestJson(config, "", { tag, page: String(page), limit: "100" });
     const result = skillListSchema.safeParse(value);
     if (!result.success) {
       throw new CliError("Langfuse returned an invalid skill list", EXIT_RESPONSE);
@@ -80,9 +80,47 @@ export async function fetchSkill(
   } else {
     query.label = selector.label;
   }
-  const value = await getJson(config, encodeURIComponent(name), query);
+  const value = await requestJson(config, encodeURIComponent(name), query);
   const result = skillVersionSchema.safeParse(value);
   if (!result.success || result.data.name !== name) {
+    throw new CliError("Langfuse returned an invalid skill manifest", EXIT_RESPONSE);
+  }
+  return result.data;
+}
+
+export async function fetchLatestSkill(config: SkillsConfig, name: string): Promise<SkillVersion | undefined> {
+  const value = await requestJson(config, encodeURIComponent(name), { label: "latest" }, { allowNotFound: true });
+  return value === undefined ? undefined : parseSkillVersion(value, name);
+}
+
+export async function createSkillVersion(
+  config: SkillsConfig,
+  name: string,
+  files: Array<{ path: string; content: string }>,
+  commitMessage?: string,
+): Promise<SkillVersion> {
+  const value = await requestJson(config, "", {}, { method: "POST", body: { files, commitMessage } });
+  return parseSkillVersion(value, name);
+}
+
+export async function setSkillLabels(
+  config: SkillsConfig,
+  name: string,
+  version: number,
+  labels: string[],
+): Promise<SkillVersion> {
+  const route = `${encodeURIComponent(name)}/versions/${version}`;
+  const value = await requestJson(config, route, {}, { method: "PATCH", body: { labels } });
+  const skill = parseSkillVersion(value, name);
+  if (skill.version !== version || labels.some((label) => !skill.labels.includes(label))) {
+    throw new CliError("Langfuse returned a skill version that does not match the requested labels", EXIT_RESPONSE);
+  }
+  return skill;
+}
+
+function parseSkillVersion(value: unknown, name: string): SkillVersion {
+  const result = skillVersionSchema.safeParse(value);
+  if (!result.success || result.data.name !== name || new Set(result.data.files.map((file) => file.path)).size !== result.data.files.length) {
     throw new CliError("Langfuse returned an invalid skill manifest", EXIT_RESPONSE);
   }
   return result.data;
@@ -92,7 +130,7 @@ export async function fetchFileContents(
   config: SkillsConfig,
   hashes: string[],
 ): Promise<Map<string, string>> {
-  const value = await getJson(config, "files/content", {
+  const value = await requestJson(config, "files/content", {
     sha256Hashes: hashes.join(","),
   });
   const result = fileContentsSchema.safeParse(value);
@@ -113,10 +151,11 @@ export async function fetchFileContents(
   return contents;
 }
 
-async function getJson(
+async function requestJson(
   config: SkillsConfig,
   route: string,
   query: Record<string, string>,
+  options: { method?: "POST" | "PATCH"; body?: unknown; allowNotFound?: boolean } = {},
 ): Promise<unknown> {
   if (!config.publicKey || !config.secretKey) {
     throw new CliError("This command requires LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY", EXIT_CONFIG);
@@ -125,22 +164,29 @@ async function getJson(
   const url = new URL(`api/public/unstable/skills${route ? `/${route}` : ""}`, host);
   url.search = new URLSearchParams(query).toString();
   const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`;
+  const method = options.method ?? "GET";
   let response: Response;
+  let text: string;
   try {
     response = await fetch(url, {
+      method,
       headers: {
         accept: "application/json",
         authorization,
         "user-agent": `langfuse-cli/${packageJson.version}`,
+        ...(options.body === undefined ? {} : { "content-type": "application/json" }),
       },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      redirect: "error",
       signal: AbortSignal.timeout(config.timeoutMs),
     });
+    text = await response.text();
   } catch (error) {
-    throw new CliError(`GET ${url.href} failed: ${error instanceof Error ? error.message : String(error)}`, EXIT_NETWORK);
+    throw new CliError(`${method} ${url.href} failed: ${error instanceof Error ? error.message : String(error)}`, EXIT_NETWORK);
   }
-  const text = await response.text();
+  if (response.status === 404 && options.allowNotFound) return undefined;
   if (!response.ok) {
-    throw new CliError(`GET ${url.href} returned HTTP ${response.status}${responseError(text)}`, EXIT_HTTP);
+    throw new CliError(`${method} ${url.href} returned HTTP ${response.status}${responseError(text)}`, EXIT_HTTP);
   }
   try {
     return JSON.parse(text);

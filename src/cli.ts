@@ -13,6 +13,7 @@ import {
 } from "./errors";
 import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
 import { runSkillsCommand } from "./skills";
+import { runSkillsPush } from "./skills/push";
 import {
   loadApiContract,
   loadContractCatalog,
@@ -189,6 +190,7 @@ Commands:
   api                     Interact with the Langfuse REST API
   skills install          Install Langfuse-hosted skills by name or tag
   skills update           Update locked skills using their saved selectors
+  skills push             Publish a local skill directory to Langfuse
   get-skill               Print the latest Langfuse skill from GitHub
 
 Options:
@@ -215,6 +217,8 @@ Examples:
   langfuse skills install --tag support
   langfuse skills install
   langfuse skills update
+  langfuse skills push .agents/skills/support-triage
+  langfuse skills push .agents/skills --recursive --update-only
 `);
 }
 
@@ -222,18 +226,7 @@ function printSkillsHelp(): void {
   process.stdout.write(`Usage: langfuse skills install [name[@selector]] [options]
        langfuse skills install --tag <tag> [options]
        langfuse skills update [name] [--force] [--json]
-
-Install a named skill or all skills with a tag. Defaults to the production label.
-Use name@production or name@staging for a label, and name@3 for an exact version.
-An all-digit suffix selects a version; use --label for numeric labels. A suffix
-cannot be combined with --label or --version.
-Without a name or tag, install restores the versions and directories in the lock.
-Update follows saved labels and keeps explicit versions pinned. An optional name
-limits updates to that skill. Local edits require --force to replace.
-If verification needs an unavailable previous version, update stops before writing.
---force skips the historical check and allows replacing local files.
-With the lockfile enabled, installation directories must stay within the project
-and must not overlap other recorded installations, including through symlinks.
+       langfuse skills push <directory> [options]
 
 Install options:
   --tag <tag>             Install all skills with this tag instead of a name
@@ -245,14 +238,15 @@ Install options:
   --force                 Replace an existing installation when contents differ
   --json                  Print an object for a named install, otherwise an array
 
-Tag installs check all manifests and destinations before writing. If a download
-fails, skills already installed remain installed. No matches succeeds with an
-empty result (an empty array with --json).
-Tag listing stops with an error if the server reports more than 100 pages.
+Push options:
+  --label <label>         Apply a label and follow it in the lockfile (default: pin version)
+  --commit-message <text> Record why this version was published (max 500 characters)
+  --dry-run               Compare with latest and print changes without publishing
+  --recursive             Discover skills recursively; report and skip invalid skills
+  --update-only           Skip skills that do not exist in Langfuse
+  --no-lockfile           Skip reading and writing langfuse-skills-lock.json
+  --json                  Print an object, or an array with --recursive
 
-Matching local files skip content downloads. Unless --no-lockfile is set,
-installation metadata is recorded in langfuse-skills-lock.json in the working
-directory. Bare install and update require the lockfile.
 `);
 }
 
@@ -1230,7 +1224,7 @@ export async function run(argv: string[]): Promise<void> {
         printSkillsHelp();
         return;
       }
-      if (args[0] !== "install" && args[0] !== "update") {
+      if (args[0] !== "install" && args[0] !== "update" && args[0] !== "push") {
         throw new CliError(`Unknown skills action: ${args[0]}`);
       }
       if (["--help", "-h"].includes(args[1] ?? "")) {
@@ -1242,7 +1236,9 @@ export async function run(argv: string[]): Promise<void> {
           throw new CliError(`--${flag} is only supported by api commands, not skills ${args[0]}`);
         }
       }
-      await runSkillsCommand(await runtimeConfig(globals), args.slice(1), args[0]);
+      const config = await runtimeConfig(globals);
+      if (args[0] === "push") await runSkillsPush(config, args.slice(1));
+      else await runSkillsCommand(config, args.slice(1), args[0]);
       return;
     }
     if (command !== "api") {
