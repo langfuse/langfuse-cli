@@ -149,6 +149,42 @@ without a clean discriminator stay `--body-json`-only rather than guessing.
 | 6 | Local file or bundled-contract failure |
 | 7 | Invalid or inconsistent API response |
 
+## Langfuse-hosted skills
+
+Install skills from Langfuse by name, label, version, or tag:
+
+```sh
+langfuse skills install support-triage
+langfuse skills install support-triage@staging
+langfuse skills install support-triage@3
+langfuse skills install --tag support
+langfuse skills update
+```
+
+Install defaults to `production` and writes `langfuse-skills-lock.json`. Bare
+`skills install` restores the locked versions; `skills update` follows saved
+labels while keeping explicit versions pinned.
+
+Publish a skill maintained in your repository:
+
+```sh
+langfuse skills push .agents/skills/support-triage --dry-run --json
+langfuse skills push .agents/skills/support-triage \
+  --commit-message "Update triage guidance"
+langfuse skills push .agents/skills/support-triage --label production
+```
+
+Push all skills under a directory with opt-in recursive discovery:
+
+```sh
+langfuse skills push .agents/skills --recursive
+langfuse skills push .agents/skills --recursive --update-only --dry-run --json
+```
+
+```sh
+langfuse skills push .agents/skills --recursive --no-lockfile
+```
+
 ## Agent Usage
 
 The latest Langfuse skill lives in [`langfuse/skills`](https://github.com/langfuse/skills). Print the current version with:

@@ -5,6 +5,15 @@ import { join } from "node:path";
 import { CliError, EXIT_LOCAL } from "../errors";
 import type { SkillFile } from "./api";
 
+export function decodeSkillContent(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF+/, "");
+}
+
+function matchesFileHash(bytes: Uint8Array, expected: SkillFile): boolean {
+  return bytes.byteLength === expected.contentLength &&
+    createHash("sha256").update(bytes).digest("base64") === expected.sha256Hash;
+}
+
 export async function matchesManifest(directory: string, files: SkillFile[]): Promise<boolean> {
   const remaining = new Map(files.map((file) => [file.path, file]));
   const directories = [""];
@@ -22,10 +31,15 @@ export async function matchesManifest(directory: string, files: SkillFile[]): Pr
         const expected = remaining.get(path);
         if (!entry.isFile() || !expected) return false;
         const bytes = await readFile(join(directory, path));
-        if (
-          bytes.byteLength !== expected.contentLength ||
-          createHash("sha256").update(bytes).digest("base64") !== expected.sha256Hash
-        ) return false;
+        if (!matchesFileHash(bytes, expected)) {
+          let content: string;
+          try {
+            content = decodeSkillContent(bytes);
+          } catch {
+            return false;
+          }
+          if (!matchesFileHash(Buffer.from(content), expected)) return false;
+        }
         remaining.delete(path);
       }
     }
