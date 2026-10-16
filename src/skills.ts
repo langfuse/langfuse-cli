@@ -12,7 +12,7 @@ import {
 } from "./skills/api";
 import { parseSkillsOptions, type SkillAction } from "./skills/options";
 import { matchesManifest } from "./skills/local";
-import { readSkillsLock, writeSkillsLock, type LangfuseSkillsLock } from "./skills/lock";
+import { readSkillsLock, writeSkillsLock, recordLockedSkill, type LangfuseSkillsLock } from "./skills/lock";
 import { validateSkillDirectories } from "./skills/directories";
 import { resolveSkillTargets } from "./skills/targets";
 
@@ -23,7 +23,7 @@ export async function runSkillsCommand(
 ): Promise<void> {
   const options = parseSkillsOptions(args, action);
   const lock: LangfuseSkillsLock = options.noLockfile
-    ? { lockVersion: 1, skills: {} }
+    ? { lockVersion: 1, skills: [] }
     : await readSkillsLock();
   const targets = await resolveSkillTargets(config, options, lock, action);
   await validateSkillDirectories(targets.map(({ destination }) => destination), lock, options.noLockfile);
@@ -57,7 +57,7 @@ export async function runSkillsCommand(
     if (!unchanged) await installFiles(config, skill.files, destination, exists);
     if (!options.noLockfile) {
       const lockKey = relative(process.cwd(), destination).split(sep).join("/");
-      lock.skills[lockKey] = { name: skill.name, selector, version: skill.version };
+      recordLockedSkill(lock, { path: lockKey, name: skill.name, selector, version: skill.version });
       await writeSkillsLock(lock);
     }
     results.push({

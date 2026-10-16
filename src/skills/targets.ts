@@ -20,16 +20,17 @@ export async function resolveSkillTargets(
   action: SkillAction,
 ): Promise<SkillTarget[]> {
   if (action === "update" || (options.name === undefined && options.tag === undefined)) {
-    const entries = Object.entries(lock.skills)
-      .filter(([, skill]) => options.name === undefined || skill.name === options.name);
+    const entries = lock.skills
+      .filter((skill) => options.name === undefined || skill.name === options.name);
     if (entries.length === 0) {
       throw new CliError(options.name
-        ? `No installation of ${options.name} found in langfuse-skills-lock.json`
-        : "No skills recorded in langfuse-skills-lock.json; install a skill by name or --tag first",
+        ? `No installation of ${options.name} found in langfuse-skills.lock.json`
+        : "No skills recorded in langfuse-skills.lock.json; install a skill by name or --tag first",
       );
     }
     const destinations = new Set<string>();
-    return entries.map(([path, skill]) => {
+    return entries.map((skill) => {
+      const { path } = skill;
       const destination = resolve(path);
       if (isAbsolute(path) || destinations.has(destination)) {
         throw new CliError(`Invalid or duplicate installation directory in lockfile: ${path}`, EXIT_LOCAL);
