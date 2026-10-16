@@ -6,7 +6,7 @@ import { createSkillVersion, fetchLatestSkill, setSkillLabels, type SkillVersion
 import { discoverSkillDirectories, readLocalSkill, type LocalSkill, type LocalSkillFile } from "./local-skill";
 
 import { validateSkillDirectories } from "./directories";
-import { readSkillsLock, writeSkillsLock, type LangfuseSkillsLock } from "./lock";
+import { readSkillsLock, writeSkillsLock, recordLockedSkill, type LangfuseSkillsLock } from "./lock";
 
 interface PushOptions {
   directory: string;
@@ -232,14 +232,12 @@ async function labelPushedSkill(
 
 async function recordPushedSkill(lock: LangfuseSkillsLock, result: CompletedPushResult, label?: string): Promise<void> {
   const lockKey = relative(process.cwd(), result.directory).split(sep).join("/");
-  for (const key of Object.keys(lock.skills)) {
-    if (resolve(key) === result.directory) delete lock.skills[key];
-  }
-  lock.skills[lockKey] = {
+  recordLockedSkill(lock, {
+    path: lockKey,
     name: result.name,
     selector: label === undefined ? { version: result.version } : { label },
     version: result.version,
-  };
+  });
   await writeSkillsLock(lock);
 }
 

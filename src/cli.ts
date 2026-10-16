@@ -244,7 +244,7 @@ Push options:
   --dry-run               Compare with latest and print changes without publishing
   --recursive             Discover skills recursively; report and skip invalid skills
   --update-only           Skip skills that do not exist in Langfuse
-  --no-lockfile           Skip reading and writing langfuse-skills-lock.json
+  --no-lockfile           Skip reading and writing langfuse-skills.lock.json
   --json                  Print an object, or an array with --recursive
 
 `);

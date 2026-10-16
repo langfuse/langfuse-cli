@@ -7,7 +7,7 @@ import type { LangfuseSkillsLock } from "./lock";
 export async function validateSkillDirectories(targets: string[], lock: LangfuseSkillsLock, allowExternal: boolean): Promise<void> {
   if (targets.length === 0) return;
   const selected = new Set(targets);
-  const directories = [...new Set(targets.concat(Object.keys(lock.skills).map((path) => resolve(path))))];
+  const directories = [...new Set(targets.concat(lock.skills.map((skill) => resolve(skill.path))))];
   const physicalPaths = await Promise.all(directories.map(resolvePhysicalPath));
   if (!allowExternal) {
     const root = await realpath(process.cwd());
