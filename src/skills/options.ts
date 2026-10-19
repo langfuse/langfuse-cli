@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 
 import { CliError } from "../errors";
 import { skillNameSchema } from "./api";
+import { resolveSkillsLockPath } from "./lock";
 
 export type SkillAction = "install" | "update";
 
@@ -11,11 +12,11 @@ export interface SkillsOptions {
   version?: number;
   label?: string;
   directory: string;
+  lockfile?: string;
   force: boolean;
-  noLockfile: boolean;
 }
 
-export function parseSkillsOptions(args: string[], action: SkillAction = "install"): SkillsOptions {
+export async function parseSkillsOptions(args: string[], action: SkillAction = "install"): Promise<SkillsOptions> {
   let parsed;
   try {
     parsed = parseArgs({
@@ -26,6 +27,7 @@ export function parseSkillsOptions(args: string[], action: SkillAction = "instal
         version: { type: "string" },
         label: { type: "string" },
         directory: { type: "string" },
+        lockfile: { type: "string" },
         force: { type: "boolean", default: false },
         "no-lockfile": { type: "boolean", default: false },
       },
@@ -91,7 +93,7 @@ export function parseSkillsOptions(args: string[], action: SkillAction = "instal
     version,
     label: values.label,
     directory: values.directory ?? ".agents/skills",
+    lockfile: await resolveSkillsLockPath(values.directory ?? ".agents/skills", values.lockfile, values["no-lockfile"]),
     force: values.force,
-    noLockfile: values["no-lockfile"],
   };
 }

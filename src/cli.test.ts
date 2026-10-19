@@ -89,7 +89,7 @@ describe("hosted skills commands", () => {
           const lock = JSON.stringify({ lockVersion: 1, skills: [
             { path, name: "example", selector: { label: "production" }, version: 1 },
           ] });
-          await writeFile("langfuse-skills.lock.json", lock);
+          await writeFile("langfuse-skills.lock", lock);
           let requests = 0;
           const originalFetch = globalThis.fetch;
           globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
@@ -97,11 +97,11 @@ describe("hosted skills commands", () => {
             return originalFetch(...args);
           }) as typeof fetch;
           for (const action of ["install", "update"]) {
-            const result = await command([action]);
+            const result = await command([action, "--lockfile", "langfuse-skills.lock"]);
             expect(result.exitCode).toBe(6);
             expect(requests).toBe(0);
             expect(await readFile(join(outside, "example/SKILL.md"), "utf8").catch(() => null)).toBeNull();
-            expect(await readFile("langfuse-skills.lock.json", "utf8")).toBe(lock);
+            expect(await readFile("langfuse-skills.lock", "utf8")).toBe(lock);
           }
         } finally {
           await rm(outside, { recursive: true, force: true });
@@ -120,11 +120,11 @@ describe("hosted skills commands", () => {
         const result = await command(["install", "example", "--directory", outside]);
         expect(result.exitCode).toBe(6);
         expect(await readFile(join(outside, "example/SKILL.md"), "utf8").catch(() => null)).toBeNull();
-        await writeFile("langfuse-skills.lock.json", "invalid lock");
+        await writeFile(join(outside, "langfuse-skills.lock"), "invalid lock");
         const unlocked = await command(["install", "example", "--directory", outside, "--no-lockfile"]);
         expect(unlocked.exitCode).toBe(0);
         expect(await readFile(join(outside, "example/SKILL.md"), "utf8")).toBe("example");
-        expect(await readFile("langfuse-skills.lock.json", "utf8")).toBe("invalid lock");
+        expect(await readFile(join(outside, "langfuse-skills.lock"), "utf8")).toBe("invalid lock");
       } finally {
         await rm(outside, { recursive: true, force: true });
       }
@@ -136,13 +136,13 @@ describe("hosted skills commands", () => {
       await mkdir("example");
       process.chdir("example");
       await writeFile("SKILL.md", "original");
-      await writeFile("langfuse-skills.lock.json", JSON.stringify({ lockVersion: 1, skills: [
+      await writeFile("langfuse-skills.lock", JSON.stringify({ lockVersion: 1, skills: [
         { path: ".", name: "example", selector: { label: "production" }, version: 1 },
       ] }));
       const manifest = skillManifest("example", { "SKILL.md": "replacement" });
       manifests.set("example", manifest);
       contents.set(manifest.files[0].sha256Hash, "replacement");
-      const result = await command(["install", "--force"]);
+      const result = await command(["install", "--force", "--lockfile", "langfuse-skills.lock"]);
       expect(result.exitCode).toBe(6);
       expect(await readFile("SKILL.md", "utf8")).toBe("original");
     });
@@ -206,17 +206,17 @@ describe("hosted skills commands", () => {
           { path: parent, name: "parent", selector: { label: "production" }, version: 1 },
           { path: child, name: "child", selector: { label: "production" }, version: 1 },
         ] });
-        await writeFile("langfuse-skills.lock.json", lock);
+        await writeFile("langfuse-skills.lock", lock);
         for (const name of ["parent", "child"]) {
           const manifest = skillManifest(name, { "SKILL.md": `${name} replacement` }, 2);
           manifests.set(name, manifest);
           contents.set(manifest.files[0].sha256Hash, `${name} replacement`);
         }
-        const result = await command(args);
+        const result = await command([...args, "--lockfile", "langfuse-skills.lock"]);
         expect(result.exitCode).toBe(6);
         expect(await readFile(join(directory, parent, "SKILL.md"), "utf8")).toBe("parent original");
         expect(await readFile(join(directory, child, "SKILL.md"), "utf8")).toBe("child original");
-        expect(await readFile("langfuse-skills.lock.json", "utf8")).toBe(lock);
+        expect(await readFile("langfuse-skills.lock", "utf8")).toBe(lock);
       });
     });
   }
@@ -227,13 +227,13 @@ describe("hosted skills commands", () => {
       await mkdir(parent, { recursive: true });
       await writeFile(`${parent}/SKILL.md`, "original");
       await symlink(join(directory, parent), "alias", "dir");
-      await writeFile("langfuse-skills.lock.json", JSON.stringify({ lockVersion: 1, skills: [
+      await writeFile("langfuse-skills.lock", JSON.stringify({ lockVersion: 1, skills: [
         { path: parent, name: "parent", selector: { label: "production" }, version: 1 },
       ] }));
       const manifest = skillManifest("child", { "SKILL.md": "child" });
       manifests.set("child", manifest);
       contents.set(manifest.files[0].sha256Hash, "child");
-      const result = await command(["install", "child", "--directory", "alias/references"]);
+      const result = await command(["install", "child", "--directory", "alias/references", "--lockfile", "langfuse-skills.lock"]);
       expect(result.exitCode).toBe(6);
       expect(result.stderr).toContain("overlap");
       expect(await readFile(`${parent}/SKILL.md`, "utf8")).toBe("original");

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { z } from "zod";
 
 import { CliError, EXIT_LOCAL } from "../errors";
@@ -25,42 +25,61 @@ export const langfuseSkillsLockSchema = z.strictObject({
 export type LockedSkill = z.infer<typeof lockedSkillSchema>;
 export type LangfuseSkillsLock = z.infer<typeof langfuseSkillsLockSchema>;
 
-const LOCK_FILE = "langfuse-skills.lock.json";
+export async function resolveSkillsLockPath(directory: string, path?: string, noLockfile = false): Promise<string | undefined> {
+  if (path !== undefined && noLockfile) throw new CliError("Use either --lockfile or --no-lockfile, not both");
+  if (noLockfile) return undefined;
+  if (path === "") throw new CliError("--lockfile requires a value");
+  if (path !== undefined) return resolve(path);
+  const defaultPath = resolve(directory, "langfuse-skills.lock");
+  for (const candidate of new Set([defaultPath, resolve("langfuse-skills.lock")])) {
+    try {
+      await lstat(candidate);
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new CliError(`Cannot check ${candidate}: ${formatLockError(error)}`, EXIT_LOCAL);
+      }
+    }
+  }
+  return defaultPath;
+}
 
-export async function readSkillsLock(): Promise<LangfuseSkillsLock> {
+export async function readSkillsLock(path: string): Promise<LangfuseSkillsLock> {
   try {
-    const value: unknown = JSON.parse(await readFile(LOCK_FILE, "utf8"));
+    const value: unknown = JSON.parse(await readFile(path, "utf8"));
     return langfuseSkillsLockSchema.parse(value);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return { lockVersion: 1, skills: [] };
     }
     throw new CliError(
-      `Cannot read ${LOCK_FILE}: ${formatLockError(error)}`,
+      `Cannot read ${path}: ${formatLockError(error)}`,
       EXIT_LOCAL,
     );
   }
 }
 
-export function recordLockedSkill(lock: LangfuseSkillsLock, skill: LockedSkill): void {
-  const destination = resolve(skill.path);
-  lock.skills = lock.skills.filter((existing) => resolve(existing.path) !== destination);
+export function recordLockedSkill(lock: LangfuseSkillsLock, path: string, skill: LockedSkill): void {
+  const directory = dirname(path);
+  const destination = resolve(directory, skill.path);
+  lock.skills = lock.skills.filter((existing) => resolve(directory, existing.path) !== destination);
   lock.skills.push(skill);
 }
 
-export async function writeSkillsLock(lock: LangfuseSkillsLock): Promise<void> {
-  const temporary = `.${LOCK_FILE}.${randomUUID()}.tmp`;
+export async function writeSkillsLock(lock: LangfuseSkillsLock, path: string): Promise<void> {
+  const temporary = resolve(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {
     const validated = langfuseSkillsLockSchema.parse(lock);
     const sorted: LangfuseSkillsLock = {
       ...validated,
       skills: [...validated.skills].sort((a, b) => a.path.localeCompare(b.path)),
     };
+    await mkdir(dirname(path), { recursive: true });
     await writeFile(temporary, `${JSON.stringify(sorted, null, 2)}\n`, { flag: "wx" });
-    await rename(temporary, LOCK_FILE);
+    await rename(temporary, path);
   } catch (error) {
     throw new CliError(
-      `Cannot write ${LOCK_FILE}: ${formatLockError(error)}`,
+      `Cannot write ${path}: ${formatLockError(error)}`,
       EXIT_LOCAL,
     );
   } finally {

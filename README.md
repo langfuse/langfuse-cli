@@ -161,10 +161,6 @@ langfuse skills install --tag support
 langfuse skills update
 ```
 
-Install defaults to `production` and writes `langfuse-skills.lock.json`. Bare
-`skills install` restores the locked versions; `skills update` follows saved
-labels while keeping explicit versions pinned.
-
 Publish a skill maintained in your repository:
 
 ```sh

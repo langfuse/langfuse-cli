@@ -4,14 +4,19 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import { CliError, EXIT_LOCAL } from "../errors";
 import type { LangfuseSkillsLock } from "./lock";
 
-export async function validateSkillDirectories(targets: string[], lock: LangfuseSkillsLock, allowExternal: boolean): Promise<void> {
+export async function validateSkillDirectories(targets: string[], lock: LangfuseSkillsLock, lockfile?: string): Promise<void> {
   if (targets.length === 0) return;
   const selected = new Set(targets);
-  const directories = [...new Set(targets.concat(lock.skills.map((skill) => resolve(skill.path))))];
+  const lockDirectory = lockfile === undefined ? process.cwd() : dirname(lockfile);
+  const directories = [...new Set(targets.concat(lock.skills.map((skill) => resolve(lockDirectory, skill.path))))];
   const physicalPaths = await Promise.all(directories.map(resolvePhysicalPath));
-  if (!allowExternal) {
+  if (lockfile !== undefined) {
     const root = await realpath(process.cwd());
+    const lockPath = await resolvePhysicalPath(lockfile);
     for (let i = 0; i < directories.length; i++) {
+      if (containsDirectory(physicalPaths[i], lockPath)) {
+        throw new CliError(`Lockfile must be outside skill directories: ${lockfile}`, EXIT_LOCAL);
+      }
       if (selected.has(directories[i]) && (physicalPaths[i] === root || !containsDirectory(root, physicalPaths[i]))) {
         throw new CliError(`Locked skill directory must stay within the project: ${directories[i]}. Use --no-lockfile to work with a directory outside the project.`, EXIT_LOCAL);
       }

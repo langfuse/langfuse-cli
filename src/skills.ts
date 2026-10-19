@@ -21,12 +21,12 @@ export async function runSkillsCommand(
   args: string[],
   action: SkillAction = "install",
 ): Promise<void> {
-  const options = parseSkillsOptions(args, action);
-  const lock: LangfuseSkillsLock = options.noLockfile
+  const options = await parseSkillsOptions(args, action);
+  const lock: LangfuseSkillsLock = options.lockfile === undefined
     ? { lockVersion: 1, skills: [] }
-    : await readSkillsLock();
+    : await readSkillsLock(options.lockfile);
   const targets = await resolveSkillTargets(config, options, lock, action);
-  await validateSkillDirectories(targets.map(({ destination }) => destination), lock, options.noLockfile);
+  await validateSkillDirectories(targets.map(({ destination }) => destination), lock, options.lockfile);
 
   // Resolve every manifest and check destinations before changing any installation.
   const installations = [];
@@ -55,10 +55,10 @@ export async function runSkillsCommand(
   const results = [];
   for (const { skill, destination, selector, exists, unchanged } of installations) {
     if (!unchanged) await installFiles(config, skill.files, destination, exists);
-    if (!options.noLockfile) {
-      const lockKey = relative(process.cwd(), destination).split(sep).join("/");
-      recordLockedSkill(lock, { path: lockKey, name: skill.name, selector, version: skill.version });
-      await writeSkillsLock(lock);
+    if (options.lockfile !== undefined) {
+      const lockKey = relative(dirname(options.lockfile), destination).split(sep).join("/");
+      recordLockedSkill(lock, options.lockfile, { path: lockKey, name: skill.name, selector, version: skill.version });
+      await writeSkillsLock(lock, options.lockfile);
     }
     results.push({
       name: skill.name,

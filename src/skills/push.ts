@@ -1,4 +1,4 @@
-import { relative, resolve, sep } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 
 import { CliError, EXIT_LOCAL, EXIT_RESPONSE } from "../errors";
@@ -6,7 +6,7 @@ import { createSkillVersion, fetchLatestSkill, setSkillLabels, type SkillVersion
 import { discoverSkillDirectories, readLocalSkill, type LocalSkill, type LocalSkillFile } from "./local-skill";
 
 import { validateSkillDirectories } from "./directories";
-import { readSkillsLock, writeSkillsLock, recordLockedSkill, type LangfuseSkillsLock } from "./lock";
+import { readSkillsLock, writeSkillsLock, recordLockedSkill, resolveSkillsLockPath, type LangfuseSkillsLock } from "./lock";
 
 interface PushOptions {
   directory: string;
@@ -16,6 +16,7 @@ interface PushOptions {
   recursive: boolean;
   updateOnly: boolean;
   noLockfile: boolean;
+  lockfile?: string;
 }
 
 interface SnapshotChanges {
@@ -71,6 +72,7 @@ function parsePushOptions(args: string[]): PushOptions {
         recursive: { type: "boolean", default: false },
         "update-only": { type: "boolean", default: false },
         "no-lockfile": { type: "boolean", default: false },
+        lockfile: { type: "string" },
       },
     });
   } catch (error) {
@@ -95,6 +97,7 @@ function parsePushOptions(args: string[]): PushOptions {
     recursive: parsed.values.recursive,
     updateOnly: parsed.values["update-only"],
     noLockfile: parsed.values["no-lockfile"],
+    lockfile: parsed.values.lockfile,
   };
 }
 
@@ -230,15 +233,15 @@ async function labelPushedSkill(
   return { ...result, labels: skill.labels, status: result.status === "unchanged" ? "labeled" : result.status };
 }
 
-async function recordPushedSkill(lock: LangfuseSkillsLock, result: CompletedPushResult, label?: string): Promise<void> {
-  const lockKey = relative(process.cwd(), result.directory).split(sep).join("/");
-  recordLockedSkill(lock, {
+async function recordPushedSkill(lock: LangfuseSkillsLock, lockfile: string, result: CompletedPushResult, label?: string): Promise<void> {
+  const lockKey = relative(dirname(lockfile), result.directory).split(sep).join("/");
+  recordLockedSkill(lock, lockfile, {
     path: lockKey,
     name: result.name,
     selector: label === undefined ? { version: result.version } : { label },
     version: result.version,
   });
-  await writeSkillsLock(lock);
+  await writeSkillsLock(lock, lockfile);
 }
 
 function formatPushResult(result: PushResult): string {
@@ -271,13 +274,23 @@ function pushFailure(error: unknown, skill: LocalSkill, published: string[]): Cl
 
 export async function runSkillsPush(config: SkillsConfig, args: string[]): Promise<void> {
   const options = parsePushOptions(args);
+  let lockfile = await resolveSkillsLockPath(
+    options.recursive ? options.directory : dirname(options.directory),
+    options.lockfile,
+    options.noLockfile,
+  );
   const { skills, skipped } = await loadLocalSkills(options);
+  // Recursive discovery can select the root itself; keep metadata outside its snapshot.
+  if (options.recursive && options.lockfile === undefined &&
+      [...skills, ...skipped].some((skill) => skill.directory === options.directory)) {
+    lockfile = await resolveSkillsLockPath(dirname(options.directory), undefined, options.noLockfile);
+  }
   for (const result of skipped) {
     if (!config.json) process.stdout.write(`${formatPushResult(result)}\n`);
   }
-  const lock = options.noLockfile ? undefined : await readSkillsLock();
+  const lock = lockfile === undefined ? undefined : await readSkillsLock(lockfile);
   if (lock) {
-    await validateSkillDirectories(skills.map((skill) => skill.directory), lock, false);
+    await validateSkillDirectories(skills.map((skill) => skill.directory), lock, lockfile);
   }
   // Resolve all valid skills' remote versions before publishing.
   const plans = await planPush(config, skills);
@@ -291,7 +304,7 @@ export async function runSkillsPush(config: SkillsConfig, args: string[]): Promi
       if (result.status === "created") published.push(`${result.name}@${result.version}`);
       if ("labels" in result) {
         if (options.label !== undefined) result = await labelPushedSkill(config, result, options.label);
-        if (lock) await recordPushedSkill(lock, result, options.label);
+        if (lock && lockfile !== undefined) await recordPushedSkill(lock, lockfile, result, options.label);
       }
     } catch (error) {
       throw pushFailure(error, plan.local, published);

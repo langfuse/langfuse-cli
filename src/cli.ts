@@ -225,7 +225,7 @@ Examples:
 function printSkillsHelp(): void {
   process.stdout.write(`Usage: langfuse skills install [name[@selector]] [options]
        langfuse skills install --tag <tag> [options]
-       langfuse skills update [name] [--force] [--json]
+       langfuse skills update [name] [--lockfile <path>] [--force] [--json]
        langfuse skills push <directory> [options]
 
 Install options:
@@ -233,8 +233,6 @@ Install options:
   --version <number>      Install an immutable version (named skill only)
   --label <label>         Install this label for each selected skill
   --directory <path>      Parent directory (default: .agents/skills)
-  --no-lockfile           Skip lockfile reads/writes and recorded-directory checks
-                         (name or tag required; allows explicit external installs)
   --force                 Replace an existing installation when contents differ
   --json                  Print an object for a named install, otherwise an array
 
@@ -244,8 +242,14 @@ Push options:
   --dry-run               Compare with latest and print changes without publishing
   --recursive             Discover skills recursively; report and skip invalid skills
   --update-only           Skip skills that do not exist in Langfuse
-  --no-lockfile           Skip reading and writing langfuse-skills.lock.json
   --json                  Print an object, or an array with --recursive
+
+Lockfile options (install, update, and push):
+  --no-lockfile           Skip reading and writing langfuse-skills.lock
+                         Supported by push and install with a name or --tag
+  --lockfile <path>       Read/write this file instead of the default langfuse-skills.lock
+                         Lookup: explicit path, install/push directory, then cwd
+                         If none exists, create it in the install/push directory
 
 `);
 }
