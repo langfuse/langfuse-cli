@@ -22,9 +22,6 @@ export function betaPublishPlan(input: {
   registry: BetaRegistryPackage;
   tagName?: string;
 }): BetaReleasePlan {
-  if (!/^[0-9a-f]{40}$/.test(input.releaseSha)) {
-    throw new Error("release SHA must be a full lowercase commit SHA");
-  }
   if (!isBeta(input.version)) throw new Error("Beta publishing requires a beta version");
   const published = input.registry.versions[input.version];
   const distTag = releaseGuard({
@@ -103,9 +100,6 @@ async function registryPackage(packageName: string): Promise<BetaRegistryPackage
 }
 
 if (import.meta.main) {
-  if (process.env.GITHUB_EVENT_NAME !== "workflow_dispatch" || !process.env.GITHUB_REF?.startsWith("refs/heads/")) {
-    throw new Error("Beta releases require a manual workflow run on a branch");
-  }
   const path = `${import.meta.dir}/../package.json`;
   const pkg = await Bun.file(path).json();
   if (pkg.name !== CANONICAL_PACKAGE_NAME) throw new Error("Unexpected npm package identity");

@@ -83,11 +83,7 @@ describe("beta releases", () => {
     expect(result.packages.canonical.status).toBe("already-published");
   });
 
-  test("refuses invalid source identities and non-beta package bases", () => {
-    expect(() => betaReleasePlan({
-      version: "1.2.4", releaseSha: "short",
-      registry: registry(),
-    })).toThrow("full lowercase commit SHA");
+  test("refuses non-beta package bases and missing published commit metadata", () => {
     expect(() => plan(registry(), "1.3.0-rc.0")).toThrow("stable or beta");
     expect(() => plan(registry("1.2.5-beta.0", {
       "1.2.5-beta.0": {},
@@ -174,19 +170,11 @@ describe("beta workflow entry point", () => {
     });
   });
 
-  test("requires a manual branch run, enforces beta versions, and leaves Git unchanged", async () => {
+  test("enforces beta versions and leaves Git unchanged", async () => {
     await withFixture(async ({ root, firstSha, lastSha, git, execute }) => {
-      for (const overrides of [
-        { GITHUB_EVENT_NAME: "push" },
-        { GITHUB_REF: "refs/tags/v1.2.4" },
-      ]) {
-        const blocked = await execute(registry(), lastSha, [], overrides);
-        expect(blocked.status).toBe(1);
-        expect(blocked.stderr).toContain("require a manual workflow run on a branch");
-      }
-      const main = await execute(registry(), lastSha, [], { GITHUB_REF: "refs/heads/main" });
-      expect(main.status).toBe(0);
-      expect(main.stdout).toContain("skip=false");
+      const planned = await execute(registry(), lastSha);
+      expect(planned.status).toBe(0);
+      expect(planned.stdout).toBe("version=1.3.0-beta.0\nskip=false\n");
       const stable = await execute(registry(), lastSha, ["--apply"], { BETA_VERSION: "1.2.5" });
       expect(stable.status).toBe(1);
       expect((await Bun.file(join(root, "package.json")).json()).version).toBe("1.2.4");
