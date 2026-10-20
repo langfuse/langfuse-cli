@@ -9,6 +9,7 @@ export type SkillAction = "install" | "update";
 export interface SkillsOptions {
   name?: string;
   tag?: string;
+  all: boolean;
   version?: number;
   label?: string;
   directory: string;
@@ -24,6 +25,7 @@ export async function parseSkillsOptions(args: string[], action: SkillAction = "
       allowPositionals: true,
       options: {
         tag: { type: "string" },
+        all: { type: "boolean", default: false },
         version: { type: "string" },
         label: { type: "string" },
         directory: { type: "string" },
@@ -37,8 +39,12 @@ export async function parseSkillsOptions(args: string[], action: SkillAction = "
   }
 
   const { positionals, values } = parsed;
-  if (positionals.length > 1 || (values.tag !== undefined && positionals.length > 0)) {
-    throw new CliError("Provide at most one skill name, or --tag <tag>");
+  const selectors = Number(positionals.length > 0) + Number(values.tag !== undefined) + Number(values.all);
+  if (positionals.length > 1 || selectors > 1) {
+    throw new CliError("Use a skill name, --tag <tag>, or --all, not more than one");
+  }
+  if (action === "update" && values.all) {
+    throw new CliError("--all is only supported by skills install; skills update uses the lockfile");
   }
   let [name] = positionals;
   if (name?.includes("@")) {
@@ -58,8 +64,8 @@ export async function parseSkillsOptions(args: string[], action: SkillAction = "
       values.label = selector;
     }
   }
-  if (values["no-lockfile"] && (action === "update" || (name === undefined && values.tag === undefined))) {
-    throw new CliError("--no-lockfile requires skills install with a name or --tag; bare install and update require the lockfile");
+  if (values["no-lockfile"] && (action === "update" || selectors === 0)) {
+    throw new CliError("--no-lockfile requires skills install with a name, --tag, or --all; bare install and update require the lockfile");
   }
   if (name !== undefined && !skillNameSchema.safeParse(name).success) {
     throw new CliError("Skill names may only contain lowercase letters, numbers, and single hyphens");
@@ -70,10 +76,10 @@ export async function parseSkillsOptions(args: string[], action: SkillAction = "
       throw new CliError(`skills update uses saved selectors and directories; --${option} is only supported by skills install`);
     }
   }
-  if (name === undefined && values.tag === undefined) {
+  if (selectors === 0) {
     for (const option of ["version", "label", "directory"] as const) {
       if (values[option] !== undefined) {
-        throw new CliError(`--${option} requires a skill name or --tag; bare install uses the lockfile`);
+        throw new CliError(`--${option} requires a skill name, --tag, or --all; bare install uses the lockfile`);
       }
     }
   }
@@ -84,12 +90,13 @@ export async function parseSkillsOptions(args: string[], action: SkillAction = "
   if (version !== undefined && values.label !== undefined) {
     throw new CliError("Use either --version or --label, not both");
   }
-  if (version !== undefined && values.tag !== undefined) {
-    throw new CliError("--version requires a skill name; use --label with --tag");
+  if (version !== undefined && name === undefined) {
+    throw new CliError("--version requires a skill name; use --label with --tag or --all");
   }
   return {
     name,
     tag: values.tag,
+    all: values.all,
     version,
     label: values.label,
     directory: values.directory ?? ".agents/skills",

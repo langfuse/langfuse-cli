@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import { CliError, EXIT_LOCAL } from "../errors";
-import { fetchSkillNamesByTag, type SkillsConfig, type SkillSelector } from "./api";
+import { fetchSkillNames, type SkillsConfig, type SkillSelector } from "./api";
 import type { LangfuseSkillsLock } from "./lock";
 import type { SkillsOptions, SkillAction } from "./options";
 
@@ -19,7 +19,7 @@ export async function resolveSkillTargets(
   lock: LangfuseSkillsLock,
   action: SkillAction,
 ): Promise<SkillTarget[]> {
-  if (action === "update" || (options.name === undefined && options.tag === undefined)) {
+  if (action === "update" || (options.name === undefined && options.tag === undefined && !options.all)) {
     const lockfile = options.lockfile;
     if (lockfile === undefined) throw new CliError("Bare install and update require a lockfile");
     const entries = lock.skills
@@ -27,7 +27,7 @@ export async function resolveSkillTargets(
     if (entries.length === 0) {
       throw new CliError(options.name
         ? `No installation of ${options.name} found in ${options.lockfile}`
-        : `No skills recorded in ${options.lockfile}; install a skill by name or --tag first`,
+        : `No skills recorded in ${options.lockfile}; install a skill by name, --tag, or --all first`,
       );
     }
     const destinations = new Set<string>();
@@ -51,8 +51,8 @@ export async function resolveSkillTargets(
   const selector: SkillSelector = options.version !== undefined
     ? { version: options.version }
     : { label: options.label ?? "production" };
-  const names = options.tag !== undefined
-    ? await fetchSkillNamesByTag(config, options.tag)
+  const names = options.all || options.tag !== undefined
+    ? await fetchSkillNames(config, options.tag)
     : [options.name!];
   return names.map((name) => ({
     name,

@@ -188,7 +188,7 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
-  skills install          Install Langfuse-hosted skills by name or tag
+  skills install          Install Langfuse-hosted skills by name, tag, or --all
   skills update           Update locked skills using their saved selectors
   skills push             Publish a local skill directory to Langfuse
   get-skill               Print the latest Langfuse skill from GitHub
@@ -215,6 +215,7 @@ Examples:
   langfuse skills install support-triage@staging
   langfuse skills install support-triage@3
   langfuse skills install --tag support
+  langfuse skills install --all
   langfuse skills install
   langfuse skills update
   langfuse skills push .agents/skills/support-triage
@@ -225,10 +226,12 @@ Examples:
 function printSkillsHelp(): void {
   process.stdout.write(`Usage: langfuse skills install [name[@selector]] [options]
        langfuse skills install --tag <tag> [options]
+       langfuse skills install --all [options]
        langfuse skills update [name] [--lockfile <path>] [--force] [--json]
        langfuse skills push <directory> [options]
 
 Install options:
+  --all                   Install every skill in the connected Langfuse project
   --tag <tag>             Install all skills with this tag instead of a name
   --version <number>      Install an immutable version (named skill only)
   --label <label>         Install this label for each selected skill
@@ -246,7 +249,7 @@ Push options:
 
 Lockfile options (install, update, and push):
   --no-lockfile           Skip reading and writing langfuse-skills.lock
-                         Supported by push and install with a name or --tag
+                         Supported by push and install with a name, --tag, or --all
   --lockfile <path>       Read/write this file instead of the default langfuse-skills.lock
                          Lookup: explicit path, install/push directory, then cwd
                          If none exists, create it in the install/push directory

@@ -151,13 +151,14 @@ without a clean discriminator stay `--body-json`-only rather than guessing.
 
 ## Langfuse-hosted skills
 
-Install skills from Langfuse by name, label, version, or tag:
+Install skills from Langfuse by name, label, version, tag, or all at once:
 
 ```sh
 langfuse skills install support-triage
 langfuse skills install support-triage@staging
 langfuse skills install support-triage@3
 langfuse skills install --tag support
+langfuse skills install --all
 langfuse skills update
 ```
 

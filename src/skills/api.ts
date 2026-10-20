@@ -52,13 +52,15 @@ export type SkillVersion = z.infer<typeof skillVersionSchema>;
 export const FILE_CONTENT_BATCH_SIZE = 50;
 const MAX_SKILL_LIST_PAGES = 100;
 
-export async function fetchSkillNamesByTag(
+export async function fetchSkillNames(
   config: SkillsConfig,
-  tag: string,
+  tag?: string,
 ): Promise<string[]> {
   const names = new Set<string>();
   for (let page = 1; page <= MAX_SKILL_LIST_PAGES; page++) {
-    const value = await requestJson(config, "", { tag, page: String(page), limit: "100" });
+    const query: Record<string, string> = { page: String(page), limit: "100" };
+    if (tag !== undefined) query.tag = tag;
+    const value = await requestJson(config, "", query);
     const result = skillListSchema.safeParse(value);
     if (!result.success) {
       throw new CliError("Langfuse returned an invalid skill list", EXIT_RESPONSE);

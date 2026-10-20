@@ -79,7 +79,9 @@ export async function runSkillsCommand(
     const result = action === "install" && options.name !== undefined ? results[0] : results;
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } else if (targets.length === 0) {
-    process.stdout.write(`No skills found with tag ${JSON.stringify(options.tag)}\n`);
+    process.stdout.write(options.all
+      ? "No skills found in this Langfuse project\n"
+      : `No skills found with tag ${JSON.stringify(options.tag)}\n`);
   }
 }
 
