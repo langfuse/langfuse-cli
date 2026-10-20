@@ -49,7 +49,8 @@
     "ajv-formats": "^3.0.1",
     "semver": "^7.8.5",
     "typescript": "^7.0.2",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.6.5"
   },
   "overrides": {
     "ajv": "8.17.1"
