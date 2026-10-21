@@ -68,8 +68,8 @@ an entry applied in no snapshot at all fails the build, tests, and
 
 ## Releases
 
-Push to `main` freely; nothing publishes on push. Releases are a three-step
-flow with a human gate in the middle:
+Push to `main` freely; nothing publishes on push. Releases are a four-step
+flow with two human gates, the last one outside GitHub:
 
 ```sh
 bun run release
@@ -87,23 +87,44 @@ bun run release
    and opens a **draft GitHub release** with generated notes.
 2. **Publish the GitHub release**: edit the notes on GitHub and click
    Publish. This is the release decision — nothing reaches npm before it.
-3. **npm publish** (automatic): publishing the release triggers
+3. **npm stage** (automatic): publishing the release triggers
    [`release.yml`](.github/workflows/release.yml), which re-verifies the
    release against the same policy module the cut script uses
    (`scripts/release-guard.ts`: tag == package.json version, commit on main,
    prerelease consistency, identifier whitelist, both package channels in
    sync, and dist-tags never moving backwards), verifies both packed tarballs,
-   re-runs all gates, and publishes `@langfuse/cli` followed by the
+   re-runs all gates, and **stages** `@langfuse/cli` followed by the
    `langfuse-cli` compatibility package via **npm trusted publishing (OIDC)**
    with provenance attestations. No npm token exists anywhere.
+4. **Approve on npm** (human, npm 2FA): staged versions are not installable.
+   The workflow run summary lists both stage ids. Approve `@langfuse/cli`
+   first, then `langfuse-cli`:
+
+   ```sh
+   npm stage list                  # pending stage ids
+   npm stage download <stage-id>   # optional: inspect the exact tarball
+   npm stage approve <stage-id>    # prompts for 2FA
+   ```
+
+   Approval also works on npmjs.com. Reject with `npm stage reject <stage-id>`
+   if anything looks wrong. This gate lives outside GitHub on purpose: stolen
+   GitHub credentials can trigger and approve the workflow, but cannot approve
+   an npm stage.
 
 Both packages come from one build. `scripts/npm-packages.ts` stages two package
 roots with identical `bin/`, `dist/`, version, and `langfuse` executable. The
 canonical package receives `README.md`; the compatibility package receives
-`npm/legacy/README.md` as its npm `README.md`. The scoped package publishes
-first. If the second publish fails, rerun the workflow: the guard skips an
-existing version only when its `gitHead` matches the release commit, then
-publishes the missing package.
+`npm/legacy/README.md` as its npm `README.md`. The scoped package stages
+first. Staged versions are invisible to the guard, so if the second stage
+fails, approve the already-staged canonical version and then rerun the
+workflow: the guard skips an existing version only when its `gitHead` matches
+the release commit, then stages the missing package. A rerun before that
+approval fails on the already-staged version.
+
+Beta releases ([`beta-release.yml`](.github/workflows/beta-release.yml)) are
+staged the same way and need the same npm approval. Approve or reject a staged
+beta before dispatching the next one; until then the next run computes the
+same version and fails at the staging step.
 
 npm dist-tags derive from the version: stable → `latest`, `-alpha.N` →
 `alpha`, `-beta.N` → `beta`, `-rc.N` → `rc`. Prerelease versions must be
@@ -148,10 +169,21 @@ On npmjs.com → `@langfuse/cli` → Settings, and again on
 `langfuse-cli` → Settings:
 
 1. **Trusted Publisher** → GitHub: owner `langfuse`, repository `langfuse-cli`,
-   workflow filename `release.yml`, environment `npm-publish`.
+   workflow filename `release.yml`, environment `npm-publish`. Allow **stage
+   publish only**, not direct publish, so a workflow run can never make a
+   version installable by itself. On `@langfuse/cli`, add a second trusted
+   publisher for `beta-release.yml` with environment `npm-publish-beta`, also
+   stage-only. From the CLI:
+
+   ```sh
+   npm trust github @langfuse/cli --file release.yml \
+     --repo langfuse/langfuse-cli --env npm-publish --allow-stage-publish
+   ```
+
 2. **Publishing access**: "Require two-factor authentication and disallow
-   tokens" — CI publishes via the trusted publisher, humans can still
-   `--publish-local` interactively with OTP, and no token can ever publish.
+   tokens" — CI stages via the trusted publisher, a maintainer approves with
+   2FA, humans can still `--publish-local` interactively with OTP, and no token
+   can ever publish.
 
 In the GitHub repo, environment protection is **required, not optional**:
 `release` events execute the workflow file **as of the tagged commit**, so

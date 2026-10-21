@@ -1,18 +1,20 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# Publishes the canonical and compatibility npm packages when a GitHub release
+# Stages the canonical and compatibility npm packages when a GitHub release
 # is published.
 #
 # Flow: `bun run release` pushes a release commit + tag and opens a draft
 # GitHub release. A human edits the notes and publishes the release, which
-# triggers this workflow. Publishing authenticates via npm trusted publishing
+# triggers this workflow. Staging authenticates via npm trusted publishing
 # (OIDC) — no npm token exists anywhere — and npm attaches provenance
-# attestations automatically.
+# attestations automatically. Staged versions are not installable until an
+# npm maintainer approves them with npm 2FA, so neither this workflow nor any
+# GitHub credential can put a version in front of users on its own.
 #
 # One-time npm/GitHub setup: see MAINTENANCE.md "One-time npm configuration".
 # The npm-publish environment MUST carry protection rules (required
 # reviewers + deployment tag policy): release events execute this workflow
 # file as of the tagged commit, so environment protection is the platform
-# gate between "has push access" and "can publish to npm".
+# gate between "has push access" and "can stage on npm".
 name: Release
 
 on:
@@ -91,20 +93,20 @@ jobs:
       - name: Build and fake-call every endpoint in every API snapshot
         run: bun run conformance:all
 
-      - name: Set up Node (bundles the npm that performs the publish)
+      - name: Set up Node (bundles the npm that performs the staging)
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           # This workflow publishes an artifact; never restore caches into it.
           package-manager-cache: false
 
-      - name: Verify npm supports trusted publishing (requires npm >= 11.5.1)
+      - name: Verify npm supports staged publishing (requires npm >= 11.15.0)
         run: |
           set -euo pipefail
           NPM_VERSION="$(npm --version)"
-          MINIMUM="11.5.1"
+          MINIMUM="11.15.0"
           if [ "$(printf '%s\n' "$MINIMUM" "$NPM_VERSION" | sort -V | head -n1)" != "$MINIMUM" ]; then
-            echo "::error::npm $NPM_VERSION is too old for trusted publishing (need >= $MINIMUM)"
+            echo "::error::npm $NPM_VERSION is too old for npm stage publish (need >= $MINIMUM)"
             exit 1
           fi
           echo "npm $NPM_VERSION"
@@ -167,50 +169,46 @@ jobs:
           echo "FINAL_PLAN=$FINAL_PLAN" >> "$GITHUB_ENV"
           jq '.packages' <<< "$FINAL_PLAN"
 
+      - name: Start the approval summary
+        run: |
+          {
+            echo "### npm packages staged, approval required"
+            echo ""
+            echo "Nothing is installable yet. Approve on npmjs.com, or run"
+            echo "\`npm stage approve <id>\`, in the order listed."
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # conformance:all already built dist/; --ignore-scripts avoids a second
       # prepublishOnly build producing a different publish than was verified.
-      # Canonical publishes first so a partial failure never blocks old-name
-      # users from their previously working version.
-      - name: Publish @langfuse/cli to npm
+      # Canonical stages first and should be approved first, so a partial
+      # failure never blocks old-name users from their previously working
+      # version. Staged versions are invisible to release-guard.ts, so a rerun
+      # fails on the already-staged version until it is approved or rejected.
+      - name: Stage @langfuse/cli on npm
         run: |
           set -euo pipefail
           STATUS="$(jq -r '.packages.canonical.status' <<< "$FINAL_PLAN")"
           VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
           if [ "$STATUS" = "already-published" ]; then
             echo "@langfuse/cli@$VERSION was already published from this release; skipping."
+            echo "- @langfuse/cli@$VERSION already published from this release" >> "$GITHUB_STEP_SUMMARY"
           else
-            npm publish "$PACKAGE_ROOT/canonical" --ignore-scripts --tag "$DIST_TAG"
+            RESULT="$(npm stage publish "$PACKAGE_ROOT/canonical" --ignore-scripts --tag "$DIST_TAG")"
+            echo "$RESULT"
+            grep '^+ ' <<< "$RESULT" | sed 's/^+ /- /' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Publish langfuse-cli compatibility package to npm
+      - name: Stage langfuse-cli compatibility package on npm
         run: |
           set -euo pipefail
           STATUS="$(jq -r '.packages.legacy.status' <<< "$FINAL_PLAN")"
           VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
           if [ "$STATUS" = "already-published" ]; then
             echo "langfuse-cli@$VERSION was already published from this release; skipping."
+            echo "- langfuse-cli@$VERSION already published from this release" >> "$GITHUB_STEP_SUMMARY"
           else
-            npm publish "$PACKAGE_ROOT/legacy" --ignore-scripts --tag "$DIST_TAG"
+            RESULT="$(npm stage publish "$PACKAGE_ROOT/legacy" --ignore-scripts --tag "$DIST_TAG")"
+            echo "$RESULT"
+            grep '^+ ' <<< "$RESULT" | sed 's/^+ /- /' >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      - name: Verify both publishes reached npm
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
-        run: |
-          set -euo pipefail
-          EXPECTED_VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
-          for attempt in 1 2 3 4 5; do
-            if PUBLISHED_PLAN="$(bun scripts/release-guard.ts --json)" &&
-              [ "$(jq -r '.packages.canonical.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
-              [ "$(jq -r '.packages.legacy.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
-              [ "$(npm view "@langfuse/cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ] &&
-              [ "$(npm view "langfuse-cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ]; then
-              jq '.packages' <<< "$PUBLISHED_PLAN"
-              echo "Both npm packages verified."
-              exit 0
-            fi
-            sleep "$((attempt * 2))"
-          done
-          echo "::error::could not verify both npm packages from release commit $RELEASE_SHA"
-          exit 1

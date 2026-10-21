@@ -65,9 +65,10 @@ function printHelp(): void {
 
 Cuts a release: verifies main is clean, green, and in sync, runs all gates,
 bumps the version, pushes a release commit + tag, and opens a draft GitHub
-release. Publishing the GitHub release triggers the npm publish via GitHub
-Actions (.github/workflows/release.yml, npm trusted publishing) for both
-${CANONICAL_PACKAGE_NAME} and ${LEGACY_PACKAGE_NAME}.
+release. Publishing the GitHub release stages both ${CANONICAL_PACKAGE_NAME}
+and ${LEGACY_PACKAGE_NAME} on npm via GitHub Actions
+(.github/workflows/release.yml, npm trusted publishing); an npm maintainer then
+approves each staged version with npm 2FA.
 
 Options:
   --version <semver>  Release an explicit version without the version prompt
@@ -470,7 +471,7 @@ async function runGates(): Promise<void> {
 }
 
 // Default mode: cut a release. Pushes a release commit + tag and opens a
-// draft GitHub release; publishing that release triggers the npm publish in
+// draft GitHub release; publishing that release stages the npm packages in
 // GitHub Actions via npm trusted publishing. Never touches npm itself.
 async function cutRelease(): Promise<void> {
   if (!isDryRun) {
