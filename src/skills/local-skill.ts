@@ -59,7 +59,8 @@ export async function discoverSkillDirectories(directory: string): Promise<strin
       for (const entry of entries) {
         const path = join(current, entry.name);
         if (entry.isSymbolicLink()) {
-          throw new Error(`Skill discovery does not follow symlinks: ${path}`);
+          process.stderr.write(`Skipped ${path}: symlinks are not supported\n`);
+          continue;
         }
         if (entry.isDirectory()) pending.push(path);
       }
