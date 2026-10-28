@@ -34,32 +34,42 @@ async function isDirectoryWithinRoot(root: string, directory: string): Promise<b
   return !outsideRoot && (await lstat(directory)).isDirectory();
 }
 
-export async function discoverSkillDirectories(directory: string): Promise<string[]> {
+export async function discoverSkillDirectories(directory: string, followSymlinks = false): Promise<string[]> {
   const skills: string[] = [];
-  const pending = [directory];
+  const visited = new Set<string>();
 
   try {
-    if (!(await lstat(directory)).isDirectory()) {
+    const source = followSymlinks ? await realpath(directory) : directory;
+    if (!(await lstat(source)).isDirectory()) {
       throw new Error("The skills directory must be a real directory, not a symlink");
     }
-    const root = await realpath(directory);
+    const root = await realpath(source);
+    const pending = [source];
 
     while (pending.length > 0) {
       const current = pending.pop()!;
-      if (!(await isDirectoryWithinRoot(root, current))) {
+      if (!followSymlinks && !(await isDirectoryWithinRoot(root, current))) {
         throw new Error(`Directory must stay inside the skills root without symlinks: ${current}`);
       }
-      const entries = await readdir(current, { withFileTypes: true });
+      const physical = await realpath(current);
+      if (visited.has(physical)) continue;
+      visited.add(physical);
+      const entries = await readdir(physical, { withFileTypes: true });
 
       // A skill owns its nested resources, including any additional SKILL.md files.
       if (entries.some((entry) => entry.name === "SKILL.md")) {
-        skills.push(current);
+        skills.push(followSymlinks ? physical : current);
         continue;
       }
       for (const entry of entries) {
         const path = join(current, entry.name);
         if (entry.isSymbolicLink()) {
-          process.stderr.write(`Skipped ${path}: symlinks are not supported\n`);
+          if (followSymlinks) {
+            const target = await resolveLinkedDirectory(path);
+            if (target !== undefined) pending.push(target);
+          } else {
+            process.stderr.write(`Skipped ${path}: symlinks are not supported\n`);
+          }
           continue;
         }
         if (entry.isDirectory()) pending.push(path);
@@ -70,6 +80,18 @@ export async function discoverSkillDirectories(directory: string): Promise<strin
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`Cannot discover skills at ${directory}: ${message}`, EXIT_LOCAL);
   }
+}
+
+async function resolveLinkedDirectory(path: string): Promise<string | undefined> {
+  try {
+    const target = await realpath(path);
+    if ((await lstat(target)).isDirectory()) return target;
+    process.stderr.write(`Skipped ${path}: only directory symlinks are supported\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Skipped ${path}: cannot resolve directory symlink: ${message}\n`);
+  }
+  return undefined;
 }
 
 function validateFilePath(path: string): void {
@@ -179,10 +201,11 @@ function readSkillName(files: LocalSkillFile[]): string {
   return name.trim();
 }
 
-export async function readLocalSkill(directory: string): Promise<LocalSkill> {
+export async function readLocalSkill(directory: string, followSymlinks = false): Promise<LocalSkill> {
   try {
-    const files = await readSkillFiles(directory);
-    return { name: readSkillName(files), directory, files };
+    const source = followSymlinks ? await realpath(directory) : directory;
+    const files = await readSkillFiles(source);
+    return { name: readSkillName(files), directory: source, files };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`Cannot read skill at ${directory}: ${message}`, EXIT_LOCAL);

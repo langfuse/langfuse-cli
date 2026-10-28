@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -14,6 +15,7 @@ interface PushOptions {
   label?: string;
   dryRun: boolean;
   recursive: boolean;
+  followSymlinks: boolean;
   updateOnly: boolean;
   noLockfile: boolean;
   lockfile?: string;
@@ -70,6 +72,7 @@ function parsePushOptions(args: string[]): PushOptions {
         label: { type: "string" },
         "dry-run": { type: "boolean", default: false },
         recursive: { type: "boolean", default: false },
+        "follow-symlinks": { type: "boolean", default: false },
         "update-only": { type: "boolean", default: false },
         "no-lockfile": { type: "boolean", default: false },
         lockfile: { type: "string" },
@@ -95,6 +98,7 @@ function parsePushOptions(args: string[]): PushOptions {
     label,
     dryRun: parsed.values["dry-run"],
     recursive: parsed.values.recursive,
+    followSymlinks: parsed.values["follow-symlinks"],
     updateOnly: parsed.values["update-only"],
     noLockfile: parsed.values["no-lockfile"],
     lockfile: parsed.values.lockfile,
@@ -106,7 +110,7 @@ async function loadLocalSkills(options: PushOptions): Promise<{
   skipped: SkippedLocalSkill[];
 }> {
   const directories = options.recursive
-    ? await discoverSkillDirectories(options.directory)
+    ? await discoverSkillDirectories(options.directory, options.followSymlinks)
     : [options.directory];
   const skills: LocalSkill[] = [];
   const skipped: SkippedLocalSkill[] = [];
@@ -115,7 +119,7 @@ async function loadLocalSkills(options: PushOptions): Promise<{
   for (const directory of directories) {
     let skill: LocalSkill;
     try {
-      skill = await readLocalSkill(directory);
+      skill = await readLocalSkill(directory, options.followSymlinks);
     } catch (error) {
       if (!options.recursive || !(error instanceof CliError) || error.exitCode !== EXIT_LOCAL) {
         throw error;
@@ -280,9 +284,10 @@ export async function runSkillsPush(config: SkillsConfig, args: string[]): Promi
     options.noLockfile,
   );
   const { skills, skipped } = await loadLocalSkills(options);
+  const sourceDirectory = options.followSymlinks ? await realpath(options.directory) : options.directory;
   // Recursive discovery can select the root itself; keep metadata outside its snapshot.
   if (options.recursive && options.lockfile === undefined &&
-      [...skills, ...skipped].some((skill) => skill.directory === options.directory)) {
+      [...skills, ...skipped].some((skill) => skill.directory === sourceDirectory)) {
     lockfile = await resolveSkillsLockPath(dirname(options.directory), undefined, options.noLockfile);
   }
   for (const result of skipped) {

@@ -176,6 +176,7 @@ Push all skills under a directory with opt-in recursive discovery:
 ```sh
 langfuse skills push .agents/skills --recursive
 langfuse skills push .agents/skills --recursive --update-only --dry-run --json
+langfuse skills push .claude/skills --recursive --follow-symlinks
 ```
 
 ```sh

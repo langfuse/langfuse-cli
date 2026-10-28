@@ -244,6 +244,8 @@ Push options:
   --commit-message <text> Record why this version was published (max 500 characters)
   --dry-run               Compare with latest and print changes without publishing
   --recursive             Discover skills recursively; report and skip invalid skills
+  --follow-symlinks       Follow source/discovery directory links; record real paths
+                         Links inside a skill remain unsupported
   --update-only           Skip skills that do not exist in Langfuse
   --json                  Print an object, or an array with --recursive
 
