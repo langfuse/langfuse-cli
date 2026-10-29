@@ -12,6 +12,8 @@ import {
   EXIT_NETWORK,
 } from "./errors";
 import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
+import { runSkillsCommand } from "./skills";
+import { runSkillsPush } from "./skills/push";
 import {
   loadApiContract,
   loadContractCatalog,
@@ -186,6 +188,9 @@ Usage: langfuse [options] <command>
 
 Commands:
   api                     Interact with the Langfuse REST API
+  skills install          Install Langfuse-hosted skills by name, tag, or --all
+  skills update           Update locked skills using their saved selectors
+  skills push             Publish a local skill directory to Langfuse
   get-skill               Print the latest Langfuse skill from GitHub
 
 Options:
@@ -199,13 +204,62 @@ Options:
   --version               Show CLI version
 
 Exit codes:
-  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file
+  0 success · 2 usage · 3 configuration · 4 network · 5 HTTP error · 6 local file · 7 invalid response
 
 Examples:
   langfuse api help
   langfuse api prompts list
   langfuse api prompts create --body-json '{"name":"my-prompt","type":"text","prompt":"Hello"}'
   langfuse api observations list --limit 20
+  langfuse skills install support-triage
+  langfuse skills install support-triage@staging
+  langfuse skills install support-triage@3
+  langfuse skills install --tag support
+  langfuse skills install --all
+  langfuse skills install
+  langfuse skills update
+  langfuse skills push .agents/skills/support-triage
+  langfuse skills push .agents/skills --recursive --update-only
+`);
+}
+
+function printSkillsHelp(): void {
+  process.stdout.write(`Usage: langfuse skills install [name[@selector]] [options]
+       langfuse skills install --tag <tag> [options]
+       langfuse skills install --all [options]
+       langfuse skills update [name] [--directory <path>] [--lockfile <path>] [--force] [--json]
+       langfuse skills push <directory> [options]
+
+Install options:
+  --all                   Install every skill in the connected Langfuse project
+                         Without --label, bulk installs skip skills without production
+  --tag <tag>             Install all skills with this tag instead of a name
+  --version <number>      Install an immutable version (named skill only)
+  --label <label>         Install this label for each selected skill
+  --force                 Replace an existing installation when contents differ
+  --json                  Print an object for a named install, otherwise an array
+
+Install and update directory:
+  --directory <path>      Install parent or lockfile lookup directory (default: .agents/skills)
+                         Restore/update use the destinations recorded in the lockfile
+
+Push options:
+  --label <label>         Apply a label and follow it in the lockfile (default: pin version)
+  --commit-message <text> Record why this version was published (max 500 characters)
+  --dry-run               Compare with latest and print changes without publishing
+  --recursive             Discover skills recursively; report and skip invalid skills
+  --follow-symlinks       Follow source/discovery directory links; record real paths
+                         Links inside a skill remain unsupported
+  --update-only           Skip skills that do not exist in Langfuse
+  --json                  Print an object, or an array with --recursive
+
+Lockfile options (install, update, and push):
+  --no-lockfile           Skip reading and writing langfuse-skills.lock
+                         Supported by push and install with a name, --tag, or --all
+  --lockfile <path>       Read/write this file instead of the default langfuse-skills.lock
+                         Lookup: explicit path, install/push directory, then cwd
+                         If none exists, create it in the install/push directory
+
 `);
 }
 
@@ -1171,6 +1225,35 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (command === "get-skill") {
       await getSkill();
+      return;
+    }
+    if (command === "skills") {
+      if (
+        args.length === 0 ||
+        args[0] === "help" ||
+        args[0] === "--help" ||
+        args[0] === "-h"
+      ) {
+        printSkillsHelp();
+        return;
+      }
+      if (args[0] !== "install" && args[0] !== "update" && args[0] !== "push") {
+        throw new CliError(`Unknown skills action: ${args[0]}`);
+      }
+      if (["--help", "-h"].includes(args[1] ?? "")) {
+        printSkillsHelp();
+        return;
+      }
+      for (const flag of ["curl", "show-secrets", "output", "api-version"]) {
+        if (globals.booleans.has(flag) || globals.values[flag] !== undefined) {
+          throw new CliError(`--${flag} is only supported by api commands, not skills ${args[0]}`);
+        }
+      }
+      const config = await runtimeConfig(globals);
+      const catalog = await loadContractCatalog();
+      const skillsConfig = { ...config, contract: await loadApiContract(catalog.latest) };
+      if (args[0] === "push") await runSkillsPush(skillsConfig, args.slice(1));
+      else await runSkillsCommand(skillsConfig, args.slice(1), args[0]);
       return;
     }
     if (command !== "api") {

@@ -147,6 +147,40 @@ without a clean discriminator stay `--body-json`-only rather than guessing.
 | 4 | Network, DNS, TLS, or timeout failure reaching the host |
 | 5 | The API responded with a non-success HTTP status (response is still printed) |
 | 6 | Local file or bundled-contract failure |
+| 7 | Invalid or inconsistent API response |
+
+## Langfuse-hosted skills
+
+Install skills from Langfuse by name, label, version, tag, or all at once:
+
+```sh
+langfuse skills install skill_name
+langfuse skills install skill_name@staging
+langfuse skills install skill_name@3
+langfuse skills install --tag tag
+langfuse skills install --all
+langfuse skills update
+```
+
+Publish a skill maintained in your repository:
+
+```sh
+langfuse skills push ./path/to/skills/skill_name --dry-run --json
+langfuse skills push ./path/to/skills/skill_name \
+  --commit-message "commit message"
+langfuse skills push ./path/to/skills/skill_name --label production
+```
+
+Push all skills under a directory with opt-in recursive discovery:
+
+```sh
+langfuse skills push ./path/to/skills --recursive
+langfuse skills push ./path/to/skills --recursive --update-only --dry-run --json
+```
+
+```sh
+langfuse skills push ./path/to/skills --recursive --no-lockfile
+```
 
 ## Agent Usage
 

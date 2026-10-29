@@ -13,6 +13,9 @@
     "llmConnections_upsert": {
       "secretKey": "provider-secret-key"
     },
+    "llmConnections_upsertOrganization": {
+      "secretKey": "provider-secret-key"
+    },
     "projects_createApiKey": {
       "publicKey": "predefined-public-key",
       "secretKey": "predefined-secret-key"

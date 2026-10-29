@@ -46,6 +46,13 @@
       "commit": "3089a77f2b86e08058a868802f43e417982094f0",
       "sha256": "8f3a25d28afbf8bdd710d8e7a5c60d65ff5c71315764c46c8dea504e8f67adb6",
       "knownIssues": ["oas3.0-const-keyword"]
+    },
+    {
+      "version": "4.71.0",
+      "ref": "v4.71.0",
+      "commit": "d89f49b82620dc9a773bd2f97449289f4f6c199e",
+      "sha256": "550c9d3f9d572bcb119850b36284a38c8b43b70cf0c672105e33dcd5627ae253",
+      "knownIssues": ["oas3.0-const-keyword"]
     }
   ]
 }
