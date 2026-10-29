@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { CliError, EXIT_LOCAL } from "../errors";
 import { skillNameSchema, skillSelectorSchema } from "./api";
+import { resolvePhysicalPath } from "./directories";
 
 const lockedSkillSchema = z.strictObject({
   // Installation directory relative to this lockfile and within the project.
@@ -29,19 +30,23 @@ export async function resolveSkillsLockPath(directory: string, path?: string, no
   if (path !== undefined && noLockfile) throw new CliError("Use either --lockfile or --no-lockfile, not both");
   if (noLockfile) return undefined;
   if (path === "") throw new CliError("--lockfile requires a value");
-  if (path !== undefined) return resolve(path);
+  if (path !== undefined) return canonicalizeLockPath(resolve(path));
   const defaultPath = resolve(directory, "langfuse-skills.lock");
   for (const candidate of new Set([defaultPath, resolve("langfuse-skills.lock")])) {
     try {
       await lstat(candidate);
-      return candidate;
+      return canonicalizeLockPath(candidate);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw new CliError(`Cannot check ${candidate}: ${formatLockError(error)}`, EXIT_LOCAL);
       }
     }
   }
-  return defaultPath;
+  return canonicalizeLockPath(defaultPath);
+}
+
+async function canonicalizeLockPath(path: string): Promise<string> {
+  return resolve(await resolvePhysicalPath(dirname(path)), basename(path));
 }
 
 export async function readSkillsLock(path: string): Promise<LangfuseSkillsLock> {

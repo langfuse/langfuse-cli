@@ -2,6 +2,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 
 import { CliError, EXIT_LOCAL } from "../errors";
 import { fetchSkills, type SkillsConfig, type SkillSelector } from "./api";
+import { resolvePhysicalPath } from "./directories";
 import type { LangfuseSkillsLock } from "./lock";
 import type { SkillsOptions, SkillAction } from "./options";
 
@@ -71,9 +72,10 @@ export async function resolveSkillTargets(
   } else {
     names.push(options.name!);
   }
+  const directory = await resolvePhysicalPath(resolve(options.directory));
   const targets = names.map((name) => ({
     name,
-    destination: resolve(options.directory, name),
+    destination: resolve(directory, name),
     selector,
     request: selector,
   }));

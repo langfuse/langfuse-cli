@@ -32,7 +32,7 @@ export async function validateSkillDirectories(targets: string[], lock: Langfuse
   }
 }
 
-async function resolvePhysicalPath(path: string): Promise<string> {
+export async function resolvePhysicalPath(path: string): Promise<string> {
   try {
     return await realpath(path);
   } catch (error) {
