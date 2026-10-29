@@ -205,7 +205,7 @@ export async function readLocalSkill(directory: string, followSymlinks = false):
   try {
     const source = followSymlinks ? await realpath(directory) : directory;
     const files = await readSkillFiles(source);
-    return { name: readSkillName(files), directory: source, files };
+    return { name: readSkillName(files), directory: await realpath(source), files };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`Cannot read skill at ${directory}: ${message}`, EXIT_LOCAL);

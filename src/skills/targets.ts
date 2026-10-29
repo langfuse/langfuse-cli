@@ -72,12 +72,11 @@ export async function resolveSkillTargets(
   } else {
     names.push(options.name!);
   }
-  const directory = await resolvePhysicalPath(resolve(options.directory));
-  const targets = names.map((name) => ({
+  const targets = await Promise.all(names.map(async (name) => ({
     name,
-    destination: resolve(directory, name),
+    destination: await resolvePhysicalPath(resolve(options.directory, name)),
     selector,
     request: selector,
-  }));
+  })));
   return { targets, skipped };
 }

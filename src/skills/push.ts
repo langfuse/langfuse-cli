@@ -288,10 +288,10 @@ export async function runSkillsPush(config: SkillsConfig, args: string[]): Promi
     options.noLockfile,
   );
   const { skills, skipped } = await loadLocalSkills(options);
-  const sourceDirectory = options.followSymlinks ? await realpath(options.directory) : options.directory;
+  const sourceDirectory = await realpath(options.directory);
   // Recursive discovery can select the root itself; keep metadata outside its snapshot.
   if (options.recursive && options.lockfile === undefined &&
-      [...skills, ...skipped].some((skill) => skill.directory === sourceDirectory)) {
+      [...skills, ...skipped].some((skill) => skill.directory === sourceDirectory || skill.directory === options.directory)) {
     lockfile = await resolveSkillsLockPath(dirname(options.directory), undefined, options.noLockfile);
   }
   for (const result of skipped) {

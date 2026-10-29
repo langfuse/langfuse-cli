@@ -7,6 +7,9 @@ import type { LangfuseSkillsLock } from "./lock";
 export async function validateSkillDirectories(targets: string[], lock: LangfuseSkillsLock, lockfile?: string): Promise<void> {
   if (targets.length === 0) return;
   const selected = new Set(targets);
+  if (selected.size !== targets.length) {
+    throw new CliError("Multiple skills target the same installation directory", EXIT_LOCAL);
+  }
   const lockDirectory = lockfile === undefined ? process.cwd() : dirname(lockfile);
   const directories = [...new Set(targets.concat(lock.skills.map((skill) => resolve(lockDirectory, skill.path))))];
   const physicalPaths = await Promise.all(directories.map(resolvePhysicalPath));
