@@ -154,10 +154,10 @@ without a clean discriminator stay `--body-json`-only rather than guessing.
 Install skills from Langfuse by name, label, version, tag, or all at once:
 
 ```sh
-langfuse skills install support-triage
-langfuse skills install support-triage@staging
-langfuse skills install support-triage@3
-langfuse skills install --tag support
+langfuse skills install skill_name
+langfuse skills install skill_name@staging
+langfuse skills install skill_name@3
+langfuse skills install --tag tag
 langfuse skills install --all
 langfuse skills update
 ```
@@ -165,22 +165,21 @@ langfuse skills update
 Publish a skill maintained in your repository:
 
 ```sh
-langfuse skills push .agents/skills/support-triage --dry-run --json
-langfuse skills push .agents/skills/support-triage \
-  --commit-message "Update triage guidance"
-langfuse skills push .agents/skills/support-triage --label production
+langfuse skills push ./path/to/skills/skill_name --dry-run --json
+langfuse skills push ./path/to/skills/skill_name \
+  --commit-message "commit message"
+langfuse skills push ./path/to/skills/skill_name --label production
 ```
 
 Push all skills under a directory with opt-in recursive discovery:
 
 ```sh
-langfuse skills push .agents/skills --recursive
-langfuse skills push .agents/skills --recursive --update-only --dry-run --json
-langfuse skills push .claude/skills --recursive --follow-symlinks
+langfuse skills push ./path/to/skills --recursive
+langfuse skills push ./path/to/skills --recursive --update-only --dry-run --json
 ```
 
 ```sh
-langfuse skills push .agents/skills --recursive --no-lockfile
+langfuse skills push ./path/to/skills --recursive --no-lockfile
 ```
 
 ## Agent Usage
