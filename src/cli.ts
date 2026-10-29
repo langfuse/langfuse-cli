@@ -227,17 +227,21 @@ function printSkillsHelp(): void {
   process.stdout.write(`Usage: langfuse skills install [name[@selector]] [options]
        langfuse skills install --tag <tag> [options]
        langfuse skills install --all [options]
-       langfuse skills update [name] [--lockfile <path>] [--force] [--json]
+       langfuse skills update [name] [--directory <path>] [--lockfile <path>] [--force] [--json]
        langfuse skills push <directory> [options]
 
 Install options:
   --all                   Install every skill in the connected Langfuse project
+                         Without --label, bulk installs skip skills without production
   --tag <tag>             Install all skills with this tag instead of a name
   --version <number>      Install an immutable version (named skill only)
   --label <label>         Install this label for each selected skill
-  --directory <path>      Parent directory (default: .agents/skills)
   --force                 Replace an existing installation when contents differ
   --json                  Print an object for a named install, otherwise an array
+
+Install and update directory:
+  --directory <path>      Install parent or lockfile lookup directory (default: .agents/skills)
+                         Restore/update use the destinations recorded in the lockfile
 
 Push options:
   --label <label>         Apply a label and follow it in the lockfile (default: pin version)

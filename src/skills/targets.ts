@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import { CliError, EXIT_LOCAL } from "../errors";
-import { fetchSkillNames, type SkillsConfig, type SkillSelector } from "./api";
+import { fetchSkills, type SkillsConfig, type SkillSelector } from "./api";
 import type { LangfuseSkillsLock } from "./lock";
 import type { SkillsOptions, SkillAction } from "./options";
 
@@ -13,12 +13,18 @@ interface SkillTarget {
   previousVersion?: number;
 }
 
+interface SkippedSkill {
+  name: string;
+  status: "skipped";
+  reason: "no-production-version";
+}
+
 export async function resolveSkillTargets(
   config: SkillsConfig,
   options: SkillsOptions,
   lock: LangfuseSkillsLock,
   action: SkillAction,
-): Promise<SkillTarget[]> {
+): Promise<{ targets: SkillTarget[]; skipped: SkippedSkill[] }> {
   if (action === "update" || (options.name === undefined && options.tag === undefined && !options.all)) {
     const lockfile = options.lockfile;
     if (lockfile === undefined) throw new CliError("Bare install and update require a lockfile");
@@ -31,7 +37,7 @@ export async function resolveSkillTargets(
       );
     }
     const destinations = new Set<string>();
-    return entries.map((skill) => {
+    const targets = entries.map((skill) => {
       const { path } = skill;
       const destination = resolve(dirname(lockfile), path);
       if (isAbsolute(path) || destinations.has(destination)) {
@@ -46,18 +52,30 @@ export async function resolveSkillTargets(
         previousVersion: skill.version,
       };
     });
+    return { targets, skipped: [] };
   }
 
   const selector: SkillSelector = options.version !== undefined
     ? { version: options.version }
     : { label: options.label ?? "production" };
-  const names = options.all || options.tag !== undefined
-    ? await fetchSkillNames(config, options.tag)
-    : [options.name!];
-  return names.map((name) => ({
+  const names: string[] = [];
+  const skipped: SkippedSkill[] = [];
+  if (options.all || options.tag !== undefined) {
+    for (const skill of await fetchSkills(config, options.tag)) {
+      if (options.label === undefined && skill.productionVersion === null) {
+        skipped.push({ name: skill.name, status: "skipped", reason: "no-production-version" });
+      } else {
+        names.push(skill.name);
+      }
+    }
+  } else {
+    names.push(options.name!);
+  }
+  const targets = names.map((name) => ({
     name,
     destination: resolve(options.directory, name),
     selector,
     request: selector,
   }));
+  return { targets, skipped };
 }

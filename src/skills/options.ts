@@ -72,12 +72,12 @@ export async function parseSkillsOptions(args: string[], action: SkillAction = "
   }
   for (const option of ["tag", "version", "label", "directory"] as const) {
     if (values[option] === "") throw new CliError(`--${option} requires a value`);
-    if (action === "update" && values[option] !== undefined) {
+    if (action === "update" && option !== "directory" && values[option] !== undefined) {
       throw new CliError(`skills update uses saved selectors and directories; --${option} is only supported by skills install`);
     }
   }
   if (selectors === 0) {
-    for (const option of ["version", "label", "directory"] as const) {
+    for (const option of ["version", "label"] as const) {
       if (values[option] !== undefined) {
         throw new CliError(`--${option} requires a skill name, --tag, or --all; bare install uses the lockfile`);
       }

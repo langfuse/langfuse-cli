@@ -25,7 +25,10 @@ export async function runSkillsCommand(
   const lock: LangfuseSkillsLock = options.lockfile === undefined
     ? { lockVersion: 1, skills: [] }
     : await readSkillsLock(options.lockfile);
-  const targets = await resolveSkillTargets(config, options, lock, action);
+  const { targets, skipped } = await resolveSkillTargets(config, options, lock, action);
+  for (const skill of skipped) {
+    process.stderr.write(`Skipped ${skill.name}: no production version\n`);
+  }
   await validateSkillDirectories(targets.map(({ destination }) => destination), lock, options.lockfile);
 
   // Resolve every manifest and check destinations before changing any installation.
@@ -76,9 +79,9 @@ export async function runSkillsCommand(
     }
   }
   if (config.json) {
-    const result = action === "install" && options.name !== undefined ? results[0] : results;
+    const result = action === "install" && options.name !== undefined ? results[0] : [...skipped, ...results];
     process.stdout.write(`${JSON.stringify(result)}\n`);
-  } else if (targets.length === 0) {
+  } else if (results.length === 0 && skipped.length === 0) {
     process.stdout.write(options.all
       ? "No skills found in this Langfuse project\n"
       : `No skills found with tag ${JSON.stringify(options.tag)}\n`);

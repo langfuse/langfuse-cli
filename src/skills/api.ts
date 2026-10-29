@@ -36,8 +36,13 @@ const skillVersionSchema = z.object({
   files: z.array(skillFileSchema).min(1),
 });
 
+const skillSummarySchema = z.object({
+  name: skillNameSchema,
+  productionVersion: z.number().int().positive().nullable(),
+});
+
 const skillListSchema = z.object({
-  data: z.array(z.object({ name: skillNameSchema })),
+  data: z.array(skillSummarySchema),
   meta: z.object({ hasNextPage: z.boolean() }),
 });
 
@@ -52,11 +57,11 @@ export type SkillVersion = z.infer<typeof skillVersionSchema>;
 export const FILE_CONTENT_BATCH_SIZE = 50;
 const MAX_SKILL_LIST_PAGES = 100;
 
-export async function fetchSkillNames(
+export async function fetchSkills(
   config: SkillsConfig,
   tag?: string,
-): Promise<string[]> {
-  const names = new Set<string>();
+): Promise<z.infer<typeof skillSummarySchema>[]> {
+  const skills = new Map<string, z.infer<typeof skillSummarySchema>>();
   for (let page = 1; page <= MAX_SKILL_LIST_PAGES; page++) {
     const query: Record<string, string> = { page: String(page), limit: "100" };
     if (tag !== undefined) query.tag = tag;
@@ -65,8 +70,8 @@ export async function fetchSkillNames(
     if (!result.success) {
       throw new CliError("Langfuse returned an invalid skill list", EXIT_RESPONSE);
     }
-    for (const skill of result.data.data) names.add(skill.name);
-    if (!result.data.meta.hasNextPage) return [...names];
+    for (const skill of result.data.data) skills.set(skill.name, skill);
+    if (!result.data.meta.hasNextPage) return [...skills.values()];
   }
   throw new CliError(`Langfuse skill listing exceeded ${MAX_SKILL_LIST_PAGES} pages; no skills were installed`, EXIT_RESPONSE);
 }
@@ -186,7 +191,7 @@ async function requestJson(
   } catch (error) {
     throw new CliError(`${method} ${url.href} failed: ${error instanceof Error ? error.message : String(error)}`, EXIT_NETWORK);
   }
-  if (response.status === 404 && options.allowNotFound) return undefined;
+  if (response.status === 404 && options.allowNotFound && isResourceNotFound(text)) return undefined;
   if (!response.ok) {
     throw new CliError(`${method} ${url.href} returned HTTP ${response.status}${responseError(text)}`, EXIT_HTTP);
   }
@@ -194,6 +199,16 @@ async function requestJson(
     return JSON.parse(text);
   } catch {
     throw new CliError("Langfuse returned invalid JSON for the skill", EXIT_RESPONSE);
+  }
+}
+
+function isResourceNotFound(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body);
+    return typeof parsed?.message === "string" &&
+      (parsed.code === "resource_not_found" || parsed.error === "LangfuseNotFoundError");
+  } catch {
+    return false;
   }
 }
 
