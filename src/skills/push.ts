@@ -56,7 +56,7 @@ type CompletedPushResult = SkillResult & {
 
 type ValidSkillResult = CompletedPushResult | SkillResult & { version: number | null } & (
   | { status: "skipped"; reason: "not-found"; dryRun?: true }
-  | { status: "unchanged" | "would-create" | "would-label"; changes: SnapshotChanges; dryRun: true; label?: string }
+  | { status: "unchanged" | "would-create" | "would-label"; changes: SnapshotChanges; dryRun: true; expectedVersion: number; label?: string }
 );
 
 type PushResult = SkippedLocalSkill | ValidSkillResult;
@@ -213,6 +213,7 @@ async function pushSkill(config: SkillsConfig, options: PushOptions, plan: PushP
       status: unchanged ? (wouldLabel ? "would-label" : "unchanged") : "would-create",
       changes,
       dryRun: true,
+      expectedVersion: unchanged ? previous!.version : (previous?.version ?? 0) + 1,
       ...(options.label !== undefined ? { label: options.label } : {}),
     };
   }
@@ -258,7 +259,10 @@ function formatPushResult(result: PushResult): string {
   if ("dryRun" in result) {
     const { added, changed, removed } = result.changes;
     const label = result.label === undefined ? "" : `; label: ${result.label}`;
-    return `Dry run: ${result.name} (${added.length} added, ${changed.length} changed, ${removed.length} removed${label})`;
+    const versions = result.version === null
+      ? `->v${result.expectedVersion}`
+      : `v${result.version}->v${result.expectedVersion}`;
+    return `Dry run: ${result.name} ${versions} (${added.length} added, ${changed.length} changed, ${removed.length} removed${label})`;
   }
   const action = result.status === "unchanged" ? "Already up to date"
     : result.status === "labeled" ? "Labeled" : "Published";
