@@ -1250,8 +1250,10 @@ export async function run(argv: string[]): Promise<void> {
         }
       }
       const config = await runtimeConfig(globals);
-      if (args[0] === "push") await runSkillsPush(config, args.slice(1));
-      else await runSkillsCommand(config, args.slice(1), args[0]);
+      const catalog = await loadContractCatalog();
+      const skillsConfig = { ...config, contract: await loadApiContract(catalog.latest) };
+      if (args[0] === "push") await runSkillsPush(skillsConfig, args.slice(1));
+      else await runSkillsCommand(skillsConfig, args.slice(1), args[0]);
       return;
     }
     if (command !== "api") {

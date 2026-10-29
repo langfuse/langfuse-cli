@@ -1,13 +1,11 @@
 import { z } from "zod";
 
-import packageJson from "../../package.json";
-import { CliError, EXIT_CONFIG, EXIT_HTTP, EXIT_NETWORK, EXIT_RESPONSE } from "../errors";
+import { createApiClient } from "../client";
+import type { ApiCallInput, ApiClientConfig, ApiContract, JsonValue } from "../contracts/types";
+import { CliError, EXIT_HTTP, EXIT_LOCAL, EXIT_RESPONSE } from "../errors";
 
-export interface SkillsConfig {
-  publicKey?: string;
-  secretKey?: string;
-  host: string;
-  timeoutMs: number;
+export interface SkillsConfig extends ApiClientConfig {
+  contract: ApiContract;
   json: boolean;
 }
 
@@ -65,7 +63,7 @@ export async function fetchSkills(
   for (let page = 1; page <= MAX_SKILL_LIST_PAGES; page++) {
     const query: Record<string, string> = { page: String(page), limit: "100" };
     if (tag !== undefined) query.tag = tag;
-    const value = await requestJson(config, "", query);
+    const value = await requestJson(config, "skills_list", { query });
     const result = skillListSchema.safeParse(value);
     if (!result.success) {
       throw new CliError("Langfuse returned an invalid skill list", EXIT_RESPONSE);
@@ -87,7 +85,7 @@ export async function fetchSkill(
   } else {
     query.label = selector.label;
   }
-  const value = await requestJson(config, encodeURIComponent(name), query);
+  const value = await requestJson(config, "skills_get", { path: { skillName: name }, query });
   const result = skillVersionSchema.safeParse(value);
   if (!result.success || result.data.name !== name) {
     throw new CliError("Langfuse returned an invalid skill manifest", EXIT_RESPONSE);
@@ -96,7 +94,9 @@ export async function fetchSkill(
 }
 
 export async function fetchLatestSkill(config: SkillsConfig, name: string): Promise<SkillVersion | undefined> {
-  const value = await requestJson(config, encodeURIComponent(name), { label: "latest" }, { allowNotFound: true });
+  const value = await requestJson(config, "skills_get", {
+    path: { skillName: name }, query: { label: "latest" },
+  }, { allowNotFound: true });
   return value === undefined ? undefined : parseSkillVersion(value, name);
 }
 
@@ -106,7 +106,9 @@ export async function createSkillVersion(
   files: Array<{ path: string; content: string }>,
   commitMessage?: string,
 ): Promise<SkillVersion> {
-  const value = await requestJson(config, "", {}, { method: "POST", body: { files, commitMessage } });
+  const value = await requestJson(config, "skills_createVersion", {
+    body: { files, ...(commitMessage === undefined ? {} : { commitMessage }) },
+  });
   return parseSkillVersion(value, name);
 }
 
@@ -116,8 +118,9 @@ export async function setSkillLabels(
   version: number,
   labels: string[],
 ): Promise<SkillVersion> {
-  const route = `${encodeURIComponent(name)}/versions/${version}`;
-  const value = await requestJson(config, route, {}, { method: "PATCH", body: { labels } });
+  const value = await requestJson(config, "skills_setLabels", {
+    path: { skillName: name, skillVersion: version }, body: { labels },
+  });
   const skill = parseSkillVersion(value, name);
   if (skill.version !== version || labels.some((label) => !skill.labels.includes(label))) {
     throw new CliError("Langfuse returned a skill version that does not match the requested labels", EXIT_RESPONSE);
@@ -137,8 +140,8 @@ export async function fetchFileContents(
   config: SkillsConfig,
   hashes: string[],
 ): Promise<Map<string, string>> {
-  const value = await requestJson(config, "files/content", {
-    sha256Hashes: hashes.join(","),
+  const value = await requestJson(config, "skills_getFileContents", {
+    query: { sha256Hashes: hashes.join(",") },
   });
   const result = fileContentsSchema.safeParse(value);
   if (!result.success) {
@@ -160,63 +163,36 @@ export async function fetchFileContents(
 
 async function requestJson(
   config: SkillsConfig,
-  route: string,
-  query: Record<string, string>,
-  options: { method?: "POST" | "PATCH"; body?: unknown; allowNotFound?: boolean } = {},
+  operationId: string,
+  input: Partial<ApiCallInput>,
+  options: { allowNotFound?: boolean } = {},
 ): Promise<unknown> {
-  if (!config.publicKey || !config.secretKey) {
-    throw new CliError("This command requires LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY", EXIT_CONFIG);
+  const operation = config.contract.operations.find((candidate) => candidate.operationId === operationId);
+  if (!operation) {
+    throw new CliError(`Bundled API contract ${config.contract.apiVersion} has no ${operationId} operation`, EXIT_LOCAL);
   }
-  const host = config.host.endsWith("/") ? config.host : `${config.host}/`;
-  const url = new URL(`api/public/unstable/skills${route ? `/${route}` : ""}`, host);
-  url.search = new URLSearchParams(query).toString();
-  const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`;
-  const method = options.method ?? "GET";
-  let response: Response;
-  let text: string;
-  try {
-    response = await fetch(url, {
-      method,
-      headers: {
-        accept: "application/json",
-        authorization,
-        "user-agent": `langfuse-cli/${packageJson.version}`,
-        ...(options.body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      redirect: "error",
-      signal: AbortSignal.timeout(config.timeoutMs),
-    });
-    text = await response.text();
-  } catch (error) {
-    throw new CliError(`${method} ${url.href} failed: ${error instanceof Error ? error.message : String(error)}`, EXIT_NETWORK);
-  }
-  if (response.status === 404 && options.allowNotFound && isResourceNotFound(text)) return undefined;
+  const client = createApiClient(config);
+  const request: ApiCallInput = { path: {}, query: {}, headers: {}, cookies: {}, ...input };
+  const response = await client.call(operation, request);
+  if (response.status === 404 && options.allowNotFound && isResourceNotFound(response.body)) return undefined;
   if (!response.ok) {
-    throw new CliError(`${method} ${url.href} returned HTTP ${response.status}${responseError(text)}`, EXIT_HTTP);
+    const { url, method } = client.prepare(operation, request);
+    throw new CliError(`${method} ${url.href} returned HTTP ${response.status}${responseError(response.body)}`, EXIT_HTTP);
   }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new CliError("Langfuse returned invalid JSON for the skill", EXIT_RESPONSE);
-  }
+  return response.body;
 }
 
-function isResourceNotFound(body: string): boolean {
-  try {
-    const parsed = JSON.parse(body);
-    return typeof parsed?.message === "string" &&
-      (parsed.code === "resource_not_found" || parsed.error === "LangfuseNotFoundError");
-  } catch {
-    return false;
-  }
+function isResourceNotFound(body: JsonValue): boolean {
+  return body !== null && typeof body === "object" && !Array.isArray(body) &&
+    typeof body.message === "string" &&
+    (body.code === "resource_not_found" || body.error === "LangfuseNotFoundError");
 }
 
-function responseError(body: string): string {
-  try {
-    const parsed = JSON.parse(body);
-    const message = parsed?.message ?? parsed?.error;
+function responseError(body: JsonValue): string {
+  if (body !== null && typeof body === "object" && !Array.isArray(body)) {
+    const message = body.message ?? body.error;
     if (typeof message === "string") return `: ${message}`;
-  } catch {}
-  return body.trim() ? `: ${body.trim().slice(0, 300)}` : "";
+  }
+  const text = typeof body === "string" ? body.trim() : body === null ? "" : JSON.stringify(body);
+  return text ? `: ${text.slice(0, 300)}` : "";
 }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,7 +19,12 @@ import {
 import { createApiClient, prepareRequest } from "./client";
 import { CliError } from "./errors";
 import { compileApiContract } from "./contracts/compiler";
+import * as contractLoader from "./contracts/loader";
+import { loadCatalog, readVerifiedSpec } from "../conformance/src/catalog";
 import type { ApiOperation } from "./contracts/types";
+
+const latestSpec = (await loadCatalog()).versions.at(-1)!;
+const skillsContract = compileApiContract(latestSpec, await readVerifiedSpec(latestSpec));
 
 function skillManifest(name: string, contents: Record<string, string>, version = 1) {
   return {
@@ -44,6 +49,12 @@ async function withSkillsFixture(fn: (fixture: {
   const previousExitCode = process.exitCode;
   const manifests = new Map<string, ReturnType<typeof skillManifest>>();
   const contents = new Map<string, string>();
+  const catalogLoader = spyOn(contractLoader, "loadContractCatalog").mockResolvedValue({
+    schemaVersion: 1,
+    latest: skillsContract.apiVersion,
+    versions: [{ version: skillsContract.apiVersion, sourceSha256: skillsContract.sourceSha256 }],
+  });
+  const apiLoader = spyOn(contractLoader, "loadApiContract").mockResolvedValue(skillsContract);
   try {
     process.chdir(directory);
     globalThis.fetch = (async (input: string | URL | Request) => {
@@ -64,6 +75,8 @@ async function withSkillsFixture(fn: (fixture: {
       return { ...output, exitCode: Number(process.exitCode ?? 0) };
     } });
   } finally {
+    catalogLoader.mockRestore();
+    apiLoader.mockRestore();
     process.chdir(previousCwd);
     globalThis.fetch = previousFetch;
     process.exitCode = previousExitCode ?? 0;

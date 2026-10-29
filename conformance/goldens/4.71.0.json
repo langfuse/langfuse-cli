@@ -154,34 +154,6 @@
     "action": "list"
   },
   {
-    "operationId": "datasetRunItems_create",
-    "key": "POST /api/public/dataset-run-items",
-    "resource": "legacy-dataset-run-items",
-    "action": "create",
-    "aliases": [
-      {
-        "resource": "dataset-run-items",
-        "action": "create",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "datasetRunItems_list",
-    "key": "GET /api/public/dataset-run-items",
-    "resource": "legacy-dataset-run-items",
-    "action": "list",
-    "aliases": [
-      {
-        "resource": "dataset-run-items",
-        "action": "list",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
-  },
-  {
     "operationId": "datasets_create",
     "key": "POST /api/public/v2/datasets",
     "resource": "datasets",
@@ -195,20 +167,6 @@
     ]
   },
   {
-    "operationId": "datasets_deleteRun",
-    "key": "DELETE /api/public/datasets/{datasetName}/runs/{runName}",
-    "resource": "legacy-datasets",
-    "action": "delete-run",
-    "aliases": [
-      {
-        "resource": "datasets",
-        "action": "delete-run",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
-  },
-  {
     "operationId": "datasets_get",
     "key": "GET /api/public/v2/datasets/{datasetName}",
     "resource": "datasets",
@@ -220,34 +178,6 @@
         "source": "version"
       }
     ]
-  },
-  {
-    "operationId": "datasets_getRun",
-    "key": "GET /api/public/datasets/{datasetName}/runs/{runName}",
-    "resource": "legacy-datasets",
-    "action": "get-run",
-    "aliases": [
-      {
-        "resource": "datasets",
-        "action": "get-run",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "datasets_getRuns",
-    "key": "GET /api/public/datasets/{datasetName}/runs",
-    "resource": "legacy-datasets",
-    "action": "list-runs",
-    "aliases": [
-      {
-        "resource": "datasets",
-        "action": "list-runs",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
   },
   {
     "operationId": "datasets_list",
@@ -430,84 +360,23 @@
     "action": "get"
   },
   {
-    "operationId": "ingestion_batch",
-    "key": "POST /api/public/ingestion",
-    "resource": "legacy-ingestion",
-    "action": "batch",
-    "aliases": [
-      {
-        "resource": "ingestion",
-        "action": "batch",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "legacy_metricsV1_metrics",
-    "key": "GET /api/public/metrics",
-    "resource": "legacy-metrics",
-    "action": "get",
-    "aliases": [
-      {
-        "resource": "legacy-metrics-v1",
-        "action": "get",
-        "source": "tag"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "legacy_observationsV1_get",
-    "key": "GET /api/public/observations/{observationId}",
-    "resource": "legacy-observations",
-    "action": "get",
-    "aliases": [
-      {
-        "resource": "observations",
-        "action": "get",
-        "source": "path"
-      },
-      {
-        "resource": "legacy-observations-v1",
-        "action": "get",
-        "source": "tag"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "legacy_observationsV1_getMany",
-    "key": "GET /api/public/observations",
-    "resource": "legacy-observations",
-    "action": "list",
-    "aliases": [
-      {
-        "resource": "legacy-observations-v1",
-        "action": "list",
-        "source": "tag"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "legacy_scoreV1_delete",
-    "key": "DELETE /api/public/scores/{scoreId}",
-    "resource": "scores",
-    "action": "delete",
-    "aliases": [
-      {
-        "resource": "legacy-score-v1",
-        "action": "delete",
-        "source": "tag"
-      }
-    ]
-  },
-  {
     "operationId": "llmConnections_delete",
     "key": "DELETE /api/public/llm-connections/{id}",
     "resource": "llm-connections",
     "action": "delete"
+  },
+  {
+    "operationId": "llmConnections_deleteOrganization",
+    "key": "DELETE /api/public/organizations/llm-connections/{id}",
+    "resource": "organizations",
+    "action": "delete-llm-connection",
+    "aliases": [
+      {
+        "resource": "llm-connections",
+        "action": "delete-llm-connection",
+        "source": "tag"
+      }
+    ]
   },
   {
     "operationId": "llmConnections_list",
@@ -516,10 +385,36 @@
     "action": "list"
   },
   {
+    "operationId": "llmConnections_listOrganization",
+    "key": "GET /api/public/organizations/llm-connections",
+    "resource": "organizations",
+    "action": "list-llm-connections",
+    "aliases": [
+      {
+        "resource": "llm-connections",
+        "action": "list-llm-connections",
+        "source": "tag"
+      }
+    ]
+  },
+  {
     "operationId": "llmConnections_upsert",
     "key": "PUT /api/public/llm-connections",
     "resource": "llm-connections",
     "action": "upsert"
+  },
+  {
+    "operationId": "llmConnections_upsertOrganization",
+    "key": "PUT /api/public/organizations/llm-connections",
+    "resource": "organizations",
+    "action": "upsert-llm-connection",
+    "aliases": [
+      {
+        "resource": "llm-connections",
+        "action": "upsert-llm-connection",
+        "source": "tag"
+      }
+    ]
   },
   {
     "operationId": "media_get",
@@ -840,7 +735,19 @@
     "action": "update"
   },
   {
-    "operationId": "scoresV3_getManyV3",
+    "operationId": "scores_create",
+    "key": "POST /api/public/scores",
+    "resource": "scores",
+    "action": "create"
+  },
+  {
+    "operationId": "scores_delete",
+    "key": "DELETE /api/public/scores/{scoreId}",
+    "resource": "scores",
+    "action": "delete"
+  },
+  {
+    "operationId": "scores_getMany",
     "key": "GET /api/public/v3/scores",
     "resource": "scores",
     "action": "list",
@@ -853,59 +760,46 @@
     ]
   },
   {
-    "operationId": "scores_create",
-    "key": "POST /api/public/scores",
-    "resource": "scores",
+    "operationId": "skills_createVersion",
+    "key": "POST /api/public/skills",
+    "resource": "skills",
     "action": "create"
   },
   {
-    "operationId": "scores_get-by-id",
-    "key": "GET /api/public/v2/scores/{scoreId}",
-    "resource": "scores-v2",
-    "action": "get",
-    "aliases": [
-      {
-        "resource": "scores",
-        "action": "get",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
+    "operationId": "skills_deleteVersion",
+    "key": "DELETE /api/public/skills/{skillName}/versions/{skillVersion}",
+    "resource": "skills",
+    "action": "delete-version"
   },
   {
-    "operationId": "scores_get-many",
-    "key": "GET /api/public/v2/scores",
-    "resource": "scores-v2",
-    "action": "list",
-    "deprecated": true
+    "operationId": "skills_get",
+    "key": "GET /api/public/skills/{skillName}",
+    "resource": "skills",
+    "action": "get"
   },
   {
-    "operationId": "sessions_get",
-    "key": "GET /api/public/sessions/{sessionId}",
-    "resource": "legacy-sessions",
-    "action": "get",
-    "aliases": [
-      {
-        "resource": "sessions",
-        "action": "get",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
+    "operationId": "skills_getFileContents",
+    "key": "GET /api/public/skills/files/content",
+    "resource": "skills",
+    "action": "list-content"
   },
   {
-    "operationId": "sessions_list",
-    "key": "GET /api/public/sessions",
-    "resource": "legacy-sessions",
-    "action": "list",
-    "aliases": [
-      {
-        "resource": "sessions",
-        "action": "list",
-        "source": "path"
-      }
-    ],
-    "deprecated": true
+    "operationId": "skills_list",
+    "key": "GET /api/public/skills",
+    "resource": "skills",
+    "action": "list"
+  },
+  {
+    "operationId": "skills_setLabels",
+    "key": "PATCH /api/public/skills/{skillName}/versions/{skillVersion}",
+    "resource": "skills",
+    "action": "update-version"
+  },
+  {
+    "operationId": "skills_update",
+    "key": "PATCH /api/public/skills/{skillName}",
+    "resource": "skills",
+    "action": "update"
   },
   {
     "operationId": "trace_delete",
@@ -932,44 +826,6 @@
         "source": "tag"
       }
     ]
-  },
-  {
-    "operationId": "trace_get",
-    "key": "GET /api/public/traces/{traceId}",
-    "resource": "legacy-traces",
-    "action": "get",
-    "aliases": [
-      {
-        "resource": "traces",
-        "action": "get",
-        "source": "path"
-      },
-      {
-        "resource": "trace",
-        "action": "get",
-        "source": "tag"
-      }
-    ],
-    "deprecated": true
-  },
-  {
-    "operationId": "trace_list",
-    "key": "GET /api/public/traces",
-    "resource": "legacy-traces",
-    "action": "list",
-    "aliases": [
-      {
-        "resource": "traces",
-        "action": "list",
-        "source": "path"
-      },
-      {
-        "resource": "trace",
-        "action": "list",
-        "source": "tag"
-      }
-    ],
-    "deprecated": true
   },
   {
     "operationId": "unstable_dashboardWidgets_create",
@@ -1050,45 +906,27 @@
     "action": "update-placement"
   },
   {
-    "operationId": "unstable_skills_createVersion",
-    "key": "POST /api/public/unstable/skills",
-    "resource": "skills",
-    "action": "create"
-  },
-  {
-    "operationId": "unstable_skills_deleteVersion",
-    "key": "DELETE /api/public/unstable/skills/{skillName}/versions/{skillVersion}",
-    "resource": "skills",
-    "action": "delete-version"
-  },
-  {
-    "operationId": "unstable_skills_get",
-    "key": "GET /api/public/unstable/skills/{skillName}",
-    "resource": "skills",
+    "operationId": "unstable_topics_get",
+    "key": "GET /api/public/unstable/topics/{topicId}",
+    "resource": "unstable-topics",
     "action": "get"
   },
   {
-    "operationId": "unstable_skills_getFileContents",
-    "key": "GET /api/public/unstable/skills/files/content",
-    "resource": "skills",
-    "action": "list-content"
+    "operationId": "unstable_topics_getFacet",
+    "key": "GET /api/public/unstable/topic-facets/{facetId}",
+    "resource": "unstable-topic-facets",
+    "action": "get"
   },
   {
-    "operationId": "unstable_skills_list",
-    "key": "GET /api/public/unstable/skills",
-    "resource": "skills",
+    "operationId": "unstable_topics_list",
+    "key": "GET /api/public/unstable/topics",
+    "resource": "unstable-topics",
     "action": "list"
   },
   {
-    "operationId": "unstable_skills_setLabels",
-    "key": "PATCH /api/public/unstable/skills/{skillName}/versions/{skillVersion}",
-    "resource": "skills",
-    "action": "update-version"
-  },
-  {
-    "operationId": "unstable_skills_update",
-    "key": "PATCH /api/public/unstable/skills/{skillName}",
-    "resource": "skills",
-    "action": "update"
+    "operationId": "unstable_topics_listFacets",
+    "key": "GET /api/public/unstable/topic-facets",
+    "resource": "unstable-topic-facets",
+    "action": "list"
   }
 ]
