@@ -86,18 +86,14 @@ export async function fetchSkill(
     query.label = selector.label;
   }
   const value = await requestJson(config, "skills_get", { path: { skillName: name }, query });
-  const result = skillVersionSchema.safeParse(value);
-  if (!result.success || result.data.name !== name) {
-    throw new CliError("Langfuse returned an invalid skill manifest", EXIT_RESPONSE);
-  }
-  return result.data;
+  return parseSkillVersion(value, name, selector);
 }
 
 export async function fetchLatestSkill(config: SkillsConfig, name: string): Promise<SkillVersion | undefined> {
   const value = await requestJson(config, "skills_get", {
     path: { skillName: name }, query: { label: "latest" },
   }, { allowNotFound: true });
-  return value === undefined ? undefined : parseSkillVersion(value, name);
+  return value === undefined ? undefined : parseSkillVersion(value, name, { label: "latest" });
 }
 
 export async function createSkillVersion(
@@ -128,12 +124,19 @@ export async function setSkillLabels(
   return skill;
 }
 
-function parseSkillVersion(value: unknown, name: string): SkillVersion {
+function parseSkillVersion(value: unknown, name: string, selector?: SkillSelector): SkillVersion {
   const result = skillVersionSchema.safeParse(value);
   if (!result.success || result.data.name !== name || new Set(result.data.files.map((file) => file.path)).size !== result.data.files.length) {
     throw new CliError("Langfuse returned an invalid skill manifest", EXIT_RESPONSE);
   }
-  return result.data;
+  const skill = result.data;
+  if (selector?.version !== undefined && skill.version !== selector.version) {
+    throw new CliError(`Requested ${name}@${selector.version}; server returned version ${skill.version}`, EXIT_RESPONSE);
+  }
+  if (selector?.label !== undefined && !skill.labels.includes(selector.label)) {
+    throw new CliError(`Requested ${name}@${selector.label}; server returned labels ${JSON.stringify(skill.labels)}`, EXIT_RESPONSE);
+  }
+  return skill;
 }
 
 export async function fetchFileContents(
