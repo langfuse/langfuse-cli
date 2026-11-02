@@ -903,6 +903,32 @@ paths:
       expect((error as Error).message).toContain("requires a request body");
       expect((error as Error).message).toContain(hint);
     }
+
+    const previousExitCode = process.exitCode;
+    const catalogLoader = spyOn(contractLoader, "loadContractCatalog").mockResolvedValue({
+      schemaVersion: 1,
+      latest: skillsContract.apiVersion,
+      versions: [{ version: skillsContract.apiVersion, sourceSha256: skillsContract.sourceSha256 }],
+    });
+    const apiLoader = spyOn(contractLoader, "loadApiContract").mockResolvedValue({
+      ...skillsContract, operations: [operation],
+    });
+    try {
+      for (const args of [["--type", "text"], []]) {
+        process.exitCode = 0;
+        const output = await captureOutput(() => run([
+          "node", "langfuse", "--public-key", "test", "--secret-key", "test",
+          "--host", "https://example.invalid", "api", "prompts", "create", ...args,
+        ]));
+        expect(process.exitCode).toBe(2);
+        expect(output.stderr).toContain(`, e.g.\n\n  ${hint}\n\n(union body:`);
+        expect(output.stderr).not.toContain("\\u000a");
+      }
+    } finally {
+      catalogLoader.mockRestore();
+      apiLoader.mockRestore();
+      process.exitCode = previousExitCode ?? 0;
+    }
   });
 
   test("discriminated unions parse field flags against the selected variant", async () => {
