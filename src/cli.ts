@@ -246,7 +246,9 @@ Install and update directory:
 Push options:
   --label <label>         Apply a label and follow it in the lockfile (default: pin version)
   --commit-message <text> Record why this version was published (max 500 characters)
-  --dry-run               Compare with latest and print changes without publishing
+  --dry-run               Print changes and included/excluded paths without publishing
+  --exclude <path>        Exclude a literal file/directory path relative to each skill
+                         Repeatable; Git-ignored untracked files are also excluded
   --recursive             Discover skills recursively; report and skip invalid skills
   --follow-symlinks       Follow source/discovery directory links; record real paths
                          Links inside a skill remain unsupported

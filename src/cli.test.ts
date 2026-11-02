@@ -345,6 +345,97 @@ describe("hosted skills commands", () => {
     });
   });
 
+  test("push previews and uploads the same Git-selected files", async () => {
+    await withSkillsFixture(async ({ directory, command }) => {
+      const git = (...args: string[]) => {
+        const result = Bun.spawnSync(["git", ...args], { cwd: directory });
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      };
+      git("init", "--quiet", "--template=");
+      git("config", "core.excludesFile", "/dev/null");
+      await mkdir("skills/example/private", { recursive: true });
+      await mkdir("skills/ignored", { recursive: true });
+      await writeFile(".gitignore", "credentials.json\ntracked.json\nprivate/\nskills/ignored/\n");
+      await writeFile("skills/example/SKILL.md", "---\nname: example\ndescription: Example\n---\nSkill");
+      await writeFile("skills/example/reference.md", "reference");
+      await writeFile("skills/example/tracked.json", "tracked fixture");
+      git("add", "--force", "skills/example/tracked.json");
+      await writeFile("skills/example/tracked.json", "edited tracked fixture");
+      await writeFile("skills/example/credentials.json", "synthetic secret");
+      await writeFile("skills/example/.gitignore", "local.yaml\n");
+      await writeFile("skills/example/local.yaml", "synthetic secret");
+      await writeFile("skills/example/private/invalid.bin", "\0");
+      await writeFile("skills/ignored/SKILL.md", "must not be read");
+      const uploads: Array<Array<{ path: string; content: string }>> = [];
+      globalThis.fetch = (async (_input, init) => {
+        if (init?.method === "POST") {
+          const { files } = JSON.parse(String(init.body));
+          uploads.push(files);
+          return Response.json(skillManifest("example", Object.fromEntries(files.map((file: { path: string; content: string }) => [file.path, file.content]))));
+        }
+        return Response.json({ code: "resource_not_found", message: "missing" }, { status: 404 });
+      }) as typeof fetch;
+
+      const args = ["push", ".", "--recursive", "--no-lockfile"];
+      const preview = await command([...args, "--dry-run"]);
+      expect(preview.exitCode).toBe(0);
+      const [selection] = JSON.parse(preview.stdout);
+      expect(JSON.parse(preview.stdout)).toHaveLength(1);
+      expect(selection.included).toEqual(["SKILL.md", "reference.md", "tracked.json"]);
+      expect(selection.excluded).toEqual([
+        { path: ".gitignore", reason: "git-metadata" },
+        { path: "credentials.json", reason: "gitignore" },
+        { path: "local.yaml", reason: "gitignore" },
+        { path: "private/", reason: "gitignore" },
+      ]);
+      expect(preview.stderr).toContain("Git-ignored");
+      expect(uploads).toHaveLength(0);
+      expect((await command(args)).exitCode).toBe(0);
+      expect(uploads).toHaveLength(1);
+      expect(uploads[0].map((file) => file.path)).toEqual(selection.included);
+      expect(uploads[0].find((file) => file.path === "tracked.json")!.content).toBe("edited tracked fixture");
+    });
+  });
+
+  test("push supports explicit file and directory exclusions outside Git", async () => {
+    await withSkillsFixture(async ({ manifests, command }) => {
+      await mkdir("example/private", { recursive: true });
+      const content = "---\nname: example\ndescription: Example\n---\nSkill";
+      await writeFile("example/SKILL.md", content);
+      await writeFile("example/credentials.json", "synthetic secret");
+      await writeFile("example/private/invalid.bin", "\0");
+      await writeFile("example/private-notes.md", "public reference");
+      manifests.set("example", { ...skillManifest("example", { "SKILL.md": content }), labels: ["latest"] });
+      const args = ["push", "example", "--exclude", "./credentials.json", "--exclude", "private/", "--dry-run"];
+      const preview = await command(args);
+      expect(preview.exitCode).toBe(0);
+      expect(JSON.parse(preview.stdout)).toMatchObject({
+        included: ["SKILL.md", "private-notes.md"],
+        excluded: [{ path: "credentials.json", reason: "exclude" }, { path: "private/", reason: "exclude" }],
+      });
+      const missingRoot = await command([...args, "--exclude", "SKILL.md"]);
+      expect(missingRoot.exitCode).toBe(6);
+      expect(missingRoot.stderr).toContain("root SKILL.md");
+      expect((await command([...args, "--exclude", "../outside"])).exitCode).toBe(2);
+    });
+  });
+
+  test("push stops before requests when Git inspection fails", async () => {
+    await withSkillsFixture(async ({ command }) => {
+      await mkdir("example");
+      await writeFile("example/SKILL.md", "---\nname: example\ndescription: Example\n---\nSkill");
+      await writeFile("example/.git", "gitdir: missing-git-directory\n");
+      let requests = 0;
+      globalThis.fetch = (async () => { requests++; return Response.json({}); }) as typeof fetch;
+      for (const args of [["push", "example"], ["push", ".", "--recursive"]]) {
+        const result = await command(args);
+        expect(result.exitCode).toBe(6);
+        expect(result.stderr).toContain("Cannot apply Git ignore rules");
+        expect(requests).toBe(0);
+      }
+    });
+  });
+
   test("preserves installed content when a download fails its checksum", async () => {
     await withSkillsFixture(async ({ manifests, contents, command }) => {
       await mkdir(".agents/skills/example", { recursive: true });

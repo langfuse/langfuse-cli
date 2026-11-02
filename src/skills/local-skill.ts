@@ -7,6 +7,7 @@ import { parseDocument } from "yaml";
 import { CliError, EXIT_LOCAL } from "../errors";
 import { skillNameSchema } from "./api";
 import { decodeSkillContent } from "./local";
+import { GitIgnoreError, gitExcludes, publishExclusion, readGitSelection, type ExcludedPath, type GitSelection } from "./publish-filter";
 
 const MAX_FILES = 200;
 const MAX_BYTES = 1_000_000;
@@ -26,6 +27,7 @@ export interface LocalSkill {
   name: string;
   directory: string;
   files: LocalSkillFile[];
+  excluded: ExcludedPath[];
 }
 
 async function isDirectoryWithinRoot(root: string, directory: string): Promise<boolean> {
@@ -44,10 +46,10 @@ export async function discoverSkillDirectories(directory: string, followSymlinks
       throw new Error("The skills directory must be a real directory, not a symlink");
     }
     const root = await realpath(source);
-    const pending = [source];
+    const pending: Array<{ directory: string; selection?: GitSelection }> = [{ directory: source }];
 
     while (pending.length > 0) {
-      const current = pending.pop()!;
+      const { directory: current, selection: parentSelection } = pending.pop()!;
       if (!followSymlinks && !(await isDirectoryWithinRoot(root, current))) {
         throw new Error(`Directory must stay inside the skills root without symlinks: ${current}`);
       }
@@ -55,24 +57,36 @@ export async function discoverSkillDirectories(directory: string, followSymlinks
       if (visited.has(physical)) continue;
       visited.add(physical);
       const entries = await readdir(physical, { withFileTypes: true });
+      const selection = await readGitSelection(physical, parentSelection);
 
       // A skill owns its nested resources, including any additional SKILL.md files.
       if (entries.some((entry) => entry.name === "SKILL.md")) {
-        skills.push(followSymlinks ? physical : current);
+        if (gitExcludes(selection, join(physical, "SKILL.md"))) {
+          process.stderr.write(`Skipped ${JSON.stringify(current)}: SKILL.md is Git-ignored\n`);
+        } else {
+          skills.push(followSymlinks ? physical : current);
+        }
         continue;
       }
       for (const entry of entries) {
         const path = join(current, entry.name);
+        const reason = publishExclusion(entry.name) ?? (gitExcludes(selection, join(physical, entry.name)) ? "gitignore" : undefined);
+        if (reason) {
+          if (reason === "gitignore" && (entry.isDirectory() || entry.isSymbolicLink())) {
+            process.stderr.write(`Skipped ${JSON.stringify(path)}: Git-ignored\n`);
+          }
+          continue;
+        }
         if (entry.isSymbolicLink()) {
           if (followSymlinks) {
             const target = await resolveLinkedDirectory(path);
-            if (target !== undefined) pending.push(target);
+            if (target !== undefined) pending.push({ directory: target, selection });
           } else {
             process.stderr.write(`Skipped ${path}: symlinks are not supported\n`);
           }
           continue;
         }
-        if (entry.isDirectory()) pending.push(path);
+        if (entry.isDirectory()) pending.push({ directory: path, selection });
       }
     }
     return skills.sort();
@@ -132,27 +146,34 @@ async function readSkillFile(directory: string, path: string): Promise<LocalSkil
   };
 }
 
-async function readSkillFiles(directory: string): Promise<LocalSkillFile[]> {
+async function readSkillFiles(directory: string, exclusions: string[]): Promise<{ files: LocalSkillFile[]; excluded: ExcludedPath[] }> {
   if (!(await lstat(directory)).isDirectory()) {
     throw new Error("The skill directory must be a real directory, not a symlink");
   }
   const root = await realpath(directory);
-  const directories = [""];
+  const directories: Array<{ path: string; selection?: GitSelection }> = [{ path: "" }];
   const files: LocalSkillFile[] = [];
+  const excluded: ExcludedPath[] = [];
   let totalBytes = 0;
 
   while (directories.length > 0) {
-    const parent = directories.pop()!;
+    const { path: parent, selection: parentSelection } = directories.pop()!;
     const diskDirectory = join(directory, parent);
     if (!(await isDirectoryWithinRoot(root, diskDirectory))) {
       throw new Error(`Directory must stay inside the skill root without symlinks: ${parent}`);
     }
+    const selection = await readGitSelection(await realpath(diskDirectory), parentSelection);
 
     for (const entry of await readdir(diskDirectory, { withFileTypes: true })) {
       const path = parent ? `${parent}/${entry.name}` : entry.name;
+      const reason = publishExclusion(path, exclusions) ?? (gitExcludes(selection, join(root, path)) ? "gitignore" : undefined);
+      if (reason) {
+        excluded.push({ path: entry.isDirectory() ? `${path}/` : path, reason });
+        continue;
+      }
       validateFilePath(path);
       if (entry.isDirectory()) {
-        directories.push(path);
+        directories.push({ path, selection });
         continue;
       }
       if (!entry.isFile()) {
@@ -170,7 +191,10 @@ async function readSkillFiles(directory: string): Promise<LocalSkillFile[]> {
       files.push(file);
     }
   }
-  return files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  return {
+    files: files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+    excluded: excluded.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  };
 }
 
 function readSkillName(files: LocalSkillFile[]): string {
@@ -201,12 +225,13 @@ function readSkillName(files: LocalSkillFile[]): string {
   return name.trim();
 }
 
-export async function readLocalSkill(directory: string, followSymlinks = false): Promise<LocalSkill> {
+export async function readLocalSkill(directory: string, followSymlinks = false, exclusions: string[] = []): Promise<LocalSkill> {
   try {
     const source = followSymlinks ? await realpath(directory) : directory;
-    const files = await readSkillFiles(source);
-    return { name: readSkillName(files), directory: await realpath(source), files };
+    const { files, excluded } = await readSkillFiles(source, exclusions);
+    return { name: readSkillName(files), directory: await realpath(source), files, excluded };
   } catch (error) {
+    if (error instanceof GitIgnoreError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`Cannot read skill at ${directory}: ${message}`, EXIT_LOCAL);
   }
