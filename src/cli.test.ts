@@ -283,6 +283,68 @@ describe("hosted skills commands", () => {
     });
   });
 
+  test("rejects mismatched skill selectors before downloads or writes", async () => {
+    await withSkillsFixture(async ({ manifests, contents, command }) => {
+      const content = "---\nname: example\ndescription: Example skill\n---\nOriginal";
+      const manifest = skillManifest("example", { "SKILL.md": content });
+      manifests.set("example", manifest);
+      contents.set(manifest.files[0].sha256Hash, content);
+      expect((await command(["install", "example"])).exitCode).toBe(0);
+      const lockfile = ".agents/skills/langfuse-skills.lock";
+      const lock = await readFile(lockfile, "utf8");
+      let requests = 0;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+        requests++;
+        return originalFetch(...args);
+      }) as typeof fetch;
+
+      for (const { args, response, message } of [
+        {
+          args: ["install", "example@1", "--force"],
+          response: { ...manifest, version: 99 },
+          message: "Requested example@1; server returned version 99",
+        },
+        {
+          args: ["update", "--force"],
+          response: { ...manifest, labels: ["staging"] },
+          message: 'Requested example@production; server returned labels ["staging"]',
+        },
+        {
+          args: ["push", ".agents/skills/example"],
+          response: manifest,
+          message: 'Requested example@latest; server returned labels ["production"]',
+        },
+      ]) {
+        manifests.set("example", response);
+        requests = 0;
+        const result = await command(args);
+        expect(result.exitCode).toBe(7);
+        expect(result.stderr).toContain(message);
+        expect(requests).toBe(1);
+        expect(await readFile(".agents/skills/example/SKILL.md", "utf8")).toBe(content);
+        expect(await readFile(lockfile, "utf8")).toBe(lock);
+      }
+    });
+  });
+
+  test("restores the locked version after its label moves", async () => {
+    await withSkillsFixture(async ({ manifests, contents, command }) => {
+      const manifest = skillManifest("example", { "SKILL.md": "original" });
+      manifests.set("example", manifest);
+      contents.set(manifest.files[0].sha256Hash, "original");
+      expect((await command(["install", "example"])).exitCode).toBe(0);
+      const lockfile = ".agents/skills/langfuse-skills.lock";
+      const lock = await readFile(lockfile, "utf8");
+      await rm(".agents/skills/example", { recursive: true });
+      manifests.set("example", { ...manifest, labels: [] });
+
+      expect((await command(["install"])).exitCode).toBe(0);
+      expect(await readFile(".agents/skills/example/SKILL.md", "utf8")).toBe("original");
+      expect(await readFile(lockfile, "utf8")).toBe(lock);
+    });
+  });
+
   test("preserves installed content when a download fails its checksum", async () => {
     await withSkillsFixture(async ({ manifests, contents, command }) => {
       await mkdir(".agents/skills/example", { recursive: true });

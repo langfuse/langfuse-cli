@@ -162,6 +162,8 @@ langfuse skills install --all
 langfuse skills update
 ```
 
+Skills commands reject API manifests that do not match the requested version or label (exit code 7). `--force` does not bypass this validation.
+
 Publish a skill maintained in your repository:
 
 ```sh
