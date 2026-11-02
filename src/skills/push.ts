@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { CliError, EXIT_LOCAL, EXIT_RESPONSE } from "../errors";
 import { createSkillVersion, fetchLatestSkill, setSkillLabels, type SkillVersion, type SkillsConfig } from "./api";
 import { discoverSkillDirectories, readLocalSkill, type LocalSkill, type LocalSkillFile } from "./local-skill";
+import { GitIgnoreError, parsePublishExclusions, type ExcludedPath } from "./publish-filter";
 
 import { validateSkillDirectories } from "./directories";
 import { readSkillsLock, writeSkillsLock, recordLockedSkill, resolveSkillsLockPath, type LangfuseSkillsLock } from "./lock";
@@ -19,6 +20,7 @@ interface PushOptions {
   updateOnly: boolean;
   noLockfile: boolean;
   lockfile?: string;
+  exclude: string[];
 }
 
 interface SnapshotChanges {
@@ -46,6 +48,8 @@ interface SkillResult {
   name: string;
   directory: string;
   files: number;
+  included?: string[];
+  excluded?: ExcludedPath[];
 }
 
 type CompletedPushResult = SkillResult & {
@@ -76,6 +80,7 @@ function parsePushOptions(args: string[]): PushOptions {
         "update-only": { type: "boolean", default: false },
         "no-lockfile": { type: "boolean", default: false },
         lockfile: { type: "string" },
+        exclude: { type: "string", multiple: true },
       },
     });
   } catch (error) {
@@ -102,6 +107,7 @@ function parsePushOptions(args: string[]): PushOptions {
     updateOnly: parsed.values["update-only"],
     noLockfile: parsed.values["no-lockfile"],
     lockfile: parsed.values.lockfile,
+    exclude: parsePublishExclusions(parsed.values.exclude ?? []),
   };
 }
 
@@ -119,9 +125,9 @@ async function loadLocalSkills(options: PushOptions): Promise<{
   for (const directory of directories) {
     let skill: LocalSkill;
     try {
-      skill = await readLocalSkill(directory, options.followSymlinks);
+      skill = await readLocalSkill(directory, options.followSymlinks, options.exclude);
     } catch (error) {
-      if (!options.recursive || !(error instanceof CliError) || error.exitCode !== EXIT_LOCAL) {
+      if (!options.recursive || error instanceof GitIgnoreError || !(error instanceof CliError) || error.exitCode !== EXIT_LOCAL) {
         throw error;
       }
       skipped.push({
@@ -196,6 +202,7 @@ async function pushSkill(config: SkillsConfig, options: PushOptions, plan: PushP
     version: previous?.version ?? null,
     directory: local.directory,
     files: local.files.length,
+    ...(options.dryRun ? { included: local.files.map((file) => file.path), excluded: local.excluded } : {}),
   };
 
   if (options.updateOnly && !previous) {
@@ -249,7 +256,7 @@ async function recordPushedSkill(lock: LangfuseSkillsLock, lockfile: string, res
   await writeSkillsLock(lock, lockfile);
 }
 
-function formatPushResult(result: PushResult): string {
+function formatPushResultSummary(result: PushResult): string {
   if (result.status === "skipped") {
     if (result.reason === "invalid-skill") {
       return `Skipped invalid skill: ${result.message}`;
@@ -267,6 +274,16 @@ function formatPushResult(result: PushResult): string {
   const action = result.status === "unchanged" ? "Already up to date"
     : result.status === "labeled" ? "Labeled" : "Published";
   return `${action}: ${result.name}@${result.version} (${result.files} files; labels: ${result.labels.join(", ")})`;
+}
+
+function formatPushResult(result: PushResult): string {
+  const summary = formatPushResultSummary(result);
+  if (!("included" in result) || !result.included) return summary;
+  return [
+    summary,
+    ...result.included.map((path) => `  Include ${JSON.stringify(path)}`),
+    ...(result.excluded ?? []).map(({ path, reason }) => `  Exclude ${JSON.stringify(path)} (${reason})`),
+  ].join("\n");
 }
 
 function pushFailure(error: unknown, skill: LocalSkill, published: string[]): CliError {
