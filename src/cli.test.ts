@@ -420,6 +420,40 @@ describe("hosted skills commands", () => {
     });
   });
 
+  test("escapes terminal controls in skill errors and recursive skip diagnostics", async () => {
+    await withSkillsFixture(async ({ command }) => {
+      const filename = "invalid-\x1b]52;c;dGVzdA==\x07\x9b31m\r\nforged.md";
+      const escaped = "invalid-\\u001b]52;c;dGVzdA==\\u0007\\u009b31m\\u000d\\u000aforged.md";
+      await mkdir("example");
+      await writeFile("example/SKILL.md", "---\nname: example\ndescription: Example\n---\nSkill");
+      await writeFile(join("example", filename), "untrusted");
+      await symlink("example/SKILL.md", `link-${filename}`);
+      let requests = 0;
+      globalThis.fetch = (async () => { requests++; return Response.json({}); }) as typeof fetch;
+
+      const failure = await command(["push", "example", "--no-lockfile"]);
+      expect(failure.exitCode).toBe(6);
+      expect(failure.stderr).toContain(`Invalid skill file path: ${escaped}`);
+      expect(failure.stderr.trimEnd()).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+
+      process.exitCode = 0;
+      const recursive = await captureOutput(() => run([
+        "node", "langfuse", "--public-key", "test", "--secret-key", "test",
+        "--host", "https://example.invalid", "skills", "push", ".", "--recursive", "--no-lockfile",
+      ]));
+      expect(process.exitCode).toBe(0);
+      expect(recursive.stdout).toContain(`Invalid skill file path: ${escaped}`);
+      expect(recursive.stderr).toContain(`link-${escaped}: symlinks are not supported`);
+      expect(recursive.stdout.trimEnd()).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+      expect(recursive.stderr.trimEnd()).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+
+      const json = await command(["push", ".", "--recursive", "--no-lockfile"]);
+      expect(JSON.parse(json.stdout)[0].message).toContain(filename);
+      expect(json.stdout.trimEnd()).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+      expect(requests).toBe(0);
+    });
+  });
+
   test("push stops before requests when Git inspection fails", async () => {
     await withSkillsFixture(async ({ command }) => {
       await mkdir("example");

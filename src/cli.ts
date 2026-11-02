@@ -12,6 +12,7 @@ import {
   EXIT_NETWORK,
 } from "./errors";
 import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
+import { escapeTerminalText } from "./terminal";
 import { runSkillsCommand } from "./skills";
 import { runSkillsPush } from "./skills/push";
 import {
@@ -1264,7 +1265,7 @@ export async function run(argv: string[]): Promise<void> {
     await runApi(await runtimeConfig(globals), args);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`${message}\n`);
+    process.stderr.write(`${escapeTerminalText(message)}\n`);
     process.exitCode = error instanceof CliError ? error.exitCode : 1;
   }
 }
