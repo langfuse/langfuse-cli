@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { parseDocument } from "yaml";
 
 import { CliError, EXIT_LOCAL } from "../errors";
+import { escapeTerminalText } from "../terminal";
 import { skillNameSchema } from "./api";
 import { decodeSkillContent } from "./local";
 import { GitIgnoreError, gitExcludes, publishExclusion, readGitSelection, type ExcludedPath, type GitSelection } from "./publish-filter";
@@ -62,7 +63,7 @@ export async function discoverSkillDirectories(directory: string, followSymlinks
       // A skill owns its nested resources, including any additional SKILL.md files.
       if (entries.some((entry) => entry.name === "SKILL.md")) {
         if (gitExcludes(selection, join(physical, "SKILL.md"))) {
-          process.stderr.write(`Skipped ${JSON.stringify(current)}: SKILL.md is Git-ignored\n`);
+          process.stderr.write(`Skipped ${escapeTerminalText(JSON.stringify(current))}: SKILL.md is Git-ignored\n`);
         } else {
           skills.push(followSymlinks ? physical : current);
         }
@@ -73,7 +74,7 @@ export async function discoverSkillDirectories(directory: string, followSymlinks
         const reason = publishExclusion(entry.name) ?? (gitExcludes(selection, join(physical, entry.name)) ? "gitignore" : undefined);
         if (reason) {
           if (reason === "gitignore" && (entry.isDirectory() || entry.isSymbolicLink())) {
-            process.stderr.write(`Skipped ${JSON.stringify(path)}: Git-ignored\n`);
+            process.stderr.write(`Skipped ${escapeTerminalText(JSON.stringify(path))}: Git-ignored\n`);
           }
           continue;
         }
@@ -82,7 +83,7 @@ export async function discoverSkillDirectories(directory: string, followSymlinks
             const target = await resolveLinkedDirectory(path);
             if (target !== undefined) pending.push({ directory: target, selection });
           } else {
-            process.stderr.write(`Skipped ${path}: symlinks are not supported\n`);
+            process.stderr.write(`Skipped ${escapeTerminalText(path)}: symlinks are not supported\n`);
           }
           continue;
         }
@@ -100,10 +101,10 @@ async function resolveLinkedDirectory(path: string): Promise<string | undefined>
   try {
     const target = await realpath(path);
     if ((await lstat(target)).isDirectory()) return target;
-    process.stderr.write(`Skipped ${path}: only directory symlinks are supported\n`);
+    process.stderr.write(`Skipped ${escapeTerminalText(path)}: only directory symlinks are supported\n`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`Skipped ${path}: cannot resolve directory symlink: ${message}\n`);
+    process.stderr.write(`${escapeTerminalText(`Skipped ${path}: cannot resolve directory symlink: ${message}`)}\n`);
   }
   return undefined;
 }

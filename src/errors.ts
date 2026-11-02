@@ -16,9 +16,11 @@ export const EXIT_RESPONSE = 7;
 
 export class CliError extends Error {
   constructor(
-    message: string,
+    readonly summary: string,
     readonly exitCode: number = EXIT_USAGE,
+    // CLI-generated help only; escape interpolated values before adding layout.
+    readonly hint: string = "",
   ) {
-    super(message);
+    super(summary + hint);
   }
 }

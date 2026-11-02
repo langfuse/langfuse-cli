@@ -10,8 +10,10 @@ import {
   EXIT_HTTP,
   EXIT_LOCAL,
   EXIT_NETWORK,
+  EXIT_USAGE,
 } from "./errors";
 import { GLOBAL_BOOLEAN_FLAG_NAMES, GLOBAL_VALUE_FLAG_NAMES } from "./flags";
+import { escapeTerminalText } from "./terminal";
 import { runSkillsCommand } from "./skills";
 import { runSkillsPush } from "./skills/push";
 import {
@@ -673,12 +675,12 @@ function bodyHint(operation: ApiOperation): string {
   const required = body.fields.filter((field) => field.required);
   if (required.length === 0) return "";
   const sketch = required
-    .map((field) => `"${field.name}":${bodyPlaceholder(field)}`)
+    .map((field) => `"${escapeTerminalText(field.name)}":${escapeTerminalText(bodyPlaceholder(field))}`)
     .join(",");
   const unionNote = body.discriminator
-    ? `\n(or use field flags directly by selecting a variant: --${body.discriminator.cliName} ${Object.keys(body.discriminator.variants).join("|")} …)`
+    ? `\n(or use field flags directly by selecting a variant: --${escapeTerminalText(body.discriminator.cliName)} ${escapeTerminalText(Object.keys(body.discriminator.variants).join("|"))} …)`
     : body.union
-      ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${operation.command.resource} ${operation.command.action}\`)`
+      ? `\n(union body: required fields are merged across variants — see \`langfuse api help ${escapeTerminalText(operation.command.resource)} ${escapeTerminalText(operation.command.action)}\`)`
       : "";
   return `, e.g.\n\n  --body-json '{${sketch}}'\n${unionNote}`;
 }
@@ -832,8 +834,10 @@ export async function parseOperationInput(
       const disc = operation.requestBody.discriminator;
       throw new CliError(
         disc
-          ? `${operation.operationId} field flags require --${disc.cliName} (one of: ${Object.keys(disc.variants).join(", ")}) to select the body variant, or use --body-json/--body-file${bodyHint(operation)}`
-          : `${operation.operationId} requires --body-json or --body-file for request bodies${bodyHint(operation)}`,
+          ? `${operation.operationId} field flags require --${disc.cliName} (one of: ${Object.keys(disc.variants).join(", ")}) to select the body variant, or use --body-json/--body-file`
+          : `${operation.operationId} requires --body-json or --body-file for request bodies`,
+        EXIT_USAGE,
+        bodyHint(operation),
       );
     }
     const field = bodyField;
@@ -888,7 +892,9 @@ export async function parseOperationInput(
   }
   if (operation.requestBody?.required && body === undefined) {
     throw new CliError(
-      `${operation.operationId} requires a request body${bodyHint(operation)}`,
+      `${operation.operationId} requires a request body`,
+      EXIT_USAGE,
+      bodyHint(operation),
     );
   }
   if (body !== undefined) input.body = body;
@@ -1263,8 +1269,10 @@ export async function run(argv: string[]): Promise<void> {
     }
     await runApi(await runtimeConfig(globals), args);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`${message}\n`);
+    const message = error instanceof CliError ? error.summary
+      : error instanceof Error ? error.message : String(error);
+    const hint = error instanceof CliError ? error.hint : "";
+    process.stderr.write(`${escapeTerminalText(message)}${hint}\n`);
     process.exitCode = error instanceof CliError ? error.exitCode : 1;
   }
 }

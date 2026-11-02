@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 
 import { CliError, EXIT_LOCAL, EXIT_RESPONSE } from "../errors";
+import { escapeTerminalText } from "../terminal";
 import { createSkillVersion, fetchLatestSkill, setSkillLabels, type SkillVersion, type SkillsConfig } from "./api";
 import { discoverSkillDirectories, readLocalSkill, type LocalSkill, type LocalSkillFile } from "./local-skill";
 import { GitIgnoreError, parsePublishExclusions, type ExcludedPath } from "./publish-filter";
@@ -277,12 +278,12 @@ function formatPushResultSummary(result: PushResult): string {
 }
 
 function formatPushResult(result: PushResult): string {
-  const summary = formatPushResultSummary(result);
+  const summary = escapeTerminalText(formatPushResultSummary(result));
   if (!("included" in result) || !result.included) return summary;
   return [
     summary,
-    ...result.included.map((path) => `  Include ${JSON.stringify(path)}`),
-    ...(result.excluded ?? []).map(({ path, reason }) => `  Exclude ${JSON.stringify(path)} (${reason})`),
+    ...result.included.map((path) => `  Include ${escapeTerminalText(JSON.stringify(path))}`),
+    ...(result.excluded ?? []).map(({ path, reason }) => `  Exclude ${escapeTerminalText(JSON.stringify(path))} (${reason})`),
   ].join("\n");
 }
 
@@ -340,8 +341,8 @@ export async function runSkillsPush(config: SkillsConfig, args: string[]): Promi
   }
 
   if (config.json) {
-    process.stdout.write(`${JSON.stringify(options.recursive ? results : results[0])}\n`);
+    process.stdout.write(`${escapeTerminalText(JSON.stringify(options.recursive ? results : results[0]))}\n`);
   } else if (results.length === 0) {
-    process.stdout.write(`No skills found in ${options.directory}\n`);
+    process.stdout.write(`No skills found in ${escapeTerminalText(options.directory)}\n`);
   }
 }

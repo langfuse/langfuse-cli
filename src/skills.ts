@@ -3,6 +3,7 @@ import { chmod, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { CliError, EXIT_LOCAL, EXIT_RESPONSE } from "./errors";
+import { escapeTerminalText } from "./terminal";
 import {
   fetchFileContents,
   fetchSkill,
@@ -27,7 +28,7 @@ export async function runSkillsCommand(
     : await readSkillsLock(options.lockfile);
   const { targets, skipped } = await resolveSkillTargets(config, options, lock, action);
   for (const skill of skipped) {
-    process.stderr.write(`Skipped ${skill.name}: no production version\n`);
+    process.stderr.write(`Skipped ${escapeTerminalText(skill.name)}: no production version\n`);
   }
   await validateSkillDirectories(targets.map(({ destination }) => destination), lock, options.lockfile);
 
@@ -73,18 +74,18 @@ export async function runSkillsCommand(
     });
     if (!config.json) {
       process.stdout.write(unchanged
-        ? `Already up to date: ${skill.name}@${skill.version} at ${destination}\n`
-        : `Installed ${skill.name}@${skill.version} to ${destination} (${skill.files.length} files)\n`,
+        ? `Already up to date: ${skill.name}@${skill.version} at ${escapeTerminalText(destination)}\n`
+        : `Installed ${skill.name}@${skill.version} to ${escapeTerminalText(destination)} (${skill.files.length} files)\n`,
       );
     }
   }
   if (config.json) {
     const result = action === "install" && options.name !== undefined ? results[0] : [...skipped, ...results];
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.stdout.write(`${escapeTerminalText(JSON.stringify(result))}\n`);
   } else if (results.length === 0 && skipped.length === 0) {
     process.stdout.write(options.all
       ? "No skills found in this Langfuse project\n"
-      : `No skills found with tag ${JSON.stringify(options.tag)}\n`);
+      : `No skills found with tag ${escapeTerminalText(JSON.stringify(options.tag))}\n`);
   }
 }
 
