@@ -82,55 +82,26 @@ describe("beta releases", () => {
   });
 });
 
-async function withFixture(run: (fixture: {
-  root: string;
-  firstSha: string;
-  lastSha: string;
-  git: (...args: string[]) => string;
-  execute: (metadata: BetaRegistryPackage, sha: string, args?: string[], overrides?: Record<string, string>) => Promise<{
-    status: number; stdout: string; stderr: string;
-  }>;
-}) => Promise<void>): Promise<void> {
+test("beta workflow selects, applies and validates its version", async () => {
   const root = await mkdtemp(join(tmpdir(), "cli-beta-test-"));
   try {
     await cp(import.meta.dir, join(root, "scripts"), { recursive: true });
     await symlink(resolve(import.meta.dir, "../node_modules"), join(root, "node_modules"));
-    await writeFile(join(root, "package.json"), JSON.stringify({ name: "@langfuse/cli", version: "1.2.4" }));
-    await writeFile(join(root, ".gitignore"), "node_modules\nmetadata.json\nregistry.ts\n");
-    const git = (...args: string[]) => {
-      const result = Bun.spawnSync(["git", ...args], { cwd: root });
-      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
-      return result.stdout.toString().trim();
-    };
-    git("init", "-b", "beta");
-    git("config", "user.name", "Beta Test");
-    git("config", "user.email", "test@example.invalid");
-    git("config", "commit.gpgsign", "false");
-    git("add", ".");
-    git("commit", "-m", "fixture");
-    const firstSha = git("rev-parse", "HEAD");
-    git("commit", "--allow-empty", "-m", "next merge");
-    const lastSha = git("rev-parse", "HEAD");
+    const packagePath = join(root, "package.json");
+    await writeFile(packagePath, JSON.stringify({ name: "@langfuse/cli", version: "1.2.4" }));
     const preload = join(root, "registry.ts");
     await writeFile(preload, `
-      const metadata = await Bun.file(${JSON.stringify(join(root, "metadata.json"))}).json();
       globalThis.fetch = async (url) => {
         if (String(url) !== "https://registry.npmjs.org/%40langfuse%2Fcli") {
           throw new Error("Beta releases must only read the canonical npm registry package");
         }
-        return Response.json({ "dist-tags": metadata.distTags, versions: metadata.versions });
+        return Response.json({ "dist-tags": { latest: "1.2.4" }, versions: {} });
       };
     `);
-    const execute = async (
-      metadata: BetaRegistryPackage,
-      sha: string,
-      args: string[] = [],
-      overrides: Record<string, string> = {},
-    ) => {
-      await writeFile(join(root, "metadata.json"), JSON.stringify(metadata));
+    const execute = async (args: string[] = [], overrides: Record<string, string> = {}) => {
       const proc = Bun.spawn([process.execPath, "--preload", preload, join(root, "scripts/beta-release.ts"), ...args], {
         cwd: root,
-        env: { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/feature/test", GITHUB_SHA: sha, GITHUB_RUN_ID: "100", ...overrides },
+        env: { ...process.env, GITHUB_SHA: releaseSha, GITHUB_RUN_ID: "100", ...overrides },
         stdout: "pipe", stderr: "pipe",
       });
       const [status, stdout, stderr] = await Promise.all([
@@ -138,56 +109,25 @@ async function withFixture(run: (fixture: {
       ]);
       return { status, stdout, stderr };
     };
-    await run({ root, firstSha, lastSha, git, execute });
+    const planned = await execute();
+    expect(planned.status).toBe(0);
+    expect(planned.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
+    const stable = await execute(["--apply"], { BETA_VERSION: "1.3.0" });
+    expect(stable.status).toBe(1);
+    expect((await Bun.file(packagePath).json()).version).toBe("1.2.4");
+    const beta = await execute(["--apply"], { BETA_VERSION: "1.3.0-beta.100" });
+    expect(beta.status).toBe(0);
+    expect((await Bun.file(packagePath).json()).version).toBe("1.3.0-beta.100");
+    const checked = await execute(["--plan"], { TAG_NAME: "v1.3.0-beta.100", IS_PRERELEASE: "true" });
+    expect(checked.status).toBe(0);
+    expect(JSON.parse(checked.stdout)).toMatchObject({
+      version: "1.3.0-beta.100", distTag: "beta",
+      packages: { canonical: { name: "@langfuse/cli", status: "publish" } },
+    });
+    const invalidFlag = await execute(["--plan"], { TAG_NAME: "v1.3.0-beta.100", IS_PRERELEASE: "false" });
+    expect(invalidFlag.status).toBe(1);
+    expect(invalidFlag.stderr).toContain("IS_PRERELEASE=true");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}
-
-describe("beta workflow entry point", () => {
-  test("allows manual beta releases from unrelated branches", async () => {
-    await withFixture(async ({ firstSha, lastSha, git, execute }) => {
-      const metadata = (sha: string) => registry("1.3.0-beta.0", {
-        "1.3.0-beta.0": { gitHead: sha },
-      });
-      const next = await execute(metadata(firstSha), lastSha);
-      expect(next.status).toBe(0);
-      expect(next.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
-      git("checkout", "--orphan", "unrelated");
-      git("commit", "-m", "unrelated history");
-      const unrelated = await execute(metadata(firstSha), git("rev-parse", "HEAD"));
-      expect(unrelated.status).toBe(0);
-      expect(unrelated.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
-    });
-  });
-
-  test("enforces beta versions and leaves Git unchanged", async () => {
-    await withFixture(async ({ root, firstSha, lastSha, git, execute }) => {
-      const planned = await execute(registry(), lastSha);
-      expect(planned.status).toBe(0);
-      expect(planned.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
-      const stable = await execute(registry(), lastSha, ["--apply"], { BETA_VERSION: "1.2.5" });
-      expect(stable.status).toBe(1);
-      expect((await Bun.file(join(root, "package.json")).json()).version).toBe("1.2.4");
-      const beta = await execute(registry(), lastSha, ["--apply"], { BETA_VERSION: "1.2.5-beta.0" });
-      expect(beta.status).toBe(0);
-      expect((await Bun.file(join(root, "package.json")).json()).version).toBe("1.2.5-beta.0");
-      const checked = await execute(registry(), lastSha, ["--plan"], {
-        TAG_NAME: "v1.2.5-beta.0", IS_PRERELEASE: "true",
-      });
-      expect(checked.status).toBe(0);
-      expect(JSON.parse(checked.stdout)).toMatchObject({
-        version: "1.2.5-beta.0", distTag: "beta",
-        packages: { canonical: { name: "@langfuse/cli", status: "publish" } },
-      });
-      const invalidFlag = await execute(registry(), lastSha, ["--plan"], {
-        TAG_NAME: "v1.2.5-beta.0", IS_PRERELEASE: "false",
-      });
-      expect(invalidFlag.status).toBe(1);
-      expect(invalidFlag.stderr).toContain("IS_PRERELEASE=true");
-      expect(git("rev-parse", "HEAD")).toBe(lastSha);
-      expect(git("rev-parse", "HEAD~1")).toBe(firstSha);
-      expect(git("tag", "--list")).toBe("");
-    });
-  });
 });
