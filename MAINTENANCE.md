@@ -68,104 +68,76 @@ an entry applied in no snapshot at all fails the build, tests, and
 
 ## Releases
 
-Push to `main` freely; nothing publishes on push. Releases are a three-step
-flow with a human gate in the middle:
+CI stages packages; maintainers approve them on npm with 2FA. Staging requires
+Node 22.14+ and npm 11.15+ (CI uses Node 24).
+See [npm staged publishing](https://docs.npmjs.com/staged-publishing/).
+
+1. Run `bun run release` on main. It checks published versions and channel
+   ordering, runs the gates, pushes a release commit/tag and creates a draft
+   GitHub release. `--dry-run` checks the flow without pushing.
+2. Edit and publish the GitHub release. Mark prereleases as GitHub pre-releases.
+3. Approve the GitHub `npm-publish` environment. CI stages `@langfuse/cli` and
+   `langfuse-cli` from one build, with provenance.
+4. Review both packages in npm's **Staged Packages** tab and approve with 2FA.
+   GitHub approval permits staging only; npm approval makes the packages public.
+
+Approve releases in version order; reject obsolete pending stages. Approving
+an older stage later can move `latest` or `beta` backwards. The two package
+approvals are separate operations. After approval, verify both packages:
 
 ```sh
-bun run release
+npm view @langfuse/cli@latest version gitHead
+npm view langfuse-cli@latest version gitHead
 ```
 
-1. **Cut** (local, interactive): verifies you are on `main`, in sync with
-   origin, and `gh` is authenticated; checks CI status on HEAD (warns and
-   asks when it cannot be confirmed green — note that a commit whose checks
-   have not started yet passes this silently, so wait for CI after pushing);
-   asks for the next version (patch/minor/major, or alpha/beta/rc
-   prereleases — other identifiers and build metadata are rejected, matching
-   the publish workflow's policy); verifies the version is unused under both
-   npm package names and the tag is free; runs typecheck, both test suites, and
-   the full conformance build; then pushes a `chore(release): vX.Y.Z` commit plus the `vX.Y.Z` tag
-   and opens a **draft GitHub release** with generated notes.
-2. **Publish the GitHub release**: edit the notes on GitHub and click
-   Publish. This is the release decision — nothing reaches npm before it.
-3. **npm publish** (automatic): publishing the release triggers
-   [`release.yml`](.github/workflows/release.yml), which re-verifies the
-   release against the same policy module the cut script uses
-   (`scripts/release-guard.ts`: tag == package.json version, commit on main,
-   prerelease consistency, identifier whitelist, both package channels in
-   sync, and dist-tags never moving backwards), verifies both packed tarballs,
-   re-runs all gates, and publishes `@langfuse/cli` followed by the
-   `langfuse-cli` compatibility package via **npm trusted publishing (OIDC)**
-   with provenance attestations. No npm token exists anywhere.
+Stable releases use `latest`; prereleases use `alpha`, `beta` or `rc`.
+Use the corresponding tag in the verification commands.
 
-Both packages come from one build. `scripts/npm-packages.ts` stages two package
-roots with identical `bin/`, `dist/`, version, and `langfuse` executable. The
-canonical package receives `README.md`; the compatibility package receives
-`npm/legacy/README.md` as its npm `README.md`. The scoped package publishes
-first. If the second publish fails, rerun the workflow: the guard skips an
-existing version only when its `gitHead` matches the release commit, then
-publishes the missing package.
+### Retries
 
-npm dist-tags derive from the version: stable → `latest`, `-alpha.N` →
-`alpha`, `-beta.N` → `beta`, `-rc.N` → `rc`. Prerelease versions must be
-marked "pre-release" on the GitHub release (the draft is created that way);
-the workflow fails closed on any mismatch. Graduating `1.1.0-rc.1` → `1.1.0`
-is just another `bun run release` run choosing "graduate".
+Pending stages reserve their versions and are invisible to OIDC, so duplicate
+uploads fail. Inspect them on npm, approve or reject with 2FA, then rerun the
+failed job. Already-published packages are skipped only if their source commit
+matches, allowing a partial dual release to finish.
 
-To test the cut flow without pushing anything:
+Manual retries must run at the release tag, which must contain the updated
+workflow, have a published GitHub release and be on main:
 
 ```sh
-bun run release -- --dry-run
+gh workflow run release.yml --repo langfuse/langfuse-cli --ref vX.Y.Z
 ```
 
-If testing local changes to the release script itself, add `--allow-dirty`.
-Never use `--allow-dirty` for a real release.
+The workflow ref/SHA must match the build for provenance. Tags with the old
+direct-publish workflow need a new release; running from main cannot fix them.
 
-### Escape hatch: publishing without GitHub Actions
+### Betas and local staging
 
-Only when Actions is unavailable, publish directly from a machine:
+Actions → **Beta release** stages only `@langfuse/cli`; `dry_run` defaults to
+true. Versions use the source's next minor (or explicit beta base) and the run
+ID, e.g. `1.4.0-beta.<run-id>`. Reruns keep the same version; new runs get a new
+one. New betas must exceed `latest`. Smaller manually numbered betas on the
+same channel are rejected before release cuts. Prefer the Beta workflow for
+betas and tagged `rc` releases before stable.
 
-```sh
-bun run release -- --publish-local
-```
+`bun run release -- --publish-local` stages from this machine with npm login
+and the same build gates. It does not commit or tag; approve separately on npm.
+`--tag` overrides the local dist-tag; `--allow-dirty` is for script testing only.
+CI is preferred for provenance.
 
-This runs the same gates plus `npm pack --dry-run` for both staged packages and
-an explicit publish confirmation, and requires interactive npm authentication
-(with OTP if either package disallows tokens). It publishes the canonical
-package first and the compatibility package second. It does not commit or tag;
-do that manually after.
-`--tag <dist-tag>` overrides the dist-tag in this mode only; the CI path
-always derives it from the version.
+### Publisher configuration
 
-### One-time npm/GitHub configuration (required)
+Configure stage-only GitHub trusted publishing on npm:
 
-The public `@langfuse/cli` package must exist before npm permits trusted-
-publisher configuration. Bootstrap it once as a public prerelease from an
-authenticated `@langfuse` organization owner, using 2FA and
-`npm publish --access public`. Do not use the stable version intended for the
-first automated dual publish.
+| Package | Repository | Workflow | Environment |
+| --- | --- | --- | --- |
+| Both packages | `langfuse/langfuse-cli` | `release.yml` | `npm-publish` |
+| `@langfuse/cli` | `langfuse/langfuse-cli` | `beta-release.yml` | `npm-publish-beta` |
 
-On npmjs.com → `@langfuse/cli` → Settings, and again on
-`langfuse-cli` → Settings:
-
-1. **Trusted Publisher** → GitHub: owner `langfuse`, repository `langfuse-cli`,
-   workflow filename `release.yml`, environment `npm-publish`.
-2. **Publishing access**: "Require two-factor authentication and disallow
-   tokens" — CI publishes via the trusted publisher, humans can still
-   `--publish-local` interactively with OTP, and no token can ever publish.
-
-In the GitHub repo, environment protection is **required, not optional**:
-`release` events execute the workflow file **as of the tagged commit**, so
-without protection anyone with push access could tag a commit carrying a
-modified `release.yml` and publish arbitrary code through the trusted
-publisher. The environment protection rules are the platform-level gate that
-closes this:
-
-1. Settings → Environments → create `npm-publish`.
-2. Add **required reviewers** (release approvers).
-3. Set **deployment branches and tags** to "Selected branches and tags" and
-   allow only tags matching `v*`.
-4. Additionally, add a repository **ruleset restricting who can create `v*`
-   tags** (Settings → Rules → Rulesets) to maintainers.
+Allow **npm stage publish**, disable **npm publish**, and require 2FA with
+bypass tokens disallowed. Maintainers need npm write access and 2FA.
+Keep required reviewers on both GitHub environments; allow `v*` tags for
+`npm-publish` and intended source branches for `npm-publish-beta`.
+Restrict release-tag creation to maintainers.
 
 ### Legacy npm deprecation notice
 

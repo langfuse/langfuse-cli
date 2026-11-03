@@ -1,4 +1,4 @@
-import { gt, inc, prerelease, rcompare, valid } from "semver";
+import { gt, inc, prerelease, valid } from "semver";
 import { assertReleasableVersion, releaseGuard } from "./release-config";
 import type { NpmReleasePlan } from "./npm-release-plan";
 import { CANONICAL_PACKAGE_NAME } from "./npm-packages";
@@ -23,7 +23,24 @@ export function betaPublishPlan(input: {
   tagName?: string;
 }): BetaReleasePlan {
   if (!isBeta(input.version)) throw new Error("Beta publishing requires a beta version");
+  const beta = input.registry.distTags.beta;
+  if (beta !== undefined) {
+    if (!isBeta(beta)) throw new Error("npm beta must point to a beta version");
+    const gitHead = input.registry.versions[beta]?.gitHead;
+    if (!gitHead || !/^[0-9a-f]{40}$/.test(gitHead)) {
+      throw new Error(`Published beta ${beta} is missing valid gitHead metadata`);
+    }
+  }
   const published = input.registry.versions[input.version];
+  const stable = input.registry.distTags.latest;
+  if (stable !== undefined) {
+    if (prerelease(assertReleasableVersion(stable))) {
+      throw new Error("npm latest must be a stable version");
+    }
+    if (!published && !gt(input.version, stable)) {
+      throw new Error(`Beta ${input.version} must be greater than npm latest ${stable}`);
+    }
+  }
   const distTag = releaseGuard({
     version: input.version,
     tagName: input.tagName ?? `v${input.version}`,
@@ -46,40 +63,20 @@ export function betaReleasePlan(input: {
   version: string;
   releaseSha: string;
   registry: BetaRegistryPackage;
+  runId: string;
 }): BetaReleasePlan {
   const current = assertReleasableVersion(input.version);
   if (prerelease(current) && !isBeta(current)) {
     throw new Error("Beta releases require a stable or beta package.json version");
   }
-  let next = isBeta(current) ? current : inc(current, "preminor", "beta")!;
-  const registry = input.registry;
-  const betaVersions = Object.keys(registry.versions).filter(isBeta).sort(rcompare);
-  const retries = betaVersions.filter((version) =>
-    registry.versions[version]?.gitHead === input.releaseSha,
-  );
-  if (retries.length > 1) {
-    throw new Error("Multiple beta versions exist for this commit; inspect npm before retrying");
+  if (!/^[1-9][0-9]*$/.test(input.runId) || !Number.isSafeInteger(Number(input.runId))) {
+    throw new Error("Beta staging requires a positive GitHub run ID");
   }
-  const stable = registry.distTags.latest;
-  if (stable !== undefined) {
-    assertReleasableVersion(stable);
-    if (prerelease(stable)) throw new Error("npm latest must be a stable version");
-    const seed = inc(stable, "preminor", "beta")!;
-    if (gt(seed, next)) next = seed;
-  }
-  const highest = betaVersions[0];
-  if (highest && !gt(next, highest)) next = inc(highest, "prerelease", "beta")!;
-  const version = retries[0] ?? next;
-
-  const beta = registry.distTags.beta;
-  if (beta !== undefined) {
-    if (!isBeta(beta)) throw new Error("npm beta must point to a beta version");
-    const gitHead = registry.versions[beta]?.gitHead;
-    if (!gitHead || !/^[0-9a-f]{40}$/.test(gitHead)) {
-      throw new Error(`Published beta ${beta} is missing valid gitHead metadata`);
-    }
-  }
-
+  // Pending stages are invisible to OIDC. A run ID is unique even while every
+  // earlier beta is pending, and remains unchanged on workflow retries.
+  // Derive the base only from the immutable source, never mutable registry state.
+  const base = (isBeta(current) ? current : inc(current, "preminor", "beta")!).split("-")[0];
+  const version = `${base}-beta.${input.runId}`;
   return betaPublishPlan({ ...input, version });
 }
 
@@ -119,7 +116,7 @@ if (import.meta.main) {
         version: pkg.version, releaseSha, registry, tagName: process.env.TAG_NAME,
       })));
     } else {
-      const plan = betaReleasePlan({ version: pkg.version, releaseSha, registry });
+      const plan = betaReleasePlan({ version: pkg.version, releaseSha, registry, runId: process.env.GITHUB_RUN_ID ?? "" });
       const skip = plan.packages.canonical.status === "already-published";
       console.log(`version=${plan.version}`);
       console.log(`skip=${skip}`);

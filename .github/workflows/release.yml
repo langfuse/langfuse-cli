@@ -1,23 +1,12 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# Publishes the canonical and compatibility npm packages when a GitHub release
-# is published.
-#
-# Flow: `bun run release` pushes a release commit + tag and opens a draft
-# GitHub release. A human edits the notes and publishes the release, which
-# triggers this workflow. Publishing authenticates via npm trusted publishing
-# (OIDC) — no npm token exists anywhere — and npm attaches provenance
-# attestations automatically.
-#
-# One-time npm/GitHub setup: see MAINTENANCE.md "One-time npm configuration".
-# The npm-publish environment MUST carry protection rules (required
-# reviewers + deployment tag policy): release events execute this workflow
-# file as of the tagged commit, so environment protection is the platform
-# gate between "has push access" and "can publish to npm".
+# CI stages both packages with OIDC; maintainers approve on npm with 2FA.
+# Keep npm-publish protected and allow v* tags.
 name: Release
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -25,25 +14,38 @@ permissions: {}
 # run independently; re-deliveries of the same tag serialize. A shared fixed
 # group would silently cancel a superseded pending release run.
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: npm-publish-${{ github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    name: Publish to npm
+    name: Stage packages on npm
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     environment: npm-publish
     permissions:
       contents: read
       id-token: write # OIDC credential for npm trusted publishing
 
+    env:
+      TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
+
     steps:
       - name: Checkout release tag
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: refs/tags/${{ env.TAG_NAME }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify published GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease)"
+          jq -e '.tagName == env.TAG_NAME and .isDraft == false' <<< "$RELEASE"
+          echo "IS_PRERELEASE=$(jq -r '.isPrerelease' <<< "$RELEASE")" >> "$GITHUB_ENV"
 
       - name: Verify released commit is on main
         run: |
@@ -54,6 +56,10 @@ jobs:
             exit 1
           fi
           RELEASE_SHA="$(git rev-parse HEAD)"
+          if [ "$GITHUB_REF" != "refs/tags/$TAG_NAME" ] || [ "$RELEASE_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::release source must match the workflow ref and SHA for npm provenance"
+            exit 1
+          fi
           echo "RELEASE_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
           echo "Release commit: $RELEASE_SHA"
 
@@ -70,16 +76,13 @@ jobs:
       # Shared policy with scripts/release.ts validates both package identities,
       # tag <-> version binding, prerelease consistency, identifier whitelist,
       # channel monotonicity, and safe partial-publish recovery.
-      - name: Verify release policy and derive dual-publish plan
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+      - name: Verify release policy and derive staging plan
         run: |
           set -euo pipefail
           RELEASE_PLAN="$(bun scripts/release-guard.ts --json)"
           DIST_TAG="$(jq -r '.distTag' <<< "$RELEASE_PLAN")"
           echo "DIST_TAG=$DIST_TAG" >> "$GITHUB_ENV"
-          echo "Publishing with npm dist-tag $DIST_TAG"
+          echo "Staging with npm dist-tag $DIST_TAG"
           jq '.packages' <<< "$RELEASE_PLAN"
 
       - name: Typecheck
@@ -98,13 +101,13 @@ jobs:
           # This workflow publishes an artifact; never restore caches into it.
           package-manager-cache: false
 
-      - name: Verify npm supports trusted publishing (requires npm >= 11.5.1)
+      - name: Verify npm supports staged publishing (requires npm >= 11.15.0)
         run: |
           set -euo pipefail
           NPM_VERSION="$(npm --version)"
-          MINIMUM="11.5.1"
+          MINIMUM="11.15.0"
           if [ "$(printf '%s\n' "$MINIMUM" "$NPM_VERSION" | sort -V | head -n1)" != "$MINIMUM" ]; then
-            echo "::error::npm $NPM_VERSION is too old for trusted publishing (need >= $MINIMUM)"
+            echo "::error::npm $NPM_VERSION is too old for staged publishing (need >= $MINIMUM)"
             exit 1
           fi
           echo "npm $NPM_VERSION"
@@ -119,7 +122,7 @@ jobs:
           bun scripts/npm-packages.ts "$PACKAGE_ROOT" "$RELEASE_SHA"
           echo "PACKAGE_ROOT=$PACKAGE_ROOT" >> "$GITHUB_ENV"
 
-      # npm publish does not verify tarball completeness; a files-array,
+      # npm staging does not verify tarball completeness; a files-array,
       # README selection, or build-layout regression must fail here.
       - name: Verify both packed tarballs
         run: |
@@ -148,14 +151,9 @@ jobs:
           bun bin/langfuse.mjs --help > /dev/null
           echo "Smoke test passed."
 
-      # The early guard ran before ~5 minutes of gates; re-check against the
-      # registry state at publish time so a release published in that window
-      # cannot slip a dist-tag backwards (per-tag concurrency does not
-      # serialize different releases against each other).
-      - name: Re-verify release policy immediately before publish
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+      # Reject versions overtaken in the registry while the gates ran.
+      # Pending stages still require approvals in version order.
+      - name: Re-verify release policy immediately before staging
         run: |
           set -euo pipefail
           FINAL_PLAN="$(bun scripts/release-guard.ts --json)"
@@ -169,9 +167,9 @@ jobs:
 
       # conformance:all already built dist/; --ignore-scripts avoids a second
       # prepublishOnly build producing a different publish than was verified.
-      # Canonical publishes first so a partial failure never blocks old-name
-      # users from their previously working version.
-      - name: Publish @langfuse/cli to npm
+      # Pending-stage conflicts fail closed. Approve or reject the existing
+      # stage on npm before retrying; already published packages are skipped.
+      - name: Stage @langfuse/cli on npm
         run: |
           set -euo pipefail
           STATUS="$(jq -r '.packages.canonical.status' <<< "$FINAL_PLAN")"
@@ -179,10 +177,10 @@ jobs:
           if [ "$STATUS" = "already-published" ]; then
             echo "@langfuse/cli@$VERSION was already published from this release; skipping."
           else
-            npm publish "$PACKAGE_ROOT/canonical" --ignore-scripts --tag "$DIST_TAG"
+            npm stage publish "$PACKAGE_ROOT/canonical" --ignore-scripts --tag "$DIST_TAG"
           fi
 
-      - name: Publish langfuse-cli compatibility package to npm
+      - name: Stage langfuse-cli compatibility package on npm
         run: |
           set -euo pipefail
           STATUS="$(jq -r '.packages.legacy.status' <<< "$FINAL_PLAN")"
@@ -190,27 +188,10 @@ jobs:
           if [ "$STATUS" = "already-published" ]; then
             echo "langfuse-cli@$VERSION was already published from this release; skipping."
           else
-            npm publish "$PACKAGE_ROOT/legacy" --ignore-scripts --tag "$DIST_TAG"
+            npm stage publish "$PACKAGE_ROOT/legacy" --ignore-scripts --tag "$DIST_TAG"
           fi
 
-      - name: Verify both publishes reached npm
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+      - name: Report staging result
         run: |
-          set -euo pipefail
-          EXPECTED_VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
-          for attempt in 1 2 3 4 5; do
-            if PUBLISHED_PLAN="$(bun scripts/release-guard.ts --json)" &&
-              [ "$(jq -r '.packages.canonical.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
-              [ "$(jq -r '.packages.legacy.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
-              [ "$(npm view "@langfuse/cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ] &&
-              [ "$(npm view "langfuse-cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ]; then
-              jq '.packages' <<< "$PUBLISHED_PLAN"
-              echo "Both npm packages verified."
-              exit 0
-            fi
-            sleep "$((attempt * 2))"
-          done
-          echo "::error::could not verify both npm packages from release commit $RELEASE_SHA"
-          exit 1
+          VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
+          echo "Release $VERSION staged (or already published). Review both packages in npm's Staged Packages tab and approve with 2FA. Stage IDs are in the upload logs." >> "$GITHUB_STEP_SUMMARY"
