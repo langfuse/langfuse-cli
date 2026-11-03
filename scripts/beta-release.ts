@@ -1,4 +1,4 @@
-import { inc, prerelease, valid } from "semver";
+import { gt, inc, prerelease, valid } from "semver";
 import { assertReleasableVersion, releaseGuard } from "./release-config";
 import type { NpmReleasePlan } from "./npm-release-plan";
 import { CANONICAL_PACKAGE_NAME } from "./npm-packages";
@@ -32,6 +32,15 @@ export function betaPublishPlan(input: {
     }
   }
   const published = input.registry.versions[input.version];
+  const stable = input.registry.distTags.latest;
+  if (stable !== undefined) {
+    if (prerelease(assertReleasableVersion(stable))) {
+      throw new Error("npm latest must be a stable version");
+    }
+    if (!published && !gt(input.version, stable)) {
+      throw new Error(`Beta ${input.version} must be greater than npm latest ${stable}`);
+    }
+  }
   const distTag = releaseGuard({
     version: input.version,
     tagName: input.tagName ?? `v${input.version}`,
@@ -68,10 +77,6 @@ export function betaReleasePlan(input: {
   // Derive the base only from the immutable source, never mutable registry state.
   const base = (isBeta(current) ? current : inc(current, "preminor", "beta")!).split("-")[0];
   const version = `${base}-beta.${input.runId}`;
-  const stable = input.registry.distTags.latest;
-  if (stable !== undefined && prerelease(assertReleasableVersion(stable))) {
-    throw new Error("npm latest must be a stable version");
-  }
   return betaPublishPlan({ ...input, version });
 }
 

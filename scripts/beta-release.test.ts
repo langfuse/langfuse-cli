@@ -54,12 +54,21 @@ describe("beta releases", () => {
     const previous = registry("1.3.0-beta.99", { "1.3.0-beta.99": { gitHead: releaseSha } });
     expect(plan(previous).version).toBe("1.3.0-beta.100");
     expect(plan(previous).packages.canonical.status).toBe("publish");
-    expect(plan(registry("1.3.0-beta.99", {}, "1.3.0")).version).toBe("1.3.0-beta.100");
+    expect(() => plan(registry("1.3.0-beta.99", {}, "1.3.0"))).toThrow("must be greater than npm latest");
     expect(plan(registry("1.3.0-beta.101", { "1.3.0-beta.100": { gitHead: releaseSha } }))
       .packages.canonical.status).toBe("already-published");
     expect(() => plan(registry("1.3.0-beta.101"))).toThrow("backwards");
     expect(() => plan(registry(undefined, { "1.3.0-beta.100": { gitHead: previousSha } })))
       .toThrow("different or missing gitHead");
+  });
+
+  test("rechecks the stable floor before staging but permits already-published retries", () => {
+    const input = { version: "1.3.0-beta.100", releaseSha, registry: registry(undefined, {}, "1.3.0") };
+    expect(() => betaPublishPlan(input)).toThrow("must be greater than npm latest");
+    expect(betaPublishPlan({ ...input, registry: registry(undefined, {
+      [input.version]: { gitHead: releaseSha },
+    }, "1.3.0") }).packages.canonical.status).toBe("already-published");
+    expect(betaPublishPlan({ ...input, version: "1.4.0-beta.100" }).packages.canonical.status).toBe("publish");
   });
 
   test("rejects malformed run IDs and unsupported bases", () => {

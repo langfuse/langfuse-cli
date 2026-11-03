@@ -2,7 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { prerelease, valid } from "semver";
+import { gte, prerelease, valid } from "semver";
 
 import {
   PRERELEASE_IDENTIFIERS,
@@ -20,6 +20,7 @@ import {
   LEGACY_PACKAGE_NAME,
   prepareNpmPackages,
 } from "./npm-packages";
+import { npmReleasePlan, type NpmRegistryPackageState } from "./npm-release-plan";
 
 type PackageJson = {
   name: string;
@@ -276,28 +277,38 @@ async function assertTagAvailable(tagName: string): Promise<void> {
 async function assertVersionNotPublished(
   packageName: string,
   version: string,
-): Promise<void> {
+): Promise<NpmRegistryPackageState> {
   console.log(`\nChecking npm for ${packageName}@${version}...`);
   const result = await runCommand(
     "npm",
-    ["view", packageName, "versions", "--json"],
+    ["view", packageName, "versions", "dist-tags", "--json"],
     { capture: true, throwOnError: false },
   );
   if (result.exitCode !== 0) {
-    if (result.stderr.includes("E404")) return;
+    if (result.stderr.includes("E404")) {
+      return { name: packageName, currentDistTags: null, publishedGitHead: null };
+    }
     throw new Error(
-      `npm view ${packageName} versions --json failed with exit code ${result.exitCode}\n${result.stderr}`,
+      `npm view ${packageName} versions dist-tags --json failed with exit code ${result.exitCode}\n${result.stderr}`,
     );
   }
-  const parsed = JSON.parse(result.stdout) as string | string[];
-  const versions = Array.isArray(parsed) ? parsed : [parsed];
+  const metadata = JSON.parse(result.stdout) as {
+    versions: string | string[];
+    "dist-tags": Record<string, string>;
+  };
+  const versions = Array.isArray(metadata.versions) ? metadata.versions : [metadata.versions];
 
   if (versions.includes(version)) {
     throw new Error(`${packageName}@${version} already exists on npm.`);
   }
+  return { name: packageName, currentDistTags: metadata["dist-tags"], publishedGitHead: null };
 }
 
 async function assertNpmPublishContext(): Promise<void> {
+  const npmVersion = (await runCommand("npm", ["--version"], { capture: true })).stdout.trim();
+  if (!valid(npmVersion) || !gte(npmVersion, "11.15.0")) {
+    throw new Error(`npm ${npmVersion} is too old for staged publishing (need >= 11.15.0)`);
+  }
   const registry = await runCommand("npm", ["config", "get", "registry"], {
     capture: true,
   });
@@ -491,8 +502,8 @@ async function cutRelease(): Promise<void> {
     console.log("Release cancelled.");
     return;
   }
-  // Enforce the same policy the publish workflow enforces, so nothing this
-  // script cuts can be rejected by CI after the tag is pushed.
+  // Check the same policy as CI before creating a release. CI rechecks it
+  // because registry state can change after the cut.
   const nextVersion = assertReleasableVersion(selectedVersion);
   if (nextVersion === pkg.version) throw new Error("Version must change.");
 
@@ -503,8 +514,17 @@ async function cutRelease(): Promise<void> {
   console.log(`Git tag: ${tagName}`);
   console.log(`npm dist-tag (applied after npm approval): ${distTag}`);
 
-  await assertVersionNotPublished(CANONICAL_PACKAGE_NAME, nextVersion);
-  await assertVersionNotPublished(LEGACY_PACKAGE_NAME, nextVersion);
+  const [canonical, legacy] = await Promise.all([
+    assertVersionNotPublished(CANONICAL_PACKAGE_NAME, nextVersion),
+    assertVersionNotPublished(LEGACY_PACKAGE_NAME, nextVersion),
+  ]);
+  npmReleasePlan({
+    version: nextVersion,
+    tagName,
+    isPrerelease,
+    releaseSha: (await runCommand("git", ["rev-parse", "HEAD"], { capture: true })).stdout.trim(),
+    packages: { canonical, legacy },
+  });
   if (!isDryRun) await assertTagAvailable(tagName);
 
   pkg.version = nextVersion;
