@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# Setup on @langfuse/cli: trusted publisher beta-release.yml with environment
+# Stage-only publisher on @langfuse/cli: beta-release.yml with environment
 # npm-publish-beta. Allow source branches and require release reviewers on this
 # environment: dispatch executes workflow code from the selected branch.
 # Run via Actions > Beta release > Run workflow, then select the source branch.
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Run all checks and show the version without publishing
+        description: Run all checks and show the version without staging
         type: boolean
         default: true
 
@@ -20,7 +20,7 @@ defaults:
   run:
     shell: bash
 
-# Serialize beta version allocation and publishing across manual runs.
+# Serialize beta staging. Run IDs reserve versions while earlier stages are pending.
 concurrency:
   group: npm-beta-publish
   queue: max
@@ -48,7 +48,7 @@ jobs:
           no-cache: true
       - name: Install dependencies
         run: bun ci
-      - name: Allocate beta version or recognize a retry
+      - name: Select beta version reserved by this run ID
         id: plan
         run: bun scripts/beta-release.ts >> "$GITHUB_OUTPUT"
 
@@ -117,13 +117,13 @@ jobs:
           # This workflow publishes an artifact; never restore caches into it.
           package-manager-cache: false
 
-      - name: Verify npm supports trusted publishing (requires npm >= 11.5.1)
+      - name: Verify npm supports staged publishing (requires npm >= 11.15.0)
         run: |
           set -euo pipefail
           NPM_VERSION="$(npm --version)"
-          MINIMUM="11.5.1"
+          MINIMUM="11.15.0"
           if [ "$(printf '%s\n' "$MINIMUM" "$NPM_VERSION" | sort -V | head -n1)" != "$MINIMUM" ]; then
-            echo "::error::npm $NPM_VERSION is too old for trusted publishing (need >= $MINIMUM)"
+            echo "::error::npm $NPM_VERSION is too old for staged publishing (need >= $MINIMUM)"
             exit 1
           fi
           echo "npm $NPM_VERSION"
@@ -138,7 +138,7 @@ jobs:
           bun scripts/npm-packages.ts "$PACKAGE_ROOT" "$RELEASE_SHA"
           echo "PACKAGE_ROOT=$PACKAGE_ROOT" >> "$GITHUB_ENV"
 
-      # npm publish does not verify tarball completeness; a files-array,
+      # npm staging does not verify tarball completeness; a files-array,
       # README selection, or build-layout regression must fail here.
       - name: Verify both packed tarballs
         run: |
@@ -199,7 +199,7 @@ jobs:
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
   publish:
-    name: Publish beta to npm
+    name: Stage beta on npm
     needs: preparation
     if: ${{ !inputs.dry_run && needs.preparation.outputs.skip == 'false' }}
     runs-on: ubuntu-latest
@@ -241,13 +241,13 @@ jobs:
           # This workflow publishes an artifact; never restore caches into it.
           package-manager-cache: false
 
-      - name: Verify npm supports trusted publishing (requires npm >= 11.5.1)
+      - name: Verify npm supports staged publishing (requires npm >= 11.15.0)
         run: |
           set -euo pipefail
           NPM_VERSION="$(npm --version)"
-          MINIMUM="11.5.1"
+          MINIMUM="11.15.0"
           if [ "$(printf '%s\n' "$MINIMUM" "$NPM_VERSION" | sort -V | head -n1)" != "$MINIMUM" ]; then
-            echo "::error::npm $NPM_VERSION is too old for trusted publishing (need >= $MINIMUM)"
+            echo "::error::npm $NPM_VERSION is too old for staged publishing (need >= $MINIMUM)"
             exit 1
           fi
           echo "npm $NPM_VERSION"
@@ -273,8 +273,8 @@ jobs:
           echo "FINAL_PLAN=$FINAL_PLAN" >> "$GITHUB_ENV"
           jq '.packages' <<< "$FINAL_PLAN"
 
-      # Publish the package built and checked by preparation without rebuilding it.
-      - name: Publish @langfuse/cli to npm
+      # Stage the package built and checked by preparation without rebuilding it.
+      - name: Stage @langfuse/cli on npm
         run: |
           set -euo pipefail
           STATUS="$(jq -r '.packages.canonical.status' <<< "$FINAL_PLAN")"
@@ -282,22 +282,10 @@ jobs:
           if [ "$STATUS" = "already-published" ]; then
             echo "@langfuse/cli@$VERSION was already published from this release; skipping."
           else
-            npm publish "$RUNNER_TEMP/beta-release/package.tgz" --ignore-scripts --tag "$DIST_TAG"
+            npm stage publish "$RUNNER_TEMP/beta-release/package.tgz" --ignore-scripts --tag "$DIST_TAG"
           fi
 
-      - name: Verify beta publish reached npm
+      - name: Report staging result
         run: |
-          set -euo pipefail
-          EXPECTED_VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
-          for attempt in 1 2 3 4 5; do
-            if PUBLISHED_PLAN="$(bun scripts/beta-release.ts --plan)" &&
-              [ "$(jq -r '.packages.canonical.status' <<< "$PUBLISHED_PLAN")" = "already-published" ] &&
-              [ "$(npm view "@langfuse/cli@$DIST_TAG" version)" = "$EXPECTED_VERSION" ]; then
-              jq '.packages' <<< "$PUBLISHED_PLAN"
-              echo "Beta npm package verified."
-              exit 0
-            fi
-            sleep "$((attempt * 2))"
-          done
-          echo "::error::could not verify beta package from release commit $RELEASE_SHA"
-          exit 1
+          VERSION="$(jq -r '.version' <<< "$FINAL_PLAN")"
+          echo "Beta $VERSION staged (or already published). Review @langfuse/cli in npm's Staged Packages tab and approve with 2FA. The stage ID is in the upload log." >> "$GITHUB_STEP_SUMMARY"

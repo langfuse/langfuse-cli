@@ -65,15 +65,15 @@ function printHelp(): void {
 
 Cuts a release: verifies main is clean, green, and in sync, runs all gates,
 bumps the version, pushes a release commit + tag, and opens a draft GitHub
-release. Publishing the GitHub release triggers the npm publish via GitHub
+release. Publishing the GitHub release triggers npm staging via GitHub
 Actions (.github/workflows/release.yml, npm trusted publishing) for both
-${CANONICAL_PACKAGE_NAME} and ${LEGACY_PACKAGE_NAME}.
+${CANONICAL_PACKAGE_NAME} and ${LEGACY_PACKAGE_NAME}. Approve separately on npm with 2FA.
 
 Options:
   --version <semver>  Release an explicit version without the version prompt
   --dry-run           Run all checks and show the plan without pushing anything
-  --publish-local     ESCAPE HATCH: publish to npm from this machine instead of
-                      GitHub Actions (interactive npm auth + OTP required)
+  --publish-local     ESCAPE HATCH: stage from this machine instead of Actions
+                      (npm login required; approve separately on npm with 2FA)
   --tag <tag>         npm dist-tag for --publish-local; inferred from the
                       prerelease identifier otherwise
   --allow-dirty       Allow release-relevant local changes for script testing
@@ -470,7 +470,7 @@ async function runGates(): Promise<void> {
 }
 
 // Default mode: cut a release. Pushes a release commit + tag and opens a
-// draft GitHub release; publishing that release triggers the npm publish in
+// draft GitHub release; publishing that release triggers npm staging in
 // GitHub Actions via npm trusted publishing. Never touches npm itself.
 async function cutRelease(): Promise<void> {
   if (!isDryRun) {
@@ -501,7 +501,7 @@ async function cutRelease(): Promise<void> {
   const tagName = `v${nextVersion}`;
   console.log(`Release version: ${nextVersion}`);
   console.log(`Git tag: ${tagName}`);
-  console.log(`npm dist-tag (applied by CI): ${distTag}`);
+  console.log(`npm dist-tag (applied after npm approval): ${distTag}`);
 
   await assertVersionNotPublished(CANONICAL_PACKAGE_NAME, nextVersion);
   await assertVersionNotPublished(LEGACY_PACKAGE_NAME, nextVersion);
@@ -566,12 +566,13 @@ async function cutRelease(): Promise<void> {
   console.log("Next steps:");
   console.log("  1. Edit the release notes on GitHub.");
   console.log(
-    `  2. Publish the release — GitHub Actions then publishes ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} to npm with dist-tag "${distTag}".`,
+    `  2. Publish the release — GitHub Actions then stages ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} with dist-tag "${distTag}".`,
   );
+  console.log("  3. Review both packages in npm Staged Packages and approve with 2FA.");
 }
 
-// Escape hatch: publish to npm from this machine, bypassing GitHub Actions.
-// Requires interactive npm auth (and OTP when tokens are disallowed).
+// Escape hatch: stage to npm from this machine, bypassing GitHub Actions.
+// Requires npm login; npm approval with 2FA happens separately.
 async function publishLocal(): Promise<void> {
   console.log(
     "publish-local: bypassing GitHub Actions. Prefer `bun run release` + publishing the GitHub release unless Actions is unavailable.",
@@ -619,17 +620,17 @@ async function publishLocal(): Promise<void> {
     await printPostBuildReview();
 
     if (isDryRun) {
-      console.log("\nDry run complete. Publish skipped.");
+      console.log("\nDry run complete. Staging skipped.");
       await restorePackageJsonIfNeeded();
       return;
     }
 
     const shouldPublish = await confirm(
       rl,
-      `Publish ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} to npm with dist-tag "${publishTag}" and the status above?`,
+      `Stage ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} to npm with dist-tag "${publishTag}" and the status above?`,
     );
     if (!shouldPublish) {
-      console.log("Publish skipped.");
+      console.log("Staging skipped.");
       await restorePackageJsonIfNeeded();
       return;
     }
@@ -639,16 +640,16 @@ async function publishLocal(): Promise<void> {
     publishStarted = true;
     await runCommand(
       "npm",
-      ["publish", packages.canonical, "--ignore-scripts", "--tag", publishTag],
+      ["stage", "publish", packages.canonical, "--ignore-scripts", "--tag", publishTag],
       { suspendPrompt: true },
     );
     await runCommand(
       "npm",
-      ["publish", packages.legacy, "--ignore-scripts", "--tag", publishTag],
+      ["stage", "publish", packages.legacy, "--ignore-scripts", "--tag", publishTag],
       { suspendPrompt: true },
     );
     console.log(
-      `Published both npm packages at ${nextVersion} with dist-tag "${publishTag}".`,
+      `Staged both packages at ${nextVersion} with dist-tag "${publishTag}". Review and approve them on npm with 2FA.`,
     );
     console.log(
       `Create a release commit/tag for ${CANONICAL_PACKAGE_NAME}@${nextVersion}; publish-local does not commit automatically.`,
@@ -667,7 +668,7 @@ try {
 } catch (error) {
   if (publishStarted) {
     console.error(
-      "Publish command failed after npm publish started. Verify npm state before retrying; package.json was not rolled back.",
+      "Staging failed after an upload may have started. Inspect npm Staged Packages before retrying; package.json was not rolled back.",
     );
   } else if (releaseCommitted) {
     console.error(

@@ -214,7 +214,8 @@ See the full [Langfuse API Reference](https://api.reference.langfuse.com/).
 The CLI is implemented in TypeScript and runs on Node.js 20+ or Bun. It has zero external runtime dependencies and never parses OpenAPI during invocation.
 
 See [MAINTENANCE.md](MAINTENANCE.md) for build, API snapshot, testing, and
-release workflows. The version-pinned black-box suite is documented separately
+release workflows. CI stages releases on npm; a maintainer approves them with
+2FA before they become public. The version-pinned black-box suite is documented separately
 in [`conformance/README.md`](conformance/README.md).
 
 ## License

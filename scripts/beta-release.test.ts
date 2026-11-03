@@ -12,14 +12,16 @@ function registry(
   versions: Record<string, { gitHead?: string }> = {},
   latest = "1.2.4",
 ): BetaRegistryPackage {
-  return { distTags: { latest, ...(beta ? { beta } : {}) }, versions };
+  return { distTags: { latest, ...(beta ? { beta } : {}) },
+    versions: { ...(beta ? { [beta]: { gitHead: previousSha } } : {}), ...versions } };
 }
 
 function plan(
   metadata = registry(),
   version = "1.2.4",
+  runId = "100",
 ) {
-  return betaReleasePlan({ version, releaseSha, registry: metadata });
+  return betaReleasePlan({ version, releaseSha, registry: metadata, runId });
 }
 
 describe("beta releases", () => {
@@ -39,55 +41,35 @@ describe("beta releases", () => {
     }).packages.canonical.status).toBe("already-published");
   });
 
-  test("starts the next minor beta without touching latest", () => {
-    const result = plan();
-    expect(result.version).toBe("1.3.0-beta.0");
-    expect(plan(registry(), "2.2.4").version).toBe("2.3.0-beta.0");
-    expect(result.distTag).toBe("beta");
-    expect(result.packages.canonical.status).toBe("publish");
-    expect(Object.keys(result.packages)).toEqual(["canonical"]);
+  test("reserves unique beta versions even when no pending stage is publicly visible", () => {
+    expect(plan().version).toBe("1.3.0-beta.100");
+    expect(plan(registry(), "1.2.4", "101").version).toBe("1.3.0-beta.101");
+    expect(plan(registry(), "2.2.4").version).toBe("2.3.0-beta.100");
+    expect(plan(registry(), "2.0.0-beta.4").version).toBe("2.0.0-beta.100");
+    expect(Object.keys(plan().packages)).toEqual(["canonical"]);
+    expect(plan().distTag).toBe("beta");
   });
 
-  test("increments past all existing betas, including versions off the channel", () => {
-    const current = registry("1.3.0-beta.2", {
-      "1.3.0-beta.2": { gitHead: previousSha },
-      "1.3.0-beta.4": { gitHead: "c".repeat(40) },
-    });
-    expect(plan(current).version).toBe("1.3.0-beta.5");
+  test("keeps this run's version across registry changes and detects stale or conflicting releases", () => {
+    const previous = registry("1.3.0-beta.99", { "1.3.0-beta.99": { gitHead: releaseSha } });
+    expect(plan(previous).version).toBe("1.3.0-beta.100");
+    expect(plan(previous).packages.canonical.status).toBe("publish");
+    expect(plan(registry("1.3.0-beta.99", {}, "1.3.0")).version).toBe("1.3.0-beta.100");
+    expect(plan(registry("1.3.0-beta.101", { "1.3.0-beta.100": { gitHead: releaseSha } }))
+      .packages.canonical.status).toBe("already-published");
+    expect(() => plan(registry("1.3.0-beta.101"))).toThrow("backwards");
+    expect(() => plan(registry(undefined, { "1.3.0-beta.100": { gitHead: previousSha } })))
+      .toThrow("different or missing gitHead");
   });
 
-  test("advances beyond stable releases and allows an explicit beta base", () => {
-    const current = registry("1.2.5-beta.0", {
-      "1.2.5-beta.0": { gitHead: previousSha },
-    }, "1.3.0");
-    expect(plan(current).version).toBe("1.4.0-beta.0");
-    expect(plan(current, "2.0.0-beta.0").version).toBe("2.0.0-beta.0");
-  });
-
-  test("reuses the same version after a publish succeeds", () => {
-    const canonical = registry("1.2.5-beta.0", {
-      "1.2.5-beta.0": { gitHead: releaseSha },
-    });
-    const result = plan(canonical);
-    expect(result.version).toBe("1.2.5-beta.0");
-    expect(result.packages.canonical.status).toBe("already-published");
-  });
-
-  test("recognizes an old successful run after beta has advanced", () => {
-    const current = registry("1.2.5-beta.1", {
-      "1.2.5-beta.0": { gitHead: releaseSha },
-      "1.2.5-beta.1": { gitHead: previousSha },
-    });
-    const result = plan(current);
-    expect(result.version).toBe("1.2.5-beta.0");
-    expect(result.packages.canonical.status).toBe("already-published");
-  });
-
-  test("refuses non-beta package bases and missing published commit metadata", () => {
+  test("rejects malformed run IDs and unsupported bases", () => {
+    for (const id of ["", "0", "01", "-1", "NaN", "9007199254740992", "100\n"]) {
+      expect(() => plan(registry(), "1.2.4", id)).toThrow("run ID");
+    }
     expect(() => plan(registry(), "1.3.0-rc.0")).toThrow("stable or beta");
-    expect(() => plan(registry("1.2.5-beta.0", {
-      "1.2.5-beta.0": {},
-    }))).toThrow("gitHead");
+    expect(() => plan(registry(undefined, {}, "1.3.0-beta.1"))).toThrow("latest must be a stable");
+    expect(() => plan(registry("1.3.0-beta.1", { "1.3.0-beta.1": {} }))).toThrow("gitHead");
+    expect(() => plan(registry("1.3.0"))).toThrow("beta must point to a beta version");
   });
 });
 
@@ -139,7 +121,7 @@ async function withFixture(run: (fixture: {
       await writeFile(join(root, "metadata.json"), JSON.stringify(metadata));
       const proc = Bun.spawn([process.execPath, "--preload", preload, join(root, "scripts/beta-release.ts"), ...args], {
         cwd: root,
-        env: { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/feature/test", GITHUB_SHA: sha, ...overrides },
+        env: { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/feature/test", GITHUB_SHA: sha, GITHUB_RUN_ID: "100", ...overrides },
         stdout: "pipe", stderr: "pipe",
       });
       const [status, stdout, stderr] = await Promise.all([
@@ -161,12 +143,12 @@ describe("beta workflow entry point", () => {
       });
       const next = await execute(metadata(firstSha), lastSha);
       expect(next.status).toBe(0);
-      expect(next.stdout).toBe("version=1.3.0-beta.1\nskip=false\n");
+      expect(next.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
       git("checkout", "--orphan", "unrelated");
       git("commit", "-m", "unrelated history");
       const unrelated = await execute(metadata(firstSha), git("rev-parse", "HEAD"));
       expect(unrelated.status).toBe(0);
-      expect(unrelated.stdout).toBe("version=1.3.0-beta.1\nskip=false\n");
+      expect(unrelated.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
     });
   });
 
@@ -174,7 +156,7 @@ describe("beta workflow entry point", () => {
     await withFixture(async ({ root, firstSha, lastSha, git, execute }) => {
       const planned = await execute(registry(), lastSha);
       expect(planned.status).toBe(0);
-      expect(planned.stdout).toBe("version=1.3.0-beta.0\nskip=false\n");
+      expect(planned.stdout).toBe("version=1.3.0-beta.100\nskip=false\n");
       const stable = await execute(registry(), lastSha, ["--apply"], { BETA_VERSION: "1.2.5" });
       expect(stable.status).toBe(1);
       expect((await Bun.file(join(root, "package.json")).json()).version).toBe("1.2.4");
