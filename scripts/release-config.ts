@@ -4,6 +4,8 @@ export interface ReleaseOptions {
   dryRun: boolean;
   allowDirty: boolean;
   publishLocal: boolean;
+  finalize: boolean;
+  resume: boolean;
   showHelp: boolean;
   version?: string;
   tag?: string;
@@ -14,6 +16,8 @@ export function parseReleaseArgs(args: string[]): ReleaseOptions {
     dryRun: false,
     allowDirty: false,
     publishLocal: false,
+    finalize: false,
+    resume: false,
     showHelp: false,
   };
   for (let index = 0; index < args.length; index++) {
@@ -21,6 +25,8 @@ export function parseReleaseArgs(args: string[]): ReleaseOptions {
     if (argument === "--dry-run") options.dryRun = true;
     else if (argument === "--allow-dirty") options.allowDirty = true;
     else if (argument === "--publish-local") options.publishLocal = true;
+    else if (argument === "--finalize") options.finalize = true;
+    else if (argument === "--resume") options.resume = true;
     else if (argument === "--help" || argument === "-h") options.showHelp = true;
     else if (argument === "--version" || argument === "--tag") {
       const value = args[++index];
@@ -32,6 +38,15 @@ export function parseReleaseArgs(args: string[]): ReleaseOptions {
     } else {
       throw new Error(`Unknown release option: ${argument}`);
     }
+  }
+  if ([options.publishLocal, options.finalize, options.resume].filter(Boolean).length > 1) {
+    throw new Error("--publish-local, --finalize, and --resume are mutually exclusive");
+  }
+  if (options.allowDirty && !options.dryRun) {
+    throw new Error("--allow-dirty requires --dry-run; it is for script testing only");
+  }
+  if (options.resume && options.dryRun) {
+    throw new Error("--resume cannot be combined with --dry-run");
   }
   if (options.tag && !options.publishLocal) {
     throw new Error(

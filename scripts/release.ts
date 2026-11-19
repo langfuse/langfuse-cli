@@ -21,6 +21,13 @@ import {
   prepareNpmPackages,
 } from "./npm-packages";
 import { npmReleasePlan, type NpmRegistryPackageState } from "./npm-release-plan";
+import {
+  assertCiGreen,
+  createDraftRelease,
+  prepareReleasePullRequest,
+  releaseBranch,
+  resumeReleasePullRequest,
+} from "./release-workflow";
 
 type PackageJson = {
   name: string;
@@ -37,8 +44,10 @@ const exactReleaseFiles = new Set([
   "README.md",
   "bun.lock",
   "package.json",
+  "tsconfig.json",
 ]);
 const releasePathPrefixes = [
+  ".github/",
   "bin/",
   "conformance/",
   "npm/",
@@ -64,20 +73,23 @@ let publishStarted = false;
 function printHelp(): void {
   console.log(`Usage: bun run release -- [options]
 
-Cuts a release: verifies main is clean, green, and in sync, runs all gates,
-bumps the version, pushes a release commit + tag, and opens a draft GitHub
-release. Publishing the GitHub release triggers npm staging via GitHub
-Actions (.github/workflows/release.yml, npm trusted publishing) for both
-${CANONICAL_PACKAGE_NAME} and ${LEGACY_PACKAGE_NAME}. Approve separately on npm with 2FA.
+Prepares a release: verifies main is clean, green, and in sync, runs all
+gates, and opens a version-bump PR. After merging, pull main and rerun with
+--finalize to create a draft from the merged commit after successful CI.
+Publishing the GitHub release triggers npm staging via GitHub
+Actions after approval of the npm-publish environment. Then approve both
+${CANONICAL_PACKAGE_NAME} and ${LEGACY_PACKAGE_NAME} on npm with 2FA.
 
 Options:
   --version <semver>  Release an explicit version without the version prompt
-  --dry-run           Run all checks and show the plan without pushing anything
+  --finalize          Create/reuse the draft for the current version on main
+  --resume            Retry pushing/opening the current release branch's PR
+  --dry-run           Check the plan without committing, pushing, or releasing
   --publish-local     ESCAPE HATCH: stage from this machine instead of Actions
                       (npm login required; approve separately on npm with 2FA)
   --tag <tag>         npm dist-tag for --publish-local; inferred from the
                       prerelease identifier otherwise
-  --allow-dirty       Allow release-relevant local changes for script testing
+  --allow-dirty       Allow local changes with --dry-run for script testing
   -h, --help          Show this help`);
 }
 
@@ -174,17 +186,19 @@ function isReleaseRelevantPath(path: string): boolean {
   );
 }
 
-async function assertNoReleaseRelevantChanges(): Promise<void> {
+async function assertNoReleaseRelevantChanges(ignorePackageJson = false): Promise<void> {
   const { stdout } = await runCommand(
     "git",
     ["status", "--porcelain=v1", "--untracked-files=all"],
     { capture: true },
   );
   const dirtyRelevantLines = stdout
-    .trim()
+    .trimEnd()
     .split("\n")
     .filter(Boolean)
-    .filter((line) => statusLinePaths(line).some(isReleaseRelevantPath));
+    .filter((line) => statusLinePaths(line).some((path) =>
+      isReleaseRelevantPath(path) && !(ignorePackageJson && path === "package.json"),
+    ));
 
   if (dirtyRelevantLines.length === 0) return;
 
@@ -202,7 +216,7 @@ async function assertNoReleaseRelevantChanges(): Promise<void> {
       "",
       ...dirtyRelevantLines.map((line) => `  ${line}`),
       "",
-      "For local release-script testing only, rerun with --allow-dirty.",
+      "For local release-script testing only, rerun with --dry-run --allow-dirty.",
     ].join("\n"),
   );
 }
@@ -216,7 +230,7 @@ async function assertOnMainAndSynced(): Promise<string> {
   if (branch !== "main") {
     throw new Error(`Releases are cut from main; current branch is ${branch}.`);
   }
-  await runCommand("git", ["fetch", "origin", "main"], { capture: true });
+  await runCommand("git", ["fetch", "--no-tags", "origin", "main"], { capture: true });
   const head = (
     await runCommand("git", ["rev-parse", "HEAD"], { capture: true })
   ).stdout.trim();
@@ -225,34 +239,10 @@ async function assertOnMainAndSynced(): Promise<string> {
   ).stdout.trim();
   if (head !== originMain) {
     throw new Error(
-      `Local main (${head.slice(0, 7)}) is not in sync with origin/main (${originMain.slice(0, 7)}). Pull or push first.`,
+      `Local main (${head.slice(0, 7)}) is not in sync with origin/main (${originMain.slice(0, 7)}). Use git pull --ff-only if behind. If ahead, move the local commits to a PR branch.`,
     );
   }
   return head;
-}
-
-async function warnUnlessCiGreen(sha: string): Promise<void> {
-  const result = await runCommand(
-    "gh",
-    [
-      "api",
-      `repos/{owner}/{repo}/commits/${sha}/check-runs`,
-      "--jq",
-      '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")] | length',
-    ],
-    { capture: true, throwOnError: false },
-  );
-  const failing = Number(result.stdout.trim());
-  if (result.exitCode === 0 && failing === 0) {
-    console.log(`CI checks on ${sha.slice(0, 7)}: green`);
-    return;
-  }
-  const reason =
-    result.exitCode !== 0
-      ? "could not query CI status via gh"
-      : `${failing} check(s) on HEAD are not successful`;
-  const proceed = await confirm(rl, `Warning: ${reason}. Continue anyway?`);
-  if (!proceed) throw new Error("Release cancelled: CI not verified green.");
 }
 
 async function assertTagAvailable(tagName: string): Promise<void> {
@@ -480,14 +470,10 @@ async function runGates(): Promise<void> {
   await runCommand("bun", ["run", "conformance:all"]);
 }
 
-// Default mode: cut a release. Pushes a release commit + tag and opens a
-// draft GitHub release; publishing that release triggers npm staging in
-// GitHub Actions via npm trusted publishing. Never touches npm itself.
-async function cutRelease(): Promise<void> {
+// Default mode prepares a PR. Finalization happens only after its merge.
+async function prepareRelease(): Promise<void> {
   if (!isDryRun) {
-    await assertOnMainAndSynced().then(warnUnlessCiGreen);
-    // `gh` is a hard post-push dependency (draft release creation); verify
-    // auth before anything irreversible happens.
+    await assertCiGreen(runCommand, await assertOnMainAndSynced());
     await runCommand("gh", ["auth", "status"], { capture: true });
     console.log("gh auth: ok");
   } else {
@@ -532,21 +518,20 @@ async function cutRelease(): Promise<void> {
   console.log(`Updated package.json to ${pkg.name}@${nextVersion}`);
 
   await runGates();
+  await assertNoReleaseRelevantChanges(true);
 
   if (isDryRun) {
     console.log(`\nDry run complete. Would have:`);
-    console.log(`  - committed "chore(release): ${tagName}"`);
-    console.log(`  - pushed main and tag ${tagName}`);
-    console.log(
-      `  - created a draft GitHub release${isPrerelease ? " (pre-release)" : ""}`,
-    );
+    console.log(`  - committed "chore(release): ${tagName}" on ${releaseBranch(nextVersion)}`);
+    console.log("  - pushed that branch and opened a PR into main");
+    console.log(`  - after merge: bun run release -- --finalize --version ${nextVersion}`);
     await restorePackageJsonIfNeeded();
     return;
   }
 
   const proceed = await confirm(
     rl,
-    `Push release commit + tag ${tagName} and open a draft GitHub release?`,
+    `Commit the version bump on ${releaseBranch(nextVersion)}, push it, and open a PR?`,
   );
   if (!proceed) {
     console.log("Release cancelled.");
@@ -554,41 +539,63 @@ async function cutRelease(): Promise<void> {
     return;
   }
 
-  await runCommand("git", ["add", "package.json"]);
-  await runCommand("git", ["commit", "-m", `chore(release): ${tagName}`]);
-  releaseCommitted = true;
-  await runCommand("git", ["tag", "-a", tagName, "-m", tagName]);
-  // Atomic: a partial failure (commit pushed, tag rejected) would strand
-  // main on a burned version with no tag, no draft, and no retry path.
-  await runCommand("git", [
-    "push",
-    "--atomic",
-    "origin",
-    "main",
-    `refs/tags/${tagName}`,
+  const url = await prepareReleasePullRequest(runCommand, nextVersion, () => { releaseCommitted = true; });
+  printPullRequestNextSteps(url, nextVersion);
+}
+
+function printPullRequestNextSteps(url: string, version: string): void {
+  console.log(`\nRelease PR: ${url}`);
+  console.log("After merging the PR and waiting for main CI:");
+  console.log("  git switch main");
+  console.log("  git pull --ff-only");
+  console.log(`  bun run release -- --finalize --version ${version}`);
+}
+
+async function resumeRelease(): Promise<void> {
+  await assertNoReleaseRelevantChanges();
+  const pkg = await readPackageJson();
+  const version = assertReleasableVersion(releaseOptions.version ?? pkg.version);
+  if (version !== pkg.version) throw new Error(`Current package.json version is ${pkg.version}, not ${version}.`);
+  await runCommand("gh", ["auth", "status"], { capture: true });
+  if (!await confirm(rl, `Retry pushing ${releaseBranch(version)} and opening its release PR?`)) return;
+  printPullRequestNextSteps(await resumeReleasePullRequest(runCommand, version), version);
+}
+
+async function finalizeRelease(): Promise<void> {
+  await assertNoReleaseRelevantChanges();
+  const sha = await assertOnMainAndSynced();
+  await runCommand("gh", ["auth", "status"], { capture: true });
+  const pkg = await readPackageJson();
+  const version = assertReleasableVersion(releaseOptions.version ?? pkg.version);
+  if (version !== pkg.version) {
+    throw new Error(`Main contains ${pkg.version}, not ${version}. Merge the version-bump PR and pull main first.`);
+  }
+  // Check CI, tag binding and existing drafts before offering any mutation.
+  const preview = await createDraftRelease(runCommand, version, sha, true);
+  const [canonical, legacy] = await Promise.all([
+    assertVersionNotPublished(CANONICAL_PACKAGE_NAME, version),
+    assertVersionNotPublished(LEGACY_PACKAGE_NAME, version),
   ]);
-
-  const releaseArgs = [
-    "release",
-    "create",
-    tagName,
-    "--draft",
-    "--generate-notes",
-    "--title",
-    tagName,
-    "--verify-tag",
-  ];
-  if (isPrerelease) releaseArgs.push("--prerelease");
-  const created = await runCommand("gh", releaseArgs, { capture: true });
-  const releaseUrl = created.stdout.trim();
-
-  console.log(`\nDraft release created: ${releaseUrl}`);
+  const distTag = publishTagForVersion(version);
+  npmReleasePlan({
+    version,
+    tagName: `v${version}`,
+    isPrerelease: prerelease(version) !== null,
+    releaseSha: sha,
+    packages: { canonical, legacy },
+  });
+  if (isDryRun) {
+    console.log(`Dry run: ${preview}`);
+    return;
+  }
+  if (!await confirm(rl, `Create/reuse draft v${version} from main commit ${sha.slice(0, 7)}?`)) return;
+  const url = await createDraftRelease(runCommand, version, sha);
+  console.log(`\nDraft release: ${url}`);
   console.log("Next steps:");
   console.log("  1. Edit the release notes on GitHub.");
-  console.log(
-    `  2. Publish the release — GitHub Actions then stages ${CANONICAL_PACKAGE_NAME}@${nextVersion} and ${LEGACY_PACKAGE_NAME}@${nextVersion} with dist-tag "${distTag}".`,
-  );
-  console.log("  3. Review both packages in npm Staged Packages and approve with 2FA.");
+  console.log("  2. Publish the release, open its Actions run, and approve npm-publish under Review deployments.");
+  console.log("  3. Wait for staging to succeed; only then will the packages appear on npm's Staged Packages page.");
+  console.log(`  4. Review and approve both npm packages with 2FA (version ${version}, dist-tag "${distTag}").`);
 }
 
 // Escape hatch: stage to npm from this machine, bypassing GitHub Actions.
@@ -682,8 +689,12 @@ async function publishLocal(): Promise<void> {
 try {
   if (releaseOptions.publishLocal) {
     await publishLocal();
+  } else if (releaseOptions.finalize) {
+    await finalizeRelease();
+  } else if (releaseOptions.resume) {
+    await resumeRelease();
   } else {
-    await cutRelease();
+    await prepareRelease();
   }
 } catch (error) {
   if (publishStarted) {
@@ -692,7 +703,7 @@ try {
     );
   } else if (releaseCommitted) {
     console.error(
-      "Release commit/tag were created but a later step failed. Inspect git state; nothing was rolled back automatically.",
+      "The version commit is on the release branch. Retry with bun run release -- --resume. No release tag was created.",
     );
   } else {
     await restorePackageJsonIfNeeded();
