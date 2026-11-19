@@ -27,6 +27,8 @@ describe("release configuration", () => {
       dryRun: true,
       allowDirty: false,
       publishLocal: true,
+      finalize: false,
+      resume: false,
       showHelp: false,
     });
     expect(parseReleaseArgs(["--publish-local"]).publishLocal).toBe(true);
@@ -59,6 +61,19 @@ describe("release configuration", () => {
     expect(() => publishTagForVersion("1.0.0-0.3.7")).toThrow(
       "pass --tag explicitly",
     );
+  });
+
+  test("separates preparation, resuming, finalization, and local publishing", () => {
+    expect(parseReleaseArgs([]).finalize).toBe(false);
+    expect(parseReleaseArgs(["--finalize", "--version", "1.4.0"]).finalize).toBe(true);
+    expect(parseReleaseArgs(["--resume"]).resume).toBe(true);
+    expect(parseReleaseArgs(["--finalize", "--dry-run"]).dryRun).toBe(true);
+    expect(parseReleaseArgs(["--allow-dirty", "--dry-run"]).allowDirty).toBe(true);
+    expect(() => parseReleaseArgs(["--allow-dirty"])).toThrow("requires --dry-run");
+    expect(() => parseReleaseArgs(["--resume", "--dry-run"])).toThrow("cannot be combined");
+    for (const args of [["--finalize", "--publish-local"], ["--resume", "--finalize"], ["--resume", "--publish-local"]]) {
+      expect(() => parseReleaseArgs(args)).toThrow("mutually exclusive");
+    }
   });
 
   test("offers direct bumps and prerelease entry points from a stable version", () => {

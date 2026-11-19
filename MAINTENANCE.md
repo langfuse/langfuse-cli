@@ -72,13 +72,22 @@ CI stages packages; maintainers approve them on npm with 2FA. Staging requires
 Node 22.14+ and npm 11.15+ (CI uses Node 24).
 See [npm staged publishing](https://docs.npmjs.com/staged-publishing/).
 
-1. Run `bun run release` on main. It checks published versions and channel
-   ordering, runs the gates, pushes a release commit/tag and creates a draft
-   GitHub release. `--dry-run` checks the flow without pushing.
-2. Edit and publish the GitHub release. Mark prereleases as GitHub pre-releases.
-3. Approve the GitHub `npm-publish` environment. CI stages `@langfuse/cli` and
-   `langfuse-cli` from one build, with provenance.
-4. Review both packages in npm's **Staged Packages** tab and approve with 2FA.
+1. Run `bun run release` on clean, synced main with successful CI. It checks
+   published versions and channel ordering, runs the gates, then asks to commit
+   the version bump on `nimarc/release-vX.Y.Z`, push it, and open a PR.
+   It never pushes main or a tag. `--version X.Y.Z` skips the version prompt.
+2. Merge the PR. Switch to main, run `git pull --ff-only`, and wait for main CI.
+   Run `bun run release -- --finalize --version X.Y.Z` to create a draft from
+   that exact commit. Both required GitHub Actions checks must succeed; missing,
+   pending, skipped, or failed checks block finalization. The version is not
+   bumped again. Retrying reuses a matching draft and rejects conflicting tags.
+3. Edit and publish the GitHub release. The script marks prereleases correctly.
+   GitHub creates the tag from the draft's pinned commit when published.
+4. Open the release's Actions run, select **Review deployments**, select
+   **npm-publish**, then **Approve and deploy**. CI stages `@langfuse/cli` and
+   `langfuse-cli` from one build, with provenance. Until this job runs, npm's
+   **Staged Packages** page stays empty.
+5. Review both packages in npm's **Staged Packages** tab and approve with 2FA.
    GitHub approval permits staging only; npm approval makes the packages public.
 
 Approve releases in version order; reject obsolete pending stages. Approving
@@ -94,6 +103,12 @@ Stable releases use `latest`; prereleases use `alpha`, `beta` or `rc`.
 Use the corresponding tag in the verification commands.
 
 ### Retries
+
+If pushing the release branch or opening its PR fails, stay on that branch and
+run `bun run release -- --resume`. It validates the existing version-only
+commit and retries without another bump or commit. A matching PR is reused.
+After merging, retry `--finalize` if main CI is still pending or GitHub is
+unavailable. Neither command publishes the GitHub release or approves npm.
 
 Pending stages reserve their versions and are invisible to OIDC, so duplicate
 uploads fail. Inspect them on npm, approve or reject with 2FA, then rerun the
@@ -121,7 +136,11 @@ betas and tagged `rc` releases before stable.
 
 `bun run release -- --publish-local` stages from this machine with npm login
 and the same build gates. It does not commit or tag; approve separately on npm.
-`--tag` overrides the local dist-tag; `--allow-dirty` is for script testing only.
+`--tag` overrides the local dist-tag. `--dry-run` runs the build gates and
+restores package.json without committing, pushing, or staging. In preparation
+mode it skips branch/sync/CI checks so the script can be tested on a branch;
+`--finalize --dry-run` checks main and CI without creating a draft.
+`--allow-dirty` requires `--dry-run` and is for script testing only.
 CI is preferred for provenance.
 
 ### Publisher configuration
