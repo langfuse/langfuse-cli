@@ -94,6 +94,7 @@ export interface ApiBodyDiscriminator {
 export interface ApiRequestBody {
   required: boolean;
   contentType: string;
+  kind?: ValueKind;
   fieldFlags: boolean;
   // Top-level oneOf/anyOf body: fields are merged across the union variants.
   union?: true;

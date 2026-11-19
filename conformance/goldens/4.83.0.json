@@ -918,15 +918,39 @@
     "action": "get"
   },
   {
+    "operationId": "unstable_topics_getRule",
+    "key": "GET /api/public/unstable/topic-rules/{ruleId}",
+    "resource": "unstable-topic-rules",
+    "action": "get"
+  },
+  {
     "operationId": "unstable_topics_list",
     "key": "GET /api/public/unstable/topics",
     "resource": "unstable-topics",
     "action": "list"
   },
   {
+    "operationId": "unstable_topics_listAssignments",
+    "key": "GET /api/public/unstable/topic-assignments",
+    "resource": "unstable-topic-assignments",
+    "action": "list"
+  },
+  {
     "operationId": "unstable_topics_listFacets",
     "key": "GET /api/public/unstable/topic-facets",
     "resource": "unstable-topic-facets",
+    "action": "list"
+  },
+  {
+    "operationId": "unstable_topics_listRules",
+    "key": "GET /api/public/unstable/topic-rules",
+    "resource": "unstable-topic-rules",
+    "action": "list"
+  },
+  {
+    "operationId": "unstable_topics_listSummaries",
+    "key": "GET /api/public/unstable/topic-summaries",
+    "resource": "unstable-topic-summaries",
     "action": "list"
   }
 ]

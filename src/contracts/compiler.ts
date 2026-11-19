@@ -536,6 +536,7 @@ function normalizeRequestBody(
   return {
     required: Boolean(body.required),
     contentType,
+    kind: schemaKind(document, rawSchema),
     fieldFlags,
     ...(union ? { union: true as const } : {}),
     ...(discriminator ? { discriminator } : {}),

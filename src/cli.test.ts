@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { parse } from "yaml";
 
 import {
   assertOperationCallable,
@@ -21,9 +22,11 @@ import { CliError } from "./errors";
 import { compileApiContract } from "./contracts/compiler";
 import * as contractLoader from "./contracts/loader";
 import { loadCatalog, readVerifiedSpec } from "../conformance/src/catalog";
+import { validateSchemaCases } from "../conformance/src/validation";
 import type { ApiOperation } from "./contracts/types";
 
-const latestSpec = (await loadCatalog()).versions.at(-1)!;
+const catalogEntries = (await loadCatalog()).versions;
+const latestSpec = catalogEntries.at(-1)!;
 const skillsContract = compileApiContract(latestSpec, await readVerifiedSpec(latestSpec));
 
 function skillManifest(name: string, contents: Record<string, string>, version = 1) {
@@ -1099,6 +1102,54 @@ paths:
 
     expect(operationByCommand(contract, "scores-v3", "list")).toBe(operation);
   });
+});
+
+describe("score creation examples", () => {
+  for (const entry of catalogEntries) {
+    test(`help and missing-body hints match the ${entry.version} request schema`, async () => {
+      const raw = await readVerifiedSpec(entry);
+      const document = parse(raw, { maxAliasCount: 100_000 });
+      const contract = compileApiContract(entry, raw);
+      const operation = contract.operations.find(
+        (candidate) => candidate.method === "POST" && candidate.path === "/api/public/scores",
+      )!;
+      const apiLoader = spyOn(contractLoader, "loadApiContract").mockResolvedValue(contract);
+      try {
+        const output = await captureOutput(() => runApi({
+          host: "https://example.invalid",
+          apiVersion: entry.version,
+          timeoutMs: 1_000,
+          json: false,
+          curl: false,
+          showSecrets: false,
+        }, [operation.command.resource, operation.command.action, "--help"], {
+          schemaVersion: 1,
+          latest: entry.version,
+          versions: [{ version: entry.version, sourceSha256: entry.sha256 }],
+        }));
+        const example = output.stdout.match(/--body-json '([^']+)'/)?.[1];
+        expect(example).toBeDefined();
+        expect(output.stdout).toContain(`langfuse --api-version ${entry.version} api`);
+        const input = await parseOperationInput(operation, ["--body-json", example!]);
+        const validation = validateSchemaCases(document, [{
+          label: "score help example",
+          schema: document.paths[operation.path].post.requestBody.content["application/json"].schema,
+          value: input.body!,
+        }]);
+        expect(validation.errors).toEqual([]);
+        expect(validation.valid).toBe(true);
+        const request = prepareRequest({
+          host: "https://example.invalid", publicKey: "test", secretKey: "test", timeoutMs: 1_000,
+        }, operation, input);
+        expect(request.method).toBe("POST");
+        expect(request.url.pathname).toBe("/api/public/scores");
+        expect(request.body).toBe(example);
+        await expect(parseOperationInput(operation, [])).rejects.toThrow(example!);
+      } finally {
+        apiLoader.mockRestore();
+      }
+    });
+  }
 });
 
 describe("API version reporting", () => {
