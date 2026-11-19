@@ -23,23 +23,40 @@ langfuse --env .env api <resource> <action>
 ```
 
 Note: the package was previously published under `langfuse-cli`. That package
-is identical to thise one and will be updated alongside until we release a new major version.
+is identical to this one and will be updated alongside until we release a new major version.
 We recommend using `@langfuse/cli` from now on.
+
+The package name is `@langfuse/cli`; its installed executable is `langfuse`.
+Help prints `langfuse api <resource> <action> [options]`. When using a package
+runner, replace `langfuse` with `npx @langfuse/cli` or `bunx --bun @langfuse/cli`;
+keep the `api` subcommand and remaining arguments.
 
 ## Authentication
 
-The CLI needs the following parameters to work:
+Create a project API key pair under **Project settings → API Keys**. Put these
+values in `.env`, using the deployment where that project lives:
 
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_HOST=https://cloud.langfuse.com  # optional, this is the default (LANGFUSE_BASE_URL also supported)
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-You can provide them via an `.env` file (takes precedence):
+| Deployment | Host |
+|---|---|
+| EU Cloud (default) | `https://cloud.langfuse.com` |
+| US Cloud | `https://us.cloud.langfuse.com` |
+| Japan Cloud | `https://jp.cloud.langfuse.com` |
+| HIPAA US Cloud | `https://hipaa.cloud.langfuse.com` |
+| Self-hosted | Your deployment URL, e.g. `http://localhost:3000` |
+
+Use the deployment base URL, without `/api/public` or a project page path.
+Load the file explicitly; the CLI does not automatically read `.env`:
 
 ```sh
 langfuse --env .env api prompts list
+# Without a global installation:
+bunx --bun @langfuse/cli --env .env api prompts list
 ```
 
 Alternatively, export env vars or pass inline flags:
@@ -51,8 +68,13 @@ export LANGFUSE_HOST=https://cloud.langfuse.com
 langfuse api prompts list
 
 # or inline
-langfuse --public-key pk-lf-... --secret-key sk-lf-... api prompts list
+langfuse --host https://us.cloud.langfuse.com --public-key pk-lf-... --secret-key sk-lf-... api prompts list
 ```
+
+Flags override configuration. Values from `--env` override shell variables with
+the same name. Host selection then uses `LANGFUSE_BASE_URL`, `LANGFUSE_HOST`, or
+the EU default, in that order. Set either host variable; if both are present,
+`LANGFUSE_BASE_URL` wins. No separate login step is needed.
 
 ## Usage
 
@@ -69,7 +91,7 @@ langfuse api prompts create help
 langfuse api schema --json
 
 # Create a prompt
-langfuse api prompts create --json-body '{"name":"my-prompt","type":"text","prompt":"Hello {{name}}"}'
+langfuse api prompts create --body-json '{"name":"my-prompt","type":"text","prompt":"Hello {{name}}"}'
 
 # List observations
 langfuse api observations list --limit 10
@@ -134,6 +156,36 @@ variants) support field flags directly: the discriminator flag selects the
 variant and the CLI parses and validates against that variant's schema —
 `langfuse api help <resource> <action>` shows the per-variant fields. Unions
 without a clean discriminator stay `--body-json`-only rather than guessing.
+
+### Create scores
+
+The current API accepts an **array of scores**, including for a single score.
+Replace `TRACE_ID` with an existing trace ID:
+
+```sh
+langfuse --env .env api scores create --body-json \
+  '[{"traceId":"TRACE_ID","name":"quality","value":0.9,"dataType":"NUMERIC"}]'
+
+# Boolean values are numbers (0 or 1); categorical values are strings.
+langfuse --env .env api scores create --body-json \
+  '[{"traceId":"TRACE_ID","name":"helpful","value":1,"dataType":"BOOLEAN"},{"traceId":"TRACE_ID","name":"sentiment","value":"positive","dataType":"CATEGORICAL"}]'
+
+# Or save the same JSON array in scores.json.
+langfuse --env .env api scores create --body-file scores.json
+```
+
+To score an observation, include `"observationId":"OBSERVATION_ID"` alongside
+`traceId` in each JSON object. Score creation uses `--body-json` or `--body-file`;
+individual body field flags are unsupported. Add `--curl` to preview a request
+without sending it.
+
+HTTP 202 means the batch was accepted for asynchronous processing. For HTTP 207,
+inspect the accepted/rejected counts and errors; do not retry the entire batch.
+Add `--json` to inspect the response as `{status, headers, body}`.
+
+Older self-hosted API snapshots accept a single score object. Select the matching
+`--api-version` and run `api scores create --help` for an example of that snapshot's
+body shape. The API snapshot version is separate from the CLI package version.
 
 ## Exit codes
 

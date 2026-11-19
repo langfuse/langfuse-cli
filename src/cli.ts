@@ -188,6 +188,10 @@ function printHelp(): void {
 
 Usage: langfuse [options] <command>
 
+Run without installing:
+  npx @langfuse/cli [options] <command>
+  bunx --bun @langfuse/cli [options] <command>
+
 Commands:
   api                     Interact with the Langfuse REST API
   skills install          Install Langfuse-hosted skills by name, tag, or --all
@@ -198,8 +202,9 @@ Commands:
 Options:
   --public-key <key>      Langfuse public key (or LANGFUSE_PUBLIC_KEY)
   --secret-key <key>      Langfuse secret key (or LANGFUSE_SECRET_KEY)
-  --host <url>            Langfuse host (default: ${DEFAULT_HOST})
-  --env <path>            Load env vars from a file
+  --host <url>            Deployment URL (or LANGFUSE_BASE_URL / LANGFUSE_HOST)
+                         Default: ${DEFAULT_HOST} (EU); US: https://us.cloud.langfuse.com
+  --env <path>            Load env vars from a file (explicit; no automatic .env loading)
   --api-version <version> Exact/major version, latest, or auto (v3: self-hosted only)
   --timeout <ms>          Request timeout (default: ${DEFAULT_TIMEOUT_MS})
   -h, --help              Show help
@@ -453,7 +458,23 @@ function bodyFieldsSection(operation: ApiOperation): string {
   return `\nRequest body fields (pass with --body-json or --body-file):\n${lines.join("\n")}\n${unionNote}`;
 }
 
-function printOperationHelp(operation: ApiOperation): void {
+function scoreBodyExample(operation: ApiOperation): JsonValue | undefined {
+  if (operation.method !== "POST" || operation.path !== "/api/public/scores") {
+    return undefined;
+  }
+  const score = {
+    traceId: "TRACE_ID",
+    name: "quality",
+    value: 0.9,
+    dataType: "NUMERIC",
+  };
+  if (operation.requestBody?.kind === "array") return [score];
+  if (operation.requestBody?.kind === "object") return score;
+  return undefined;
+}
+
+function printOperationHelp(operation: ApiOperation, apiVersion: string): void {
+  const example = scoreBodyExample(operation);
   const positionals = operation.pathParameterOrder
     .map((name) => `<${name}>`)
     .join(" ");
@@ -504,7 +525,12 @@ Options:
 ${lines.length ? lines.join("\n") : "  (no operation-specific options)"}
   --json                         JSON response envelope
   --curl                         Print curl without executing
-`);
+${example === undefined ? "" : `
+Example (replace TRACE_ID with an existing trace ID):
+  langfuse --api-version ${apiVersion} api ${operation.command.resource} ${operation.command.action} --body-json '${JSON.stringify(example)}'
+  ${Array.isArray(example) ? "The body is an array, including for a single score." : "This API snapshot accepts a single score object."}
+  Add --curl to preview the request without sending it.
+`}`);
 }
 
 export function operationByCommand(
@@ -672,6 +698,10 @@ function bodyPlaceholder(field: ApiBodyField): string {
 function bodyHint(operation: ApiOperation): string {
   const body = operation.requestBody;
   if (!body) return "";
+  const example = scoreBodyExample(operation);
+  if (example !== undefined) {
+    return `, e.g.\n\n  --body-json '${JSON.stringify(example)}'\n`;
+  }
   const required = body.fields.filter((field) => field.required);
   if (required.length === 0) return "";
   const sketch = required
@@ -1184,7 +1214,12 @@ export async function runApi(
   if (args[0] === "help") {
     if (!args[1]) printApiHelp(contract);
     else if (!args[2]) printResourceHelp(contract, args[1]);
-    else printOperationHelp(operationByCommand(contract, args[1], args[2]));
+    else {
+      printOperationHelp(
+        operationByCommand(contract, args[1], args[2]),
+        contract.apiVersion,
+      );
+    }
     return;
   }
   const resource = args[0];
@@ -1194,7 +1229,7 @@ export async function runApi(
   }
   const operation = operationByCommand(contract, resource, args[1]);
   if (args[2] === "help" || args[2] === "--help" || args[2] === "-h") {
-    printOperationHelp(operation);
+    printOperationHelp(operation, contract.apiVersion);
     return;
   }
   assertOperationCallable(operation, contract.apiVersion);
