@@ -105,7 +105,7 @@ export function prepareRequest(
   if (operation.auth.required && operation.auth.schemes.includes("BasicAuth")) {
     if (!config.publicKey || !config.secretKey) {
       throw new CliError(
-        "This operation requires LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY",
+        "This operation requires LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY. Create a key pair under Project settings, API Keys, and set LANGFUSE_BASE_URL for a region other than https://cloud.langfuse.com.",
         EXIT_CONFIG,
       );
     }
