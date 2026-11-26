@@ -555,6 +555,11 @@ export function operationByCommand(
     if (!resourceMap(contract).has(resource)) {
       throw new CliError(`Unknown API resource: ${resource}`);
     }
+    if (resource === "traces" && action === "list") {
+      throw new CliError(
+        "Unknown action traces list. Langfuse Cloud removed it on 2026-11-16. Use: api observations list",
+      );
+    }
     throw new CliError(`Unknown action ${resource} ${action}`);
   }
   return operation;
@@ -1300,6 +1305,11 @@ export async function run(argv: string[]): Promise<void> {
       return;
     }
     if (command !== "api") {
+      if (["login", "logout", "auth"].includes(command)) {
+        throw new CliError(
+          `Unknown command: ${command}. The CLI has no login step: set LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY and LANGFUSE_BASE_URL. Create keys under Project settings, API Keys.`,
+        );
+      }
       throw new CliError(`Unknown command: ${command}`);
     }
     await runApi(await runtimeConfig(globals), args);

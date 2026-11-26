@@ -1388,6 +1388,24 @@ describe("exit code taxonomy", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(CliError);
       expect((error as CliError).exitCode).toBe(3);
+      expect((error as CliError).message).toContain("Create a key pair under Project settings, API Keys");
+    }
+  });
+
+  test("removed commands name the next step with the usage exit code", async () => {
+    const originalExitCode = process.exitCode;
+    try {
+      for (const command of ["login", "auth"]) {
+        process.exitCode = 0;
+        const { stderr } = await captureOutput(() => run(["node", "langfuse", command]));
+        expect(stderr).toContain(`Unknown command: ${command}. The CLI has no login step`);
+        expect(process.exitCode).toBe(2);
+      }
+      expect(() => operationByCommand(skillsContract, "traces", "list")).toThrow(
+        "Unknown action traces list. Langfuse Cloud removed it on 2026-11-16. Use: api observations list",
+      );
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
     }
   });
 
